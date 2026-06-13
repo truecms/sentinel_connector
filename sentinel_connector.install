@@ -1,0 +1,31 @@
+<?php
+
+/**
+ * @file
+ * Install/requirements hooks for Sentinel Connector.
+ */
+
+/**
+ * Implements hook_requirements().
+ */
+function sentinel_connector_requirements(string $phase): array {
+  $requirements = [];
+  if ($phase !== 'runtime') {
+    return $requirements;
+  }
+
+  $config = \Drupal::config('sentinel_connector.settings');
+  /** @var \Drupal\sentinel_connector\ApiKeyResolver $resolver */
+  $resolver = \Drupal::service('Drupal\sentinel_connector\ApiKeyResolver');
+
+  $configured = $config->get('api_base_url') && $config->get('site_uuid') && $resolver->getKey();
+  $requirements['sentinel_connector'] = [
+    'title' => t('Sentinel Connector'),
+    'value' => $configured ? t('Configured') : t('Not configured'),
+    'severity' => $configured ? REQUIREMENT_OK : REQUIREMENT_WARNING,
+    'description' => $configured
+      ? t('Reporting to @url.', ['@url' => $config->get('api_base_url')])
+      : t('Set the API base URL, site UUID, and API key on the settings form.'),
+  ];
+  return $requirements;
+}
