@@ -1,0 +1,59 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+      - name: Install Drupal core-dev scaffold
+        run: |
+          composer create-project drupal/recommended-project:^10.3 web --no-interaction --no-install
+          cd web
+          composer config minimum-stability dev
+          composer require --dev drupal/core-dev:^10.3 --no-interaction
+          composer require drupal/coder:^8.3 mglaman/phpstan-drupal:^1.2 phpstan/extension-installer:^1.3 --no-interaction
+          mkdir -p web/modules/custom/sentinel_connector
+          rsync -a --exclude web --exclude .git "$GITHUB_WORKSPACE"/ web/modules/custom/sentinel_connector/
+      - name: PHPCS
+        run: cd web && vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,install web/modules/custom/sentinel_connector/src web/modules/custom/sentinel_connector/sentinel_connector.module
+      - name: PHPStan
+        run: cd web && vendor/bin/phpstan analyse web/modules/custom/sentinel_connector/src --level=6 || true
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { drupal: '^10.3', php: '8.3' }
+          - { drupal: '^11', php: '8.4' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer:v2
+      - name: Build Drupal site with the module
+        run: |
+          composer create-project drupal/recommended-project:${{ matrix.drupal }} web --no-interaction --no-install
+          cd web
+          composer config minimum-stability dev
+          composer config --no-plugins allow-plugins.phpstan/extension-installer true
+          composer require --dev drupal/core-dev:${{ matrix.drupal }} justinrainbow/json-schema:^6.0 --no-interaction
+          mkdir -p web/modules/custom/sentinel_connector
+          rsync -a --exclude web --exclude .git "$GITHUB_WORKSPACE"/ web/modules/custom/sentinel_connector/
+      - name: PHPUnit (Unit + contract)
+        run: |
+          cd web
+          ./vendor/bin/phpunit -c core/phpunit.xml.dist \
+            --testsuite unit \
+            web/modules/custom/sentinel_connector/tests/src/Unit
