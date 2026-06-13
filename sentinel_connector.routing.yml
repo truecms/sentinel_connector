@@ -1,0 +1,16 @@
+sentinel_connector.settings:
+  path: '/admin/config/services/sentinel-connector'
+  defaults:
+    _form: 'Drupal\sentinel_connector\Form\SettingsForm'
+    _title: 'Sentinel Connector'
+  requirements:
+    _permission: 'administer sentinel connector'
+
+sentinel_connector.sync_now:
+  path: '/admin/config/services/sentinel-connector/sync'
+  defaults:
+    _controller: 'Drupal\sentinel_connector\Controller\SyncController::syncNow'
+    _title: 'Sync now'
+  requirements:
+    _permission: 'trigger sentinel sync'
+    _csrf_token: 'TRUE'

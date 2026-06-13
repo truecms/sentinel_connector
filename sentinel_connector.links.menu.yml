@@ -1,0 +1,5 @@
+sentinel_connector.settings:
+  title: 'Sentinel Connector'
+  description: 'Configure reporting to the Sentinel monitoring platform.'
+  route_name: sentinel_connector.settings
+  parent: system.admin_config_services
