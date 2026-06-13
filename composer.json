@@ -1,0 +1,13 @@
+{
+    "name": "truecms/sentinel_connector",
+    "description": "Drupal 10/11 module that reports installed extensions to the Sentinel monitoring platform.",
+    "type": "drupal-module",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.3",
+        "ext-json": "*"
+    },
+    "require-dev": {
+        "justinrainbow/json-schema": "^5.2 || ^6.0"
+    }
+}

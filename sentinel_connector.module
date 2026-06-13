@@ -1,0 +1,6 @@
+<?php
+
+/**
+ * @file
+ * Sentinel Connector — reports installed extensions to Sentinel.
+ */
