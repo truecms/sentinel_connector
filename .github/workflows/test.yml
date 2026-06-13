@@ -19,9 +19,10 @@ jobs:
           composer create-project drupal/recommended-project:^10.3 web --no-interaction --no-install
           cd web
           composer config minimum-stability dev
-          composer require --dev drupal/core-dev:^10.3 --no-interaction
-          composer require drupal/coder:^8.3 mglaman/phpstan-drupal:^1.2 phpstan/extension-installer:^1.3 --no-interaction
-          vendor/bin/phpcs --config-set installed_paths vendor/drupal/coder/coder_sniffer
+          composer config --no-plugins allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
+          composer config --no-plugins allow-plugins.phpstan/extension-installer true
+          composer require --dev drupal/core-dev:^10.3 -W --no-interaction
+          composer require --dev drupal/coder:^8.3 dealerdirect/phpcodesniffer-composer-installer mglaman/phpstan-drupal:^1.2 phpstan/extension-installer:^1.3 -W --no-interaction
           mkdir -p web/modules/custom/sentinel_connector
           rsync -a --exclude web --exclude .git "$GITHUB_WORKSPACE"/ web/modules/custom/sentinel_connector/
       - name: PHPCS
@@ -48,8 +49,10 @@ jobs:
           composer create-project drupal/recommended-project:${{ matrix.drupal }} web --no-interaction --no-install
           cd web
           composer config minimum-stability dev
-          composer config --no-plugins allow-plugins.phpstan/extension-installer true
-          composer require --dev drupal/core-dev:${{ matrix.drupal }} justinrainbow/json-schema:^6.0 --no-interaction
+          # drupal/core-dev transitively provides justinrainbow/json-schema, used
+          # by the payload contract test. -W lets composer resolve the lock that
+          # create-project --no-install left behind.
+          composer require --dev drupal/core-dev:${{ matrix.drupal }} -W --no-interaction
           mkdir -p web/modules/custom/sentinel_connector
           rsync -a --exclude web --exclude .git "$GITHUB_WORKSPACE"/ web/modules/custom/sentinel_connector/
       - name: PHPUnit (Unit + contract)
