@@ -6,6 +6,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
 use Drupal\sentinel_connector\ApiKeyResolver;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -24,11 +25,14 @@ class SettingsForm extends ConfigFormBase {
    *   The typed config manager (required by ConfigFormBase on Drupal 11).
    * @param \Drupal\sentinel_connector\ApiKeyResolver $apiKeyResolver
    *   The API key resolver.
+   * @param \Drupal\Core\State\StateInterface $state
+   *   The state store, used to persist the fallback API key.
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
     TypedConfigManagerInterface $typedConfigManager,
     protected ApiKeyResolver $apiKeyResolver,
+    protected StateInterface $state,
   ) {
     parent::__construct($config_factory, $typedConfigManager);
   }
@@ -41,17 +45,27 @@ class SettingsForm extends ConfigFormBase {
       $container->get('config.factory'),
       $container->get('config.typed'),
       $container->get('Drupal\sentinel_connector\ApiKeyResolver'),
+      $container->get('state'),
     );
   }
 
+  /**
+   * {@inheritdoc}
+   */
   protected function getEditableConfigNames(): array {
     return ['sentinel_connector.settings'];
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public function getFormId(): string {
     return 'sentinel_connector_settings';
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public function buildForm(array $form, FormStateInterface $form_state): array {
     $config = $this->config('sentinel_connector.settings');
 
@@ -135,6 +149,9 @@ class SettingsForm extends ConfigFormBase {
     return parent::buildForm($form, $form_state);
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $this->config('sentinel_connector.settings')
       ->set('enabled', (bool) $form_state->getValue('enabled'))
@@ -149,7 +166,7 @@ class SettingsForm extends ConfigFormBase {
 
     $key = (string) $form_state->getValue('api_key_state');
     if ($key !== '') {
-      \Drupal::state()->set('sentinel_connector.api_key', $key);
+      $this->state->set('sentinel_connector.api_key', $key);
     }
 
     parent::submitForm($form, $form_state);

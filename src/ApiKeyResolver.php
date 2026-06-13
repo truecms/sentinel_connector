@@ -39,7 +39,10 @@ class ApiKeyResolver {
   }
 
   /**
-   * Which source supplied the key: 'settings.php', 'environment', 'state', or NULL.
+   * Which source supplied the key.
+   *
+   * @return string|null
+   *   One of 'settings.php', 'environment', 'state', or NULL when unset.
    */
   public function getSource(): ?string {
     $fromSettings = $this->settings->get(self::SETTINGS_KEY);

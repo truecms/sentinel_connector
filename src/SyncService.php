@@ -2,6 +2,7 @@
 
 namespace Drupal\sentinel_connector;
 
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\State\StateInterface;
 use Psr\Log\LoggerInterface;
@@ -11,6 +12,24 @@ use Psr\Log\LoggerInterface;
  */
 class SyncService {
 
+  /**
+   * Constructs the sync service.
+   *
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+   *   The config factory.
+   * @param \Drupal\Core\State\StateInterface $state
+   *   The state store for last-sync bookkeeping.
+   * @param \Drupal\sentinel_connector\PayloadBuilder $payloadBuilder
+   *   Builds the sync payload from the extension list.
+   * @param \Drupal\sentinel_connector\ApiKeyResolver $apiKeyResolver
+   *   Resolves the API key.
+   * @param \Drupal\sentinel_connector\SentinelClient $client
+   *   The HTTP client for the Sentinel backend.
+   * @param \Psr\Log\LoggerInterface $logger
+   *   The module logger channel.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The time service.
+   */
   public function __construct(
     protected ConfigFactoryInterface $configFactory,
     protected StateInterface $state,
@@ -18,6 +37,7 @@ class SyncService {
     protected ApiKeyResolver $apiKeyResolver,
     protected SentinelClient $client,
     protected LoggerInterface $logger,
+    protected TimeInterface $time,
   ) {}
 
   /**
@@ -66,7 +86,7 @@ class SyncService {
    */
   protected function recordResult(SyncResult $result): void {
     if ($result->isOk()) {
-      $this->state->set('sentinel_connector.last_sync_time', \Drupal::time()->getRequestTime());
+      $this->state->set('sentinel_connector.last_sync_time', $this->time->getRequestTime());
     }
     $this->state->set('sentinel_connector.last_result', $result->status);
     $this->state->set('sentinel_connector.last_message', $result->message);

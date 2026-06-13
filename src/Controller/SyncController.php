@@ -13,8 +13,17 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
  */
 class SyncController extends ControllerBase {
 
+  /**
+   * Constructs the sync controller.
+   *
+   * @param \Drupal\sentinel_connector\SyncService $syncService
+   *   The sync service.
+   */
   public function __construct(protected SyncService $syncService) {}
 
+  /**
+   * {@inheritdoc}
+   */
   public static function create(ContainerInterface $container): static {
     return new static($container->get('Drupal\sentinel_connector\SyncService'));
   }

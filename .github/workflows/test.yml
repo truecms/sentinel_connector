@@ -49,14 +49,15 @@ jobs:
           composer create-project drupal/recommended-project:${{ matrix.drupal }} web --no-interaction --no-install
           cd web
           composer config minimum-stability dev
-          # drupal/core-dev transitively provides justinrainbow/json-schema, used
-          # by the payload contract test. -W lets composer resolve the lock that
-          # create-project --no-install left behind.
-          composer require --dev drupal/core-dev:${{ matrix.drupal }} -W --no-interaction
+          # core-dev brings the test framework; justinrainbow/json-schema (used by
+          # the payload contract test) is required explicitly but unversioned so
+          # composer picks a release compatible with core-dev's own constraint.
+          # -W lets composer resolve the lock that create-project --no-install left.
+          composer require --dev drupal/core-dev:${{ matrix.drupal }} justinrainbow/json-schema -W --no-interaction
           mkdir -p web/modules/custom/sentinel_connector
           rsync -a --exclude web --exclude .git "$GITHUB_WORKSPACE"/ web/modules/custom/sentinel_connector/
       - name: PHPUnit (Unit + contract)
         run: |
-          cd web
-          ./vendor/bin/phpunit -c core/phpunit.xml.dist \
-            web/modules/custom/sentinel_connector/tests/src/Unit
+          cd web/web
+          ../vendor/bin/phpunit -c core/phpunit.xml.dist \
+            modules/custom/sentinel_connector/tests/src/Unit
