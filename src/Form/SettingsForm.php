@@ -2,6 +2,8 @@
 
 namespace Drupal\sentinel_connector\Form;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
@@ -13,16 +15,31 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  */
 class SettingsForm extends ConfigFormBase {
 
+  /**
+   * Constructs the settings form.
+   *
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The config factory.
+   * @param \Drupal\Core\Config\TypedConfigManagerInterface $typedConfigManager
+   *   The typed config manager (required by ConfigFormBase on Drupal 11).
+   * @param \Drupal\sentinel_connector\ApiKeyResolver $apiKeyResolver
+   *   The API key resolver.
+   */
   public function __construct(
-    $config_factory,
+    ConfigFactoryInterface $config_factory,
+    TypedConfigManagerInterface $typedConfigManager,
     protected ApiKeyResolver $apiKeyResolver,
   ) {
-    parent::__construct($config_factory);
+    parent::__construct($config_factory, $typedConfigManager);
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('config.factory'),
+      $container->get('config.typed'),
       $container->get('Drupal\sentinel_connector\ApiKeyResolver'),
     );
   }
@@ -112,7 +129,7 @@ class SettingsForm extends ConfigFormBase {
       '#title' => $this->t('Sync now'),
       '#url' => Url::fromRoute('sentinel_connector.sync_now'),
       '#attributes' => ['class' => ['button', 'button--primary']],
-      '#access' => \Drupal::currentUser()->hasPermission('trigger sentinel sync'),
+      '#access' => $this->currentUser()->hasPermission('trigger sentinel sync'),
     ];
 
     return parent::buildForm($form, $form_state);
