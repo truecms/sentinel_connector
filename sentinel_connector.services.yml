@@ -1,0 +1,30 @@
+services:
+  logger.channel.sentinel_connector:
+    parent: logger.channel_base
+    arguments: ['sentinel_connector']
+
+  Drupal\sentinel_connector\PayloadBuilder:
+    class: Drupal\sentinel_connector\PayloadBuilder
+    factory: ['@sentinel_connector.payload_builder_factory', 'create']
+
+  sentinel_connector.payload_builder_factory:
+    class: Drupal\sentinel_connector\PayloadBuilderFactory
+    arguments: ['@extension.list.module', '@request_stack']
+
+  Drupal\sentinel_connector\ApiKeyResolver:
+    class: Drupal\sentinel_connector\ApiKeyResolver
+    arguments: ['@settings', '@state']
+
+  Drupal\sentinel_connector\SentinelClient:
+    class: Drupal\sentinel_connector\SentinelClient
+    arguments: ['@http_client', '@logger.channel.sentinel_connector']
+
+  Drupal\sentinel_connector\SyncService:
+    class: Drupal\sentinel_connector\SyncService
+    arguments:
+      - '@config.factory'
+      - '@state'
+      - '@Drupal\sentinel_connector\PayloadBuilder'
+      - '@Drupal\sentinel_connector\ApiKeyResolver'
+      - '@Drupal\sentinel_connector\SentinelClient'
+      - '@logger.channel.sentinel_connector'
