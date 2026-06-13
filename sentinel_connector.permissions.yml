@@ -5,3 +5,4 @@ administer sentinel connector:
 trigger sentinel sync:
   title: 'Trigger Sentinel sync'
   description: 'Run an on-demand sync from the admin UI.'
+  restrict access: true

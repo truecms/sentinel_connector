@@ -5,7 +5,6 @@ namespace Drupal\sentinel_connector;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\State\StateInterface;
-use Psr\Log\LoggerInterface;
 
 /**
  * Single entry point for a Sentinel sync, shared by cron, drush, and the UI.
@@ -25,8 +24,6 @@ class SyncService {
    *   Resolves the API key.
    * @param \Drupal\sentinel_connector\SentinelClient $client
    *   The HTTP client for the Sentinel backend.
-   * @param \Psr\Log\LoggerInterface $logger
-   *   The module logger channel.
    * @param \Drupal\Component\Datetime\TimeInterface $time
    *   The time service.
    */
@@ -36,7 +33,6 @@ class SyncService {
     protected PayloadBuilder $payloadBuilder,
     protected ApiKeyResolver $apiKeyResolver,
     protected SentinelClient $client,
-    protected LoggerInterface $logger,
     protected TimeInterface $time,
   ) {}
 

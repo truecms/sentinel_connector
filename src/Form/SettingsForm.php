@@ -96,6 +96,7 @@ class SettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Site name'),
       '#default_value' => $config->get('site_name'),
+      '#required' => TRUE,
     ];
     $form['site_token'] = [
       '#type' => 'textfield',
