@@ -1,0 +1,6 @@
+services:
+  sentinel_connector.commands:
+    class: Drupal\sentinel_connector\Commands\SentinelCommands
+    arguments: ['@Drupal\sentinel_connector\SyncService']
+    tags:
+      - { name: drush.command }
