@@ -64,7 +64,7 @@ jobs:
             modules/custom/sentinel_connector/tests/src/Unit
       - name: PHPUnit (Kernel)
         env:
-          SIMPLETEST_DB: sqlite://localhost/:memory:
+          SIMPLETEST_DB: 'sqlite://localhost/:memory:'
           BROWSERTEST_OUTPUT_DIRECTORY: /tmp/sentinel-browser-output
         run: |
           mkdir -p "$BROWSERTEST_OUTPUT_DIRECTORY"
