@@ -32,6 +32,12 @@ Admin UI: **Configuration → Web services → Sentinel Connector**
 
 ### API key (secret — never stored in exported config)
 
+In Sentinel, open the registered site's dashboard and choose **Create API key**
+(or **Rotate API key** to replace existing credentials). Copy the displayed key
+once into Drupal; Sentinel stores its hash and never returns it on later reads.
+The Site UUID and Site URL on the dashboard must match this module's settings.
+Revoke a key in Sentinel to disable it immediately.
+
 Resolved in this order:
 
 1. `$settings['sentinel_connector.api_key']` in `settings.php` (recommended for production)
@@ -40,7 +46,7 @@ Resolved in this order:
 
 ## Triggering a sync
 
-- **Cron** — automatic, throttled to the configured interval (under Sentinel's 4/hour cap).
+- **Cron** — automatic, throttled to the configured interval (under Sentinel's 100/hour cap).
 - **Drush** — `drush sentinel_connector:sync` (alias `sc-sync`).
 - **Admin button** — "Sync now" on the settings form (requires the *Trigger Sentinel sync* permission).
 
@@ -53,5 +59,29 @@ Resolved in this order:
 
 ```bash
 composer install
-# Unit + contract tests run in CI against Drupal 10.3/PHP 8.3 and Drupal 11/PHP 8.4.
+# Unit, contract, and Kernel tests run in CI against current Drupal 10.x/PHP 8.3 and Drupal 11/PHP 8.4.
 ```
+
+Connection failures return an actionable transport error and record the last attempt when Drupal state storage is available. Other payload/configuration errors return an internal error; cron catches remaining failures and attempts to record and log them without exposing request secrets. Storage failures may prevent persistence and return a state error.
+Cron waits for the configured interval after each attempt, including failures.
+The settings page displays the last attempt separately from the last successful
+sync. A 202 queued result is accepted for processing and does not imply success.
+
+The real local API smoke fixture lives at `tests/fixtures/connector_e2e.php`.
+Provision a synthetic site and issue its key through the normal Sentinel UI/API,
+then provide `SENTINEL_E2E_ALLOW=1`, `SENTINEL_E2E_API_URL` (base before
+`/api/v1`), `SENTINEL_E2E_SITE_UUID`, `SENTINEL_E2E_SITE_URL`,
+`SENTINEL_E2E_SITE_NAME` and `SENTINEL_E2E_API_KEY` in a private environment.
+Run from the Drupal project root:
+
+```bash
+vendor/bin/drush php:script web/modules/custom/sentinel_connector/tests/fixtures/connector_e2e.php
+```
+
+The fixture requires a real successful response, checks attempt/success state,
+prints only status and runtime versions, and restores the original connector
+configuration and state. Run only against isolated local Drupal and Sentinel
+fixtures; do not save keys or credentialed URLs in the repository or logs.
+The Kernel suite also runs Drupal's actual cron service against an unreachable
+local endpoint and covers malformed URI, invalid UTF-8, typed payload errors,
+and unavailable state storage.

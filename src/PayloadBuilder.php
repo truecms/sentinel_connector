@@ -27,7 +27,7 @@ class PayloadBuilder {
    * @param string $scope
    *   One of 'all', 'contrib_custom', 'contrib'.
    *
-   * @return array
+   * @return array<string, mixed>
    *   The full DrupalSiteSync-shaped payload, minus the 'site' block which the
    *   caller fills from config.
    */
