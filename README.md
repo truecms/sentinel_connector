@@ -10,10 +10,10 @@ authoritative snapshot and submits it.
 The public module name is **Sentinel Connector**. `SentinelConnector.io` is the
 primary registered domain; `SentinelConnector.com` is the companion domain.
 
-The Drupal.org project page is pending. Until the project and releases are
-published there, obtain the module source from the
-[GitHub repository](https://github.com/truecms/sentinel_connector). Place the
-source checkout in your site's custom module directory, typically
+The Drupal.org project page and public releases are pending. The
+[GitHub repository](https://github.com/truecms/sentinel_connector) is private.
+Collaborators with repository access can install a source checkout in their
+site's custom module directory, typically
 `web/modules/custom/sentinel_connector`, then enable **Sentinel Connector** on
 Drupal's Extend page. The machine name remains `sentinel_connector`.
 
