@@ -101,6 +101,10 @@ Run from the Drupal project root:
 vendor/bin/drush php:script web/modules/custom/sentinel_connector/tests/fixtures/connector_e2e.php
 ```
 
+The fixture refuses to run if `settings.php` or `SENTINEL_CONNECTOR_API_KEY`
+provides a key, because either would override the fixture key. Remove those
+overrides only on the isolated local test site before running it.
+
 The fixture requires a real successful response, checks attempt/success state,
 prints only status and runtime versions, and restores the original connector
 configuration and state. Run only against isolated local Drupal and Sentinel
