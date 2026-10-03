@@ -15,9 +15,18 @@ class PayloadBuilderTest extends TestCase {
 
   /**
    * Builds a fake Extension with a given info array, status and path.
+   *
+   * @param string $name
+   *   Module machine name.
+   * @param array<string, mixed> $info
+   *   Module metadata.
+   * @param int $status
+   *   Installed status.
+   * @param string $path
+   *   Module directory.
    */
   private function ext(string $name, array $info, int $status, string $path): Extension {
-    $ext = $this->getMockBuilder(Extension::class)
+    $ext = $this->getMockBuilder(TestExtension::class)
       ->disableOriginalConstructor()
       ->onlyMethods(['getName', 'getPath'])
       ->getMock();
@@ -28,6 +37,12 @@ class PayloadBuilderTest extends TestCase {
     return $ext;
   }
 
+  /**
+   * Builds a payload builder with an isolated extension catalog.
+   *
+   * @param array<string, Extension> $extensions
+   *   Discovered modules.
+   */
   private function builder(array $extensions): PayloadBuilder {
     $list = $this->createMock(ModuleExtensionList::class);
     $list->method('reset')->willReturnSelf();
@@ -41,7 +56,12 @@ class PayloadBuilderTest extends TestCase {
   public function testClassifiesAndMapsModules(): void {
     $extensions = [
       'node' => $this->ext('node', ['name' => 'Node', 'description' => 'Core node.'], 1, 'core/modules/node'),
-      'token' => $this->ext('token', ['name' => 'Token', 'project' => 'token', 'version' => '8.x-1.15', 'description' => 'Tokens.'], 1, 'modules/contrib/token'),
+      'token' => $this->ext('token', [
+        'name' => 'Token',
+        'project' => 'token',
+        'version' => '8.x-1.15',
+        'description' => 'Tokens.',
+      ], 1, 'modules/contrib/token'),
       'my_custom' => $this->ext('my_custom', ['name' => 'My Custom'], 0, 'modules/custom/my_custom'),
     ];
     $payload = $this->builder($extensions)->build('all');

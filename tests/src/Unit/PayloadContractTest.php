@@ -2,7 +2,6 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
-use Drupal\Core\Extension\Extension;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\sentinel_connector\PayloadBuilder;
 use JsonSchema\Validator;
@@ -15,8 +14,11 @@ use PHPUnit\Framework\TestCase;
  */
 class PayloadContractTest extends TestCase {
 
+  /**
+   * Validates the full payload against the documented API contract.
+   */
   public function testBuiltPayloadMatchesSchema(): void {
-    $ext = $this->getMockBuilder(Extension::class)
+    $ext = $this->getMockBuilder(TestExtension::class)
       ->disableOriginalConstructor()
       ->onlyMethods(['getName', 'getPath'])
       ->getMock();
@@ -34,7 +36,6 @@ class PayloadContractTest extends TestCase {
     $payload['site'] = [
       'url' => 'https://example.com',
       'name' => 'Example',
-      'token' => 'sometoken',
       'uuid' => '11111111-1111-4111-8111-111111111111',
     ];
 

@@ -7,7 +7,7 @@
     "properties": {
         "site": {
             "type": "object",
-            "required": ["url", "name", "token", "uuid"],
+            "required": ["url", "name", "uuid"],
             "additionalProperties": false,
             "properties": {
                 "url": {"type": "string", "minLength": 1},

@@ -7,6 +7,9 @@
 
 /**
  * Implements hook_requirements().
+ *
+ * @phpstan-return array<string, array<string, mixed>>
+ *   Runtime requirement entries.
  */
 function sentinel_connector_requirements(string $phase): array {
   $requirements = [];

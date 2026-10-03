@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 /**
  * Handles the on-demand "Sync now" action.
  */
-class SyncController extends ControllerBase {
+final class SyncController extends ControllerBase {
 
   /**
    * Constructs the sync controller.

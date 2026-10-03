@@ -9,13 +9,33 @@
  * Implements hook_cron().
  *
  * Runs a throttled sync respecting the configured interval and Sentinel's
- * 4-requests/hour rate limit.
+ * 100-requests/hour rate limit.
  */
 function sentinel_connector_cron(): void {
-  /** @var \Drupal\sentinel_connector\SyncService $sync */
-  $sync = \Drupal::service('Drupal\sentinel_connector\SyncService');
-  $now = \Drupal::time()->getRequestTime();
-  if ($sync->cronIsDue($now)) {
-    $sync->sync();
+  try {
+    /** @var \Drupal\sentinel_connector\SyncService $sync */
+    $sync = \Drupal::service('Drupal\sentinel_connector\SyncService');
+    $now = \Drupal::time()->getRequestTime();
+    if ($sync->cronIsDue($now)) {
+      $sync->sync();
+    }
+  }
+  catch (\Throwable $error) {
+    // State/config/service failures may prevent recording. Keep cron running.
+    try {
+      $state = \Drupal::state();
+      $state->set('sentinel_connector.last_attempt_time', \Drupal::time()->getRequestTime());
+      $state->set('sentinel_connector.last_result', 'internal_error');
+      $state->set('sentinel_connector.last_message', 'Cron sync failed. Check Drupal logs.');
+    }
+    catch (\Throwable) {
+      // Recording is best effort when Drupal storage itself is unavailable.
+    }
+    try {
+      \Drupal::logger('sentinel_connector')->error('Sentinel cron failed with @class.', ['@class' => get_class($error)]);
+    }
+    catch (\Throwable) {
+      // Logging must not abort the remaining cron hooks.
+    }
   }
 }

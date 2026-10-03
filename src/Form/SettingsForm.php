@@ -14,7 +14,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Settings form for the Sentinel Connector module.
  */
-class SettingsForm extends ConfigFormBase {
+final class SettingsForm extends ConfigFormBase {
 
   /**
    * Constructs the settings form.
@@ -51,6 +51,9 @@ class SettingsForm extends ConfigFormBase {
 
   /**
    * {@inheritdoc}
+   *
+   * @return string[]
+   *   The editable configuration names.
    */
   protected function getEditableConfigNames(): array {
     return ['sentinel_connector.settings'];
@@ -65,6 +68,14 @@ class SettingsForm extends ConfigFormBase {
 
   /**
    * {@inheritdoc}
+   *
+   * @param array<string, mixed> $form
+   *   The form structure.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
+   *
+   * @return array<string, mixed>
+   *   The populated form structure.
    */
   public function buildForm(array $form, FormStateInterface $form_state): array {
     $config = $this->config('sentinel_connector.settings');
@@ -100,8 +111,9 @@ class SettingsForm extends ConfigFormBase {
     ];
     $form['site_token'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('Site token'),
+      '#title' => $this->t('Site token (deprecated)'),
       '#default_value' => $config->get('site_token'),
+      '#description' => $this->t('Legacy setting retained for configuration compatibility. It is no longer sent; authentication uses the API key.'),
     ];
     $form['report_scope'] = [
       '#type' => 'select',
@@ -118,7 +130,7 @@ class SettingsForm extends ConfigFormBase {
       '#title' => $this->t('Minimum seconds between cron syncs'),
       '#min' => 900,
       '#default_value' => $config->get('cron_interval') ?: 21600,
-      '#description' => $this->t('Sentinel rate-limits to 4 requests/hour per site.'),
+      '#description' => $this->t('Sentinel rate-limits to 100 requests/hour per site.'),
     ];
 
     // API key status (never echo the key).
@@ -139,6 +151,20 @@ class SettingsForm extends ConfigFormBase {
       '#description' => $this->t('Leave blank to keep the current value. Prefer settings.php or the environment variable for production.'),
     ];
 
+    // Queue acceptance and failed attempts are not successful synchronisations.
+    $lastSuccess = (int) $this->state->get('sentinel_connector.last_sync_time', 0);
+    $lastAttempt = (int) $this->state->get('sentinel_connector.last_attempt_time', 0);
+    $form['last_sync_status'] = [
+      '#type' => 'item',
+      '#title' => $this->t('Sync status'),
+      '#markup' => $this->t('Last successful sync: @success. Last attempt: @attempt. Result: @result. @message', [
+        '@success' => $lastSuccess ? date('c', $lastSuccess) : $this->t('Never'),
+        '@attempt' => $lastAttempt ? date('c', $lastAttempt) : $this->t('Never'),
+        '@result' => $this->state->get('sentinel_connector.last_result', 'unknown'),
+        '@message' => $this->state->get('sentinel_connector.last_message', ''),
+      ]),
+    ];
+
     $form['sync_now'] = [
       '#type' => 'link',
       '#title' => $this->t('Sync now'),
@@ -152,6 +178,11 @@ class SettingsForm extends ConfigFormBase {
 
   /**
    * {@inheritdoc}
+   *
+   * @param array<string, mixed> $form
+   *   The form structure.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
    */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $this->config('sentinel_connector.settings')

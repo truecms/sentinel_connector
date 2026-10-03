@@ -28,3 +28,4 @@ services:
       - '@Drupal\sentinel_connector\ApiKeyResolver'
       - '@Drupal\sentinel_connector\SentinelClient'
       - '@datetime.time'
+      - '@logger.channel.sentinel_connector'

@@ -22,13 +22,13 @@ jobs:
           composer config --no-plugins allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
           composer config --no-plugins allow-plugins.phpstan/extension-installer true
           composer require --dev drupal/core-dev:^10.3 -W --no-interaction
-          composer require --dev drupal/coder:^8.3 dealerdirect/phpcodesniffer-composer-installer mglaman/phpstan-drupal:^1.2 phpstan/extension-installer:^1.3 -W --no-interaction
+          composer require --dev drupal/coder:^8.3 dealerdirect/phpcodesniffer-composer-installer mglaman/phpstan-drupal:^1.2 phpstan/extension-installer:^1.3 drush/drush:^12.5 -W --no-interaction
           mkdir -p web/modules/custom/sentinel_connector
           rsync -a --exclude web --exclude .git "$GITHUB_WORKSPACE"/ web/modules/custom/sentinel_connector/
       - name: PHPCS
-        run: cd web && vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,install web/modules/custom/sentinel_connector/src web/modules/custom/sentinel_connector/sentinel_connector.module
+        run: cd web && vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,install web/modules/custom/sentinel_connector/src web/modules/custom/sentinel_connector/sentinel_connector.module web/modules/custom/sentinel_connector/sentinel_connector.install web/modules/custom/sentinel_connector/tests
       - name: PHPStan
-        run: cd web && vendor/bin/phpstan analyse web/modules/custom/sentinel_connector/src --level=6 || true
+        run: cd web && vendor/bin/phpstan analyse web/modules/custom/sentinel_connector/src web/modules/custom/sentinel_connector/tests web/modules/custom/sentinel_connector/sentinel_connector.module web/modules/custom/sentinel_connector/sentinel_connector.install --level=6 --memory-limit=512M
 
   test:
     runs-on: ubuntu-latest
@@ -43,6 +43,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
+          extensions: pdo_sqlite, sqlite3
           tools: composer:v2
       - name: Build Drupal site with the module
         run: |
@@ -61,3 +62,12 @@ jobs:
           cd web/web
           ../vendor/bin/phpunit -c core/phpunit.xml.dist \
             modules/custom/sentinel_connector/tests/src/Unit
+      - name: PHPUnit (Kernel)
+        env:
+          SIMPLETEST_DB: 'sqlite://localhost/:memory:'
+          BROWSERTEST_OUTPUT_DIRECTORY: /tmp/sentinel-browser-output
+        run: |
+          mkdir -p "$BROWSERTEST_OUTPUT_DIRECTORY"
+          cd web/web
+          ../vendor/bin/phpunit -c core/phpunit.xml.dist \
+            modules/custom/sentinel_connector/tests/src/Kernel
