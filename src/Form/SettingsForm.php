@@ -179,7 +179,7 @@ final class SettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    *
-   * @param array<string, mixed> $form
+   * @param array<array-key, mixed> $form
    *   The form structure.
    * @param \Drupal\Core\Form\FormStateInterface $form_state
    *   The form state.
