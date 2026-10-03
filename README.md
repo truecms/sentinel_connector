@@ -5,6 +5,18 @@ to the [Sentinel](https://github.com/truecms/sentinel) monitoring platform.
 Sentinel computes update and security status; this module only collects an
 authoritative snapshot and submits it.
 
+## Project and distribution
+
+The public module name is **Sentinel Connector**. `SentinelConnector.io` is the
+primary registered domain; `SentinelConnector.com` is the companion domain.
+
+The Drupal.org project page is pending. Until the project and releases are
+published there, obtain the module source from the
+[GitHub repository](https://github.com/truecms/sentinel_connector). Place the
+source checkout in your site's custom module directory, typically
+`web/modules/custom/sentinel_connector`, then enable **Sentinel Connector** on
+Drupal's Extend page. The machine name remains `sentinel_connector`.
+
 ## Requirements
 
 - Drupal `^10.3 || ^11`
