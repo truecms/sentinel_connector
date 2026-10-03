@@ -2,17 +2,34 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "DrupalSiteSync",
     "type": "object",
-    "required": ["site", "drupal_info", "modules", "full_sync"],
+    "required": [
+        "site",
+        "drupal_info",
+        "modules",
+        "full_sync"
+    ],
     "additionalProperties": false,
     "properties": {
         "site": {
             "type": "object",
-            "required": ["url", "name", "uuid"],
+            "required": [
+                "url",
+                "name",
+                "uuid"
+            ],
             "additionalProperties": false,
             "properties": {
-                "url": {"type": "string", "minLength": 1},
-                "name": {"type": "string", "minLength": 1},
-                "token": {"type": "string"},
+                "url": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "token": {
+                    "type": "string"
+                },
                 "uuid": {
                     "type": "string",
                     "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -21,30 +38,93 @@
         },
         "drupal_info": {
             "type": "object",
-            "required": ["core_version", "php_version", "ip_address"],
+            "required": [
+                "core_version",
+                "php_version",
+                "ip_address"
+            ],
             "additionalProperties": false,
             "properties": {
-                "core_version": {"type": "string", "minLength": 1},
-                "php_version": {"type": "string", "minLength": 1},
-                "ip_address": {"type": "string", "minLength": 1}
+                "core_version": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "php_version": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "ip_address": {
+                    "type": "string",
+                    "minLength": 1
+                }
             }
         },
         "modules": {
             "type": "array",
             "items": {
                 "type": "object",
-                "required": ["machine_name", "display_name", "module_type", "enabled", "version"],
+                "required": [
+                    "machine_name",
+                    "display_name",
+                    "module_type",
+                    "enabled",
+                    "version"
+                ],
                 "additionalProperties": false,
                 "properties": {
-                    "machine_name": {"type": "string", "minLength": 1},
-                    "display_name": {"type": "string", "minLength": 1},
-                    "module_type": {"type": "string", "enum": ["contrib", "custom", "core"]},
-                    "enabled": {"type": "boolean"},
-                    "version": {"type": "string", "minLength": 1},
-                    "description": {"type": ["string", "null"]}
+                    "machine_name": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "display_name": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "module_type": {
+                        "type": "string",
+                        "enum": [
+                            "contrib",
+                            "custom",
+                            "core"
+                        ]
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "version": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "description": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "reported_project": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 128,
+                        "pattern": "^[a-z0-9_]+$"
+                    },
+                    "version_known": {
+                        "type": "boolean"
+                    }
                 }
             }
         },
-        "full_sync": {"type": "boolean"}
+        "full_sync": {
+            "type": "boolean"
+        },
+        "inventory_scope": {
+            "type": "string",
+            "enum": [
+                "all",
+                "contrib_custom",
+                "contrib"
+            ]
+        }
     }
 }

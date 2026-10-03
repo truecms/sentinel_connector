@@ -32,6 +32,7 @@ class PayloadBuilder {
    *   caller fills from config.
    */
   public function build(string $scope): array {
+    $scope = in_array($scope, ['all', 'contrib_custom', 'contrib'], TRUE) ? $scope : 'all';
     $modules = [];
     foreach ($this->moduleList->reset()->getList() as $name => $extension) {
       $type = $this->classify($extension);
@@ -39,12 +40,21 @@ class PayloadBuilder {
         continue;
       }
       $info = $extension->info;
+      $version = $info['version'] ?? ($type === 'core' ? $this->coreVersion : NULL);
+      $versionKnown = is_string($version) && trim($version) !== '';
+      $project = $type === 'core' ? 'drupal' : ($info['project'] ?? NULL);
+      $project = is_string($project) ? strtolower(trim($project)) : NULL;
+      if ($project === NULL || !preg_match('/^[a-z0-9_]{1,128}$/D', $project)) {
+        $project = NULL;
+      }
       $modules[] = [
         'machine_name' => $name,
         'display_name' => $info['name'] ?? $name,
         'module_type' => $type,
         'enabled' => (int) ($extension->status ?? 0) === 1,
-        'version' => $info['version'] ?? self::VERSION_PLACEHOLDER,
+        'version' => $versionKnown ? $version : self::VERSION_PLACEHOLDER,
+        'version_known' => $versionKnown,
+        'reported_project' => $project,
         'description' => $info['description'] ?? NULL,
       ];
     }
@@ -57,6 +67,7 @@ class PayloadBuilder {
       ],
       'modules' => $modules,
       'full_sync' => TRUE,
+      'inventory_scope' => $scope,
     ];
   }
 

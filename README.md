@@ -67,6 +67,17 @@ Cron waits for the configured interval after each attempt, including failures.
 The settings page displays the last attempt separately from the last successful
 sync. A 202 queued result is accepted for processing and does not imply success.
 
+Payloads also report the configured `inventory_scope`, per-extension
+`reported_project` from Drupal packaging metadata, and `version_known`.
+Submodules retain their package project (for example, `webform_ui` reports
+`webform`); custom names are never guessed as Drupal.org projects. Core
+extensions report `drupal` and the installed core version. A missing version
+keeps the legacy `0.0.0` placeholder with `version_known: false`.
+Sentinel uses this site-scoped identity to assess the persisted inventory
+asynchronously. Inventory acceptance and upstream assessment are distinct;
+narrow scopes, custom modules and missing metadata cannot establish whole-site
+assessment coverage. The connector does not yet sign or poll requests.
+
 The real local API smoke fixture lives at `tests/fixtures/connector_e2e.php`.
 Provision a synthetic site and issue its key through the normal Sentinel UI/API,
 then provide `SENTINEL_E2E_ALLOW=1`, `SENTINEL_E2E_API_URL` (base before
