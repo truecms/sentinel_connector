@@ -8,10 +8,16 @@
  * environment. The original Drupal configuration and sync state are restored.
  */
 
+use Drupal\sentinel_connector\ApiKeyResolver;
 use Drupal\sentinel_connector\SyncService;
 
 if (getenv('SENTINEL_E2E_ALLOW') !== '1') {
   throw new RuntimeException('Explicitly enable this fixture only on an isolated local Drupal site.');
+}
+// Higher-priority keys would override the fixture key stored in state.
+$source = \Drupal::service(ApiKeyResolver::class)->getSource();
+if (in_array($source, ['settings.php', 'environment'], TRUE)) {
+  throw new RuntimeException('Remove the settings.php or SENTINEL_CONNECTOR_API_KEY override on this isolated site before running the fixture.');
 }
 $fields = [
   'api_base_url' => 'SENTINEL_E2E_API_URL',
