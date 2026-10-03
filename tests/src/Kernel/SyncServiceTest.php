@@ -3,6 +3,9 @@
 namespace Drupal\Tests\sentinel_connector\Kernel;
 
 use GuzzleHttp\Middleware;
+use Drupal\Core\Site\Settings;
+use Drupal\Core\Config\ConfigEvents;
+use Drupal\sentinel_connector\ApiKeyResolver;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\SyncService;
 use Drupal\sentinel_connector\PayloadBuilder;
@@ -225,6 +228,132 @@ class SyncServiceTest extends KernelTestBase {
     $this->container->get('module_handler')->loadAll();
     sentinel_connector_cron();
     $this->assertSame('internal_error', \Drupal::state()->get('sentinel_connector.last_result'));
+  }
+
+  /**
+   * Higher-priority credentials stop the fixture before writes or sync.
+   *
+   * @dataProvider fixtureKeySources
+   */
+  public function testFixtureRejectsKeyOverrides(string $source): void {
+    $settings = Settings::getAll();
+    $original = $this->config('sentinel_connector.settings')->getRawData();
+    $state = $this->createMock(StateInterface::class);
+    $state->expects($this->never())->method('set');
+    $state->expects($this->never())->method('delete');
+    $sync = $this->createMock(SyncService::class);
+    $sync->expects($this->never())->method('sync');
+    $this->container->set(SyncService::class, $sync);
+    $this->container->set('state', $state);
+    $saves = 0;
+    $this->container->get('event_dispatcher')->addListener(ConfigEvents::SAVE, static function () use (&$saves): void {
+      $saves++;
+    });
+    try {
+      new Settings($source === 'settings.php' ? $settings + [ApiKeyResolver::SETTINGS_KEY => 'existing-settings-key'] : $settings);
+      $this->container->set(ApiKeyResolver::class, new ApiKeyResolver(Settings::getInstance(), $state));
+      $this->runFixture([
+        ApiKeyResolver::ENV_VAR => $source === 'environment' ? 'existing-env-key' : '',
+      ]);
+      $this->fail('The fixture must reject higher-priority credentials.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('override', $e->getMessage());
+    }
+    finally {
+      new Settings($settings);
+    }
+    $this->assertSame(0, $saves);
+    $this->assertSame($original, $this->config('sentinel_connector.settings')->getRawData());
+  }
+
+  /**
+   * Credential sources that take priority over the fixture state key.
+   *
+   * @return array<int, array{string}>
+   *   The settings and environment sources.
+   */
+  public static function fixtureKeySources(): array {
+    return [['settings.php'], ['environment']];
+  }
+
+  /**
+   * The fixture sends its own key and restores configuration and sync state.
+   *
+   * @dataProvider fixtureResponses
+   */
+  public function testFixtureRestoresState(int $httpCode): void {
+    $original = $this->config('sentinel_connector.settings')->getRawData();
+    $state = \Drupal::state();
+    $state->set('sentinel_connector.last_sync_time', 123);
+    $transactions = [];
+    $stack = HandlerStack::create(new MockHandler([new Response($httpCode, [], '{}')]));
+    $stack->push(Middleware::history($transactions));
+    $this->container->set('http_client', new Client(['handler' => $stack]));
+    ob_start();
+    try {
+      $this->runFixture([ApiKeyResolver::ENV_VAR => '']);
+      $this->assertSame(200, $httpCode);
+    }
+    catch (\RuntimeException $e) {
+      $this->assertSame(400, $httpCode);
+      $this->assertStringContainsString('rejected', $e->getMessage());
+    }
+    finally {
+      ob_end_clean();
+    }
+    $this->assertCount(1, $transactions);
+    $this->assertSame('fixture-key', $transactions[0]['request']->getHeaderLine('X-API-Key'));
+    $this->assertSame('fixture.example.com', $transactions[0]['request']->getUri()->getHost());
+    $this->assertSame($original, $this->config('sentinel_connector.settings')->getRawData());
+    $this->assertSame('sk_test', $state->get('sentinel_connector.api_key'));
+    $this->assertSame(123, $state->get('sentinel_connector.last_sync_time'));
+    foreach (['last_attempt_time', 'last_result', 'last_message', 'last_task_id'] as $key) {
+      $this->assertNull($state->get('sentinel_connector.' . $key));
+    }
+  }
+
+  /**
+   * Successful and failed responses both require restoration.
+   *
+   * @return array<int, array{int}>
+   *   HTTP response codes.
+   */
+  public static function fixtureResponses(): array {
+    return [[200], [400]];
+  }
+
+  /**
+   * Runs the real fixture with synthetic environment values, restoring them.
+   *
+   * @param array<string, string> $overrides
+   *   Environment values to override for this fixture run.
+   */
+  private function runFixture(array $overrides): void {
+    $environment = $overrides + [
+      'SENTINEL_E2E_ALLOW' => '1',
+      'SENTINEL_E2E_API_URL' => 'https://fixture.example.com',
+      'SENTINEL_E2E_SITE_UUID' => '22222222-2222-4222-8222-222222222222',
+      'SENTINEL_E2E_SITE_URL' => 'https://fixture-site.example.com',
+      'SENTINEL_E2E_SITE_NAME' => 'Fixture site',
+      'SENTINEL_E2E_API_KEY' => 'fixture-key',
+    ];
+    $original = [];
+    foreach ($environment as $name => $value) {
+      $original[$name] = getenv($name);
+      putenv($name . '=' . $value);
+    }
+    try {
+      // Isolate the script's local variables from this helper's cleanup data.
+      (static function (): void {
+        require __DIR__ . '/../../fixtures/connector_e2e.php';
+      })();
+    }
+    finally {
+      foreach ($original as $name => $value) {
+        putenv($value === FALSE ? $name : $name . '=' . $value);
+      }
+    }
   }
 
 }
