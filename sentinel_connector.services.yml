@@ -9,7 +9,7 @@ services:
 
   sentinel_connector.payload_builder_factory:
     class: Drupal\sentinel_connector\PayloadBuilderFactory
-    arguments: ['@extension.list.module', '@request_stack']
+    arguments: ['@extension.list.module', '@request_stack', '%app.root%']
 
   Drupal\sentinel_connector\ApiKeyResolver:
     class: Drupal\sentinel_connector\ApiKeyResolver

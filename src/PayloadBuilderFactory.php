@@ -13,6 +13,7 @@ class PayloadBuilderFactory {
   public function __construct(
     protected ModuleExtensionList $moduleList,
     protected RequestStack $requestStack,
+    protected string $appRoot,
   ) {}
 
   /**
@@ -28,7 +29,7 @@ class PayloadBuilderFactory {
       $resolved = gethostbyname($hostname);
       $ip = ($resolved !== '' && $resolved !== $hostname) ? $resolved : '127.0.0.1';
     }
-    return new PayloadBuilder($this->moduleList, \Drupal::VERSION, PHP_VERSION, $ip);
+    return new PayloadBuilder($this->moduleList, \Drupal::VERSION, PHP_VERSION, $ip, ComposerProjectResolver::fromInstalledVersions($this->appRoot));
   }
 
 }
