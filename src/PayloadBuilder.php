@@ -14,6 +14,11 @@ class PayloadBuilder {
 
   public const VERSION_PLACEHOLDER = '0.0.0';
 
+  /**
+   * This connector's release version. Bump it when tagging a release.
+   */
+  public const CONNECTOR_VERSION = '0.2.0';
+
   public function __construct(
     protected ModuleExtensionList $moduleList,
     protected string $coreVersion,
@@ -74,6 +79,7 @@ class PayloadBuilder {
       'modules' => $modules,
       'full_sync' => TRUE,
       'inventory_scope' => $scope,
+      'connector_version' => self::CONNECTOR_VERSION,
     ];
   }
 

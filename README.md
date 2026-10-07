@@ -93,8 +93,9 @@ Cron waits for the configured interval after each attempt, including failures.
 The settings page displays the last attempt separately from the last successful
 sync. A 202 queued result is accepted for processing and does not imply success.
 
-Payloads also report the configured `inventory_scope`, per-extension
-`reported_project`, and `version_known`.
+Payloads also report the configured `inventory_scope`, the connector's own
+release as `connector_version`, per-extension `reported_project`, and
+`version_known`.
 Submodules retain their package project (for example, `webform_ui` reports
 `webform`); custom names are never guessed as Drupal.org projects. Core
 extensions report `drupal` and the installed core version.

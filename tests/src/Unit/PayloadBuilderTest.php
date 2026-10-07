@@ -83,6 +83,8 @@ class PayloadBuilderTest extends TestCase {
     $this->assertSame('203.0.113.4', $payload['drupal_info']['ip_address']);
     $this->assertTrue($payload['full_sync']);
     $this->assertSame('all', $payload['inventory_scope']);
+    $this->assertSame(PayloadBuilder::CONNECTOR_VERSION, $payload['connector_version']);
+    $this->assertMatchesRegularExpression('/^\d+\.\d+\.\d+$/', $payload['connector_version']);
 
     $byName = [];
     foreach ($payload['modules'] as $m) {

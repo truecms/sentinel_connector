@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 0.2.0 - Unreleased
+## 0.2.0 - 2026-10-07
 
 ### Added
 
@@ -13,6 +13,8 @@ All notable changes to this project are documented here. Versions follow
 - When `info.yml` has no `project` key, the project is resolved from the
   installed `drupal/*` Composer package that contains the module. Sub-modules
   resolve to their parent project.
+- Payloads send `connector_version`, so Sentinel can tell when a site runs an
+  outdated connector. Sentinel ignores the field until it adds support.
 
 ### Changed
 
