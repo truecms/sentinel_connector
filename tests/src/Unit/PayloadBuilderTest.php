@@ -4,6 +4,7 @@ namespace Drupal\Tests\sentinel_connector\Unit;
 
 use Drupal\Core\Extension\Extension;
 use Drupal\Core\Extension\ModuleExtensionList;
+use Drupal\sentinel_connector\ComposerProjectResolver;
 use Drupal\sentinel_connector\PayloadBuilder;
 use PHPUnit\Framework\TestCase;
 
@@ -42,12 +43,23 @@ class PayloadBuilderTest extends TestCase {
    *
    * @param array<string, Extension> $extensions
    *   Discovered modules.
+   * @param array<string, string> $packages
+   *   Composer package short names keyed by extension path prefix.
    */
-  private function builder(array $extensions): PayloadBuilder {
+  private function builder(array $extensions, array $packages = []): PayloadBuilder {
     $list = $this->createMock(ModuleExtensionList::class);
     $list->method('reset')->willReturnSelf();
     $list->method('getList')->willReturn($extensions);
-    return new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4');
+    $resolver = $this->createMock(ComposerProjectResolver::class);
+    $resolver->method('resolve')->willReturnCallback(function (string $path) use ($packages): ?string {
+      foreach ($packages as $prefix => $package) {
+        if ($path === $prefix || str_starts_with($path, $prefix . '/')) {
+          return $package;
+        }
+      }
+      return NULL;
+    });
+    return new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', $resolver);
   }
 
   /**
@@ -71,6 +83,8 @@ class PayloadBuilderTest extends TestCase {
     $this->assertSame('203.0.113.4', $payload['drupal_info']['ip_address']);
     $this->assertTrue($payload['full_sync']);
     $this->assertSame('all', $payload['inventory_scope']);
+    $this->assertSame(PayloadBuilder::CONNECTOR_VERSION, $payload['connector_version']);
+    $this->assertMatchesRegularExpression('/^\d+\.\d+\.\d+$/', $payload['connector_version']);
 
     $byName = [];
     foreach ($payload['modules'] as $m) {
@@ -142,6 +156,66 @@ class PayloadBuilderTest extends TestCase {
     $this->assertFalse($byName['token']['version_known']);
     $this->assertSame('0.0.0', $byName['token']['version']);
     $this->assertNull($byName['invalid_project']['reported_project']);
+  }
+
+  /**
+   * Composer metadata identifies contrib modules that lack a 'project' key.
+   *
+   * @covers ::build
+   */
+  public function testComposerMetadataResolvesMissingProject(): void {
+    $extensions = [
+      // Core.
+      'node' => $this->ext('node', ['name' => 'Node'], 1, 'core/modules/node'),
+      // Packaged contrib: info.yml wins and Composer is not consulted.
+      'token' => $this->ext('token', ['project' => 'token', 'version' => '8.x-1.15'], 1, 'modules/contrib/token'),
+      // Git checkout of a contrib module and its sub-module.
+      'admin_toolbar' => $this->ext('admin_toolbar', ['name' => 'Admin Toolbar'], 1, 'modules/contrib/admin_toolbar'),
+      'admin_toolbar_links_access_filter' => $this->ext(
+        'admin_toolbar_links_access_filter',
+        [],
+        1,
+        'modules/contrib/admin_toolbar/admin_toolbar_links_access_filter',
+      ),
+      // A drupal/* package whose name is not a valid project name.
+      'odd' => $this->ext('odd', [], 1, 'modules/contrib/odd'),
+      // True custom module, named like a real Drupal.org project.
+      'pathauto' => $this->ext('pathauto', [], 1, 'modules/custom/pathauto'),
+    ];
+    $packages = [
+      'modules/contrib/token' => 'wrong',
+      'modules/contrib/admin_toolbar' => 'Admin_Toolbar',
+      'modules/contrib/odd' => 'odd-package',
+    ];
+    $byName = array_column($this->builder($extensions, $packages)->build('all')['modules'], NULL, 'machine_name');
+
+    $identity = fn(string $name): array => [$byName[$name]['module_type'], $byName[$name]['reported_project']];
+    $this->assertSame(['core', 'drupal'], $identity('node'));
+    $this->assertSame(['contrib', 'token'], $identity('token'));
+    $this->assertSame(['contrib', 'admin_toolbar'], $identity('admin_toolbar'));
+    $this->assertSame(['contrib', 'admin_toolbar'], $identity('admin_toolbar_links_access_filter'));
+    $this->assertSame(['contrib', NULL], $identity('odd'));
+    $this->assertSame(['custom', NULL], $identity('pathauto'));
+
+    // The 'contrib' scope now keeps Composer-identified modules.
+    $names = array_column($this->builder($extensions, $packages)->build('contrib')['modules'], 'machine_name');
+    $this->assertEqualsCanonicalizing(['token', 'admin_toolbar', 'admin_toolbar_links_access_filter', 'odd'], $names);
+  }
+
+  /**
+   * Without Composer metadata the builder falls back to info.yml only.
+   *
+   * @covers ::build
+   */
+  public function testWorksWithoutResolver(): void {
+    $list = $this->createMock(ModuleExtensionList::class);
+    $list->method('reset')->willReturnSelf();
+    $list->method('getList')->willReturn([
+      'admin_toolbar' => $this->ext('admin_toolbar', [], 1, 'modules/contrib/admin_toolbar'),
+    ]);
+    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4'))->build('all');
+    $this->assertSame('custom', $payload['modules'][0]['module_type']);
+    $this->assertNull($payload['modules'][0]['reported_project']);
   }
 
 }

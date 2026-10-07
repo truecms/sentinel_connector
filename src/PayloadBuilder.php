@@ -14,11 +14,17 @@ class PayloadBuilder {
 
   public const VERSION_PLACEHOLDER = '0.0.0';
 
+  /**
+   * This connector's release version. Bump it when tagging a release.
+   */
+  public const CONNECTOR_VERSION = '0.2.0';
+
   public function __construct(
     protected ModuleExtensionList $moduleList,
     protected string $coreVersion,
     protected string $phpVersion,
     protected string $ipAddress,
+    protected ?ComposerProjectResolver $composerProjects = NULL,
   ) {}
 
   /**
@@ -35,18 +41,23 @@ class PayloadBuilder {
     $scope = in_array($scope, ['all', 'contrib_custom', 'contrib'], TRUE) ? $scope : 'all';
     $modules = [];
     foreach ($this->moduleList->reset()->getList() as $name => $extension) {
-      $type = $this->classify($extension);
+      $info = $extension->info;
+      $core = $this->isCore($extension);
+      $project = $core ? 'drupal' : $this->normaliseProject($info['project'] ?? NULL);
+      $packaged = !empty($info['project']);
+      if (!$core && $project === NULL && $this->composerProjects) {
+        // No usable packaging metadata: ask Composer which drupal/* package
+        // ships this extension. The machine name is never used as a guess.
+        $package = $this->composerProjects->resolve($extension->getPath());
+        $packaged = $packaged || $package !== NULL;
+        $project = $this->normaliseProject($package);
+      }
+      $type = $core ? 'core' : ($packaged ? 'contrib' : 'custom');
       if (!$this->inScope($type, $scope)) {
         continue;
       }
-      $info = $extension->info;
-      $version = $info['version'] ?? ($type === 'core' ? $this->coreVersion : NULL);
+      $version = $info['version'] ?? ($core ? $this->coreVersion : NULL);
       $versionKnown = is_string($version) && trim($version) !== '';
-      $project = $type === 'core' ? 'drupal' : ($info['project'] ?? NULL);
-      $project = is_string($project) ? strtolower(trim($project)) : NULL;
-      if ($project === NULL || !preg_match('/^[a-z0-9_]{1,128}$/D', $project)) {
-        $project = NULL;
-      }
       $modules[] = [
         'machine_name' => $name,
         'display_name' => $info['name'] ?? $name,
@@ -68,22 +79,26 @@ class PayloadBuilder {
       'modules' => $modules,
       'full_sync' => TRUE,
       'inventory_scope' => $scope,
+      'connector_version' => self::CONNECTOR_VERSION,
     ];
   }
 
   /**
-   * Classify an extension as core, contrib, or custom.
+   * Whether an extension ships with Drupal core.
    */
-  protected function classify(Extension $extension): string {
-    $path = $extension->getPath();
-    if (str_starts_with($path, 'core/') || ($extension->origin ?? '') === 'core') {
-      return 'core';
+  protected function isCore(Extension $extension): bool {
+    return str_starts_with($extension->getPath(), 'core/') || ($extension->origin ?? '') === 'core';
+  }
+
+  /**
+   * Returns a valid lower-case Drupal.org project name, or NULL.
+   */
+  protected function normaliseProject(mixed $project): ?string {
+    $project = is_string($project) ? strtolower(trim($project)) : NULL;
+    if ($project === NULL || !preg_match('/^[a-z0-9_]{1,128}$/D', $project)) {
+      return NULL;
     }
-    // Drupal's packaging script adds a 'project' key to contrib info.yml.
-    if (!empty($extension->info['project'])) {
-      return 'contrib';
-    }
-    return 'custom';
+    return $project;
   }
 
   /**

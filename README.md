@@ -17,6 +17,20 @@ site's custom module directory, typically
 `web/modules/custom/sentinel_connector`, then enable **Sentinel Connector** on
 Drupal's Extend page. The machine name remains `sentinel_connector`.
 
+## Upgrading
+
+No configuration or schema changes are needed between releases so far. After
+updating the module code:
+
+```bash
+drush cr
+drush sentinel_connector:sync
+```
+
+"Sync now" on the settings form works in place of the Drush command. Sites on
+`0.1.0` must upgrade to `0.2.0` or later for Sentinel to check contrib modules
+against Drupal.org; see [CHANGELOG.md](CHANGELOG.md).
+
 ## Requirements
 
 - Drupal `^10.3 || ^11`
@@ -79,11 +93,28 @@ Cron waits for the configured interval after each attempt, including failures.
 The settings page displays the last attempt separately from the last successful
 sync. A 202 queued result is accepted for processing and does not imply success.
 
-Payloads also report the configured `inventory_scope`, per-extension
-`reported_project` from Drupal packaging metadata, and `version_known`.
+Payloads also report the configured `inventory_scope`, the connector's own
+release as `connector_version`, per-extension `reported_project`, and
+`version_known`.
 Submodules retain their package project (for example, `webform_ui` reports
 `webform`); custom names are never guessed as Drupal.org projects. Core
-extensions report `drupal` and the installed core version. A missing version
+extensions report `drupal` and the installed core version.
+
+The project comes from the `project` key that Drupal.org packaging adds to
+`info.yml`. Modules installed from a git clone, a VCS Composer repository or a
+dev checkout have no such key, so the connector then looks for the installed
+`drupal/*` Composer package whose install path contains the module:
+
+| Module source | `module_type` | `reported_project` |
+| --- | --- | --- |
+| Drupal core | `core` | `drupal` |
+| `info.yml` has a valid `project` key | `contrib` | that project |
+| No `project` key, inside a `drupal/*` package | `contrib` | package short name, e.g. `admin_toolbar` |
+| Inside a `drupal/*` package with an unusable name | `contrib` | `null` (Sentinel shows "missing project") |
+| Anything else | `custom` | `null` |
+
+The root package, `drupal/core*` packages and `drupal-custom-*` package types
+are ignored, so site-specific code in a path repository stays `custom`. A missing version
 keeps the legacy `0.0.0` placeholder with `version_known: false`.
 Sentinel uses this site-scoped identity to assess the persisted inventory
 asynchronously. Inventory acceptance and upstream assessment are distinct;
