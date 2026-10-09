@@ -27,9 +27,9 @@ drush cr
 drush sentinel_connector:sync
 ```
 
-The next release after `0.2.0` has a database update: it removes the
-`cron_interval` setting. Sites that keep configuration in code must export
-configuration afterwards (`drush cex`), or the next import puts the unused key
+Release `0.3.0` has database updates: they remove the `cron_interval` and
+`site_token` settings. Sites that keep configuration in code must export
+configuration afterwards (`drush cex`), or the next import puts the unused keys
 back.
 
 "Sync now" on the settings form works in place of the Drush command. Sites on
