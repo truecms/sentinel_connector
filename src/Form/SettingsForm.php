@@ -9,6 +9,8 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\PushLimitFormatter;
+use Drupal\sentinel_connector\SyncService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -27,12 +29,18 @@ final class SettingsForm extends ConfigFormBase {
    *   The API key resolver.
    * @param \Drupal\Core\State\StateInterface $state
    *   The state store, used to persist the fallback API key.
+   * @param \Drupal\sentinel_connector\SyncService $syncService
+   *   The sync service, for the stored push-limit outcome.
+   * @param \Drupal\sentinel_connector\PushLimitFormatter $pushLimitFormatter
+   *   Formats the next allowed push time.
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
     TypedConfigManagerInterface $typedConfigManager,
     protected ApiKeyResolver $apiKeyResolver,
     protected StateInterface $state,
+    protected SyncService $syncService,
+    protected PushLimitFormatter $pushLimitFormatter,
   ) {
     parent::__construct($config_factory, $typedConfigManager);
   }
@@ -46,6 +54,8 @@ final class SettingsForm extends ConfigFormBase {
       $container->get('config.typed'),
       $container->get('Drupal\sentinel_connector\ApiKeyResolver'),
       $container->get('state'),
+      $container->get('Drupal\sentinel_connector\SyncService'),
+      $container->get('Drupal\sentinel_connector\PushLimitFormatter'),
     );
   }
 
@@ -129,8 +139,8 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'number',
       '#title' => $this->t('Minimum seconds between cron syncs'),
       '#min' => 900,
-      '#default_value' => $config->get('cron_interval') ?: 21600,
-      '#description' => $this->t('Sentinel rate-limits to 100 requests/hour per site.'),
+      '#default_value' => $config->get('cron_interval') ?: SyncService::DEFAULT_CRON_INTERVAL,
+      '#description' => $this->t('The default of 86400 seconds is once a day, which fits the Free plan. Paid plans accept a push once an hour. Sentinel refuses a push that is sent too soon.'),
     ];
 
     // API key status (never echo the key).
@@ -164,6 +174,19 @@ final class SettingsForm extends ConfigFormBase {
         '@message' => $this->state->get('sentinel_connector.last_message', ''),
       ]),
     ];
+
+    // A stored push limit: no push is sent before this time.
+    $pushLimit = $this->syncService->deferredResult();
+    if ($pushLimit !== NULL && $pushLimit->nextAllowedAt !== NULL) {
+      $form['push_limit_status'] = [
+        '#type' => 'item',
+        '#title' => $this->t('Push limit'),
+        '#markup' => $this->t('@message Next push accepted after @time. Cron and "Sync now" send nothing before then.', [
+          '@message' => $pushLimit->message,
+          '@time' => $this->pushLimitFormatter->formatTime($pushLimit->nextAllowedAt),
+        ]),
+      ];
+    }
 
     $form['sync_now'] = [
       '#type' => 'link',

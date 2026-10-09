@@ -19,6 +19,10 @@ services:
     class: Drupal\sentinel_connector\SentinelClient
     arguments: ['@http_client', '@logger.channel.sentinel_connector']
 
+  Drupal\sentinel_connector\PushLimitFormatter:
+    class: Drupal\sentinel_connector\PushLimitFormatter
+    arguments: ['@date.formatter', '@config.factory', '@string_translation']
+
   Drupal\sentinel_connector\SyncService:
     class: Drupal\sentinel_connector\SyncService
     arguments:

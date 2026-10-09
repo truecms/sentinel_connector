@@ -3,6 +3,22 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Sentinel's plan push limit (HTTP 429 with `error_code: push_limit_reached`)
+  is recognised as an expected outcome. "Sync now" and the Drush command show
+  a warning with Sentinel's message and the next allowed time in the site's
+  time zone; cron stays silent. Every rejection is logged at notice level.
+- The next allowed time is stored in state. Nothing is sent before it, and the
+  settings form shows it.
+
+### Changed
+
+- New installs push once a day (`cron_interval: 86400`, was 21600). Existing
+  installs keep their saved interval; no update hook changes it.
+
 ## 0.2.0 - 2026-10-07
 
 ### Added

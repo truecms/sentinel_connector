@@ -11,6 +11,16 @@ use Psr\Log\LoggerInterface;
  */
 class SentinelClient {
 
+  /**
+   * The error code Sentinel sends when a plan's push limit is reached.
+   */
+  public const PUSH_LIMIT_ERROR_CODE = 'push_limit_reached';
+
+  /**
+   * Message used when a push-limit response carries no usable message.
+   */
+  public const PUSH_LIMIT_FALLBACK_MESSAGE = 'The push limit for this site has been reached.';
+
   public function __construct(
     protected ClientInterface $httpClient,
     protected LoggerInterface $logger,
@@ -60,6 +70,10 @@ class SentinelClient {
     $body = (string) $response->getBody();
     // A rate-limit response does not need a JSON body.
     if ($code === 429) {
+      $pushLimit = $this->pushLimit($body, $response->getHeaderLine('Retry-After'));
+      if ($pushLimit !== NULL) {
+        return $pushLimit;
+      }
       $retry = $response->getHeaderLine('Retry-After');
       $message = 'Rate limit exceeded (100/hour).';
       if (ctype_digit($retry)) {
@@ -103,6 +117,84 @@ class SentinelClient {
     $detail = $this->detail($decoded['detail'] ?? NULL, 'Sentinel rejected the sync.');
     $this->logger->error('Sentinel sync rejected with HTTP @code.', ['@code' => $code]);
     return SyncResult::failure('rejected', $code, $detail);
+  }
+
+  /**
+   * Maps a plan push-limit response to a typed result.
+   *
+   * Only a JSON body carrying the push-limit error code counts. Every other
+   * field is optional: a missing or malformed value falls back to the
+   * Retry-After header and a generic message.
+   *
+   * @param string $body
+   *   The raw response body.
+   * @param string $retryAfter
+   *   The Retry-After header value, or an empty string.
+   *
+   * @return \Drupal\sentinel_connector\SyncResult|null
+   *   The push-limit result, or NULL when this is another kind of 429.
+   */
+  protected function pushLimit(string $body, string $retryAfter): ?SyncResult {
+    $decoded = json_decode($body, TRUE);
+    if (!is_array($decoded)) {
+      return NULL;
+    }
+    // FastAPI nests the body of a raised HTTP error under "detail".
+    $data = isset($decoded['error_code']) || !is_array($decoded['detail'] ?? NULL) ? $decoded : $decoded['detail'];
+    if (($data['error_code'] ?? NULL) !== self::PUSH_LIMIT_ERROR_CODE) {
+      return NULL;
+    }
+
+    $message = self::PUSH_LIMIT_FALLBACK_MESSAGE;
+    if (is_string($data['message'] ?? NULL)) {
+      // Server text is shown to administrators: keep it one bounded line.
+      $clean = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $data['message']));
+      if ($clean !== '') {
+        $message = mb_substr($clean, 0, 500);
+      }
+    }
+
+    $nextAllowedAt = $this->timestamp($data['next_allowed_at'] ?? NULL);
+    $seconds = $data['retry_after_seconds'] ?? NULL;
+    $seconds = is_int($seconds) && $seconds > 0 ? $seconds : NULL;
+    $retryAfter = trim($retryAfter);
+    if ($seconds === NULL && ctype_digit($retryAfter) && strlen($retryAfter) <= 9 && (int) $retryAfter > 0) {
+      $seconds = (int) $retryAfter;
+    }
+    if ($nextAllowedAt === NULL && $retryAfter !== '' && !ctype_digit($retryAfter)) {
+      // Retry-After may also be an HTTP date.
+      $date = strtotime($retryAfter);
+      $nextAllowedAt = $date !== FALSE && $date > 0 ? $date : NULL;
+    }
+
+    $plan = $data['plan'] ?? NULL;
+    $plan = is_string($plan) && preg_match('/^[a-zA-Z0-9_\-]{1,32}$/', $plan) ? $plan : NULL;
+    $limit = $data['limit'] ?? NULL;
+    $limit = is_int($limit) && $limit > 0 ? $limit : NULL;
+
+    return SyncResult::pushLimited($message, $nextAllowedAt, $seconds, $plan, $limit);
+  }
+
+  /**
+   * Parses an ISO 8601 date-time into a Unix timestamp.
+   *
+   * @param mixed $value
+   *   The value from the response body. A value without an offset is UTC.
+   *
+   * @return int|null
+   *   The timestamp, or NULL when the value is not a usable date-time.
+   */
+  protected function timestamp(mixed $value): ?int {
+    if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+\-]\d{2}:?\d{2})?$/', $value)) {
+      return NULL;
+    }
+    try {
+      $timestamp = (new \DateTimeImmutable($value, new \DateTimeZone('UTC')))->getTimestamp();
+    }
+    catch (\Exception) {
+      return NULL;
+    }
+    return $timestamp > 0 ? $timestamp : NULL;
   }
 
   /**

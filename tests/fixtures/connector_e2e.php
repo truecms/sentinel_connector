@@ -28,7 +28,16 @@ $fields = [
 $config = \Drupal::configFactory()->getEditable('sentinel_connector.settings');
 $original = $config->getRawData();
 $state = \Drupal::state();
-$stateKeys = ['api_key', 'last_sync_time', 'last_attempt_time', 'last_result', 'last_message', 'last_task_id'];
+$stateKeys = [
+  'api_key',
+  'last_sync_time',
+  'last_attempt_time',
+  'last_result',
+  'last_message',
+  'last_task_id',
+  'next_allowed_at',
+  'push_limit_message',
+];
 $originalState = [];
 foreach ($stateKeys as $key) {
   $originalState[$key] = $state->get('sentinel_connector.' . $key);

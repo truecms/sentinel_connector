@@ -54,7 +54,7 @@ Admin UI: **Configuration → Web services → Sentinel Connector**
 | Site UUID | The registered site's UUID (must match Sentinel) |
 | Site URL | Must match the URL registered in Sentinel |
 | Report scope | `all` (default), `contrib_custom`, or `contrib` |
-| Cron interval | Minimum seconds between cron syncs (default 6h) |
+| Cron interval | Minimum seconds between cron syncs (default 86400, once a day) |
 
 ### API key (secret — never stored in exported config)
 
@@ -72,9 +72,37 @@ Resolved in this order:
 
 ## Triggering a sync
 
-- **Cron** — automatic, throttled to the configured interval (under Sentinel's 100/hour cap).
+- **Cron** — automatic, throttled to the configured interval and to the push limit of the site's plan.
 - **Drush** — `drush sentinel_connector:sync` (alias `sc-sync`).
 - **Admin button** — "Sync now" on the settings form (requires the *Trigger Sentinel sync* permission).
+
+## Push limits
+
+Sentinel limits how often a site may push, by plan: once in 24 hours on Free
+and once an hour on paid plans. A push sent too soon is answered with HTTP 429
+and `error_code: push_limit_reached`. The connector treats this as an expected
+outcome, not as a connection or authentication failure:
+
+- **Sync now** and `drush sentinel_connector:sync` show a warning with
+  Sentinel's message and the time the next push is accepted, in the site's
+  default time zone. The Drush command still exits with 0.
+- **Cron** shows nothing.
+- Every rejection is logged at notice level on the `sentinel_connector`
+  channel with the plan, the limit and the next allowed time.
+- The next allowed time is kept in state (`sentinel_connector.next_allowed_at`).
+  Until it passes nothing is sent: cron skips, and a manual push shows the
+  stored message without contacting Sentinel. Cron pushes on its first run
+  after that time. The settings form shows the time under **Push limit**.
+- A single response can hold pushes back for at most 7 days. To clear a stored
+  limit by hand: `drush state:delete sentinel_connector.next_allowed_at`.
+
+When the response has the error code but no usable message or time, the
+connector uses a generic message and the `Retry-After` header. A 429 without
+the error code is reported as `rate_limited`, as before.
+
+New installs push once a day (`cron_interval: 86400`), which fits the Free
+plan. Existing installs keep their saved interval; sites on a paid plan can
+lower it to 3600 on the settings form.
 
 ## Permissions
 

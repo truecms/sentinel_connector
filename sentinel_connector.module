@@ -8,8 +8,9 @@
 /**
  * Implements hook_cron().
  *
- * Runs a throttled sync respecting the configured interval and Sentinel's
- * 100-requests/hour rate limit.
+ * Runs a throttled sync respecting the configured interval and the push limit
+ * of the site's Sentinel plan. A push refused or held back by that limit is
+ * logged by the sync service and shows no message.
  */
 function sentinel_connector_cron(): void {
   try {

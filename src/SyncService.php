@@ -13,6 +13,29 @@ use Psr\Log\LoggerInterface;
 class SyncService {
 
   /**
+   * Default minimum seconds between cron pushes: once a day.
+   */
+  public const DEFAULT_CRON_INTERVAL = 86400;
+
+  /**
+   * Longest time a single push-limit response may hold back pushes.
+   *
+   * Sentinel's longest window is a day. The cap stops one bad response from
+   * silencing the connector for good.
+   */
+  public const MAX_PUSH_DEFERRAL = 604800;
+
+  /**
+   * State key: Unix timestamp after which Sentinel accepts the next push.
+   */
+  public const STATE_NEXT_ALLOWED_AT = 'sentinel_connector.next_allowed_at';
+
+  /**
+   * State key: the message Sentinel sent with the last push-limit response.
+   */
+  public const STATE_PUSH_LIMIT_MESSAGE = 'sentinel_connector.push_limit_message';
+
+  /**
    * Constructs the sync service.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -42,10 +65,27 @@ class SyncService {
 
   /**
    * Run a sync now. Returns a SyncResult describing the outcome.
+   *
+   * While a stored push limit is in force, Sentinel is not contacted and the
+   * stored outcome is returned instead.
    */
   public function sync(): SyncResult {
     try {
+      $deferred = $this->deferredResult();
+    }
+    catch (\Throwable $e) {
+      $this->logFailure($e);
+      $deferred = NULL;
+    }
+    if ($deferred !== NULL) {
+      return $deferred;
+    }
+    try {
       $result = $this->performSync();
+      if ($result->isPushLimited()) {
+        $result = $this->resolvePushLimit($result);
+        $this->logPushLimit($result);
+      }
     }
     catch (\Throwable $e) {
       $this->logFailure($e);
@@ -87,14 +127,89 @@ class SyncService {
   }
 
   /**
-   * Whether cron is due to run a sync, per configured interval.
+   * The time after which Sentinel accepts the next push, when one is stored.
+   *
+   * @return int|null
+   *   A Unix timestamp, or NULL when no push limit is stored.
+   */
+  public function getNextAllowedAt(): ?int {
+    $next = (int) $this->state->get(self::STATE_NEXT_ALLOWED_AT, 0);
+    return $next > 0 ? $next : NULL;
+  }
+
+  /**
+   * The stored push-limit outcome, while Sentinel still refuses pushes.
+   *
+   * @return \Drupal\sentinel_connector\SyncResult|null
+   *   The stored outcome, or NULL when a push may be sent.
+   */
+  public function deferredResult(): ?SyncResult {
+    $next = $this->getNextAllowedAt();
+    if ($next === NULL || $this->time->getCurrentTime() >= $next) {
+      return NULL;
+    }
+    $message = $this->state->get(self::STATE_PUSH_LIMIT_MESSAGE);
+    return SyncResult::pushDeferred(
+      is_string($message) && $message !== '' ? $message : SentinelClient::PUSH_LIMIT_FALLBACK_MESSAGE,
+      $next,
+    );
+  }
+
+  /**
+   * Works out when the next push is allowed, on this site's clock.
+   *
+   * The server's absolute time is used when it lies in the future. Otherwise
+   * the relative wait is added to the current time, which also covers a clock
+   * that differs from Sentinel's. The result never exceeds the deferral cap.
+   */
+  protected function resolvePushLimit(SyncResult $result): SyncResult {
+    $now = $this->time->getCurrentTime();
+    $next = NULL;
+    if ($result->nextAllowedAt !== NULL && $result->nextAllowedAt > $now) {
+      $next = $result->nextAllowedAt;
+    }
+    elseif ($result->retryAfterSeconds !== NULL && $result->retryAfterSeconds > 0) {
+      $next = $now + $result->retryAfterSeconds;
+    }
+    if ($next !== NULL) {
+      $next = min($next, $now + self::MAX_PUSH_DEFERRAL);
+    }
+    return $result->withNextAllowedAt($next);
+  }
+
+  /**
+   * Logs a push-limit rejection. It is expected, so it is a notice.
+   */
+  protected function logPushLimit(SyncResult $result): void {
+    try {
+      $this->logger->notice('Sentinel push limit reached: plan @plan, limit @limit, next push allowed at @next.', [
+        '@plan' => $result->plan ?? 'unknown',
+        '@limit' => $result->limit ?? 'unknown',
+        '@next' => $result->nextAllowedAt !== NULL ? gmdate('Y-m-d\TH:i:s\Z', $result->nextAllowedAt) : 'unknown',
+      ]);
+    }
+    catch (\Throwable) {
+      // Broken log storage must not turn an expected outcome into a failure.
+    }
+  }
+
+  /**
+   * Whether cron is due to run a sync.
+   *
+   * A stored push limit decides on its own: nothing is sent before the time
+   * Sentinel gave, and a push is due as soon as that time has passed. Without
+   * one, the configured interval applies.
    */
   public function cronIsDue(int $now): bool {
     $config = $this->configFactory->get('sentinel_connector.settings');
     if (!$config->get('enabled')) {
       return FALSE;
     }
-    $interval = (int) ($config->get('cron_interval') ?: 21600);
+    $next = $this->getNextAllowedAt();
+    if ($next !== NULL) {
+      return $now >= $next;
+    }
+    $interval = (int) ($config->get('cron_interval') ?: self::DEFAULT_CRON_INTERVAL);
     $last = (int) $this->state->get('sentinel_connector.last_attempt_time',
       $this->state->get('sentinel_connector.last_sync_time', 0));
     return ($now - $last) >= $interval;
@@ -111,6 +226,14 @@ class SyncService {
     $this->state->set('sentinel_connector.last_result', $result->status);
     $this->state->set('sentinel_connector.last_message', $result->message);
     $this->state->set('sentinel_connector.last_task_id', $result->taskId);
+    if ($result->isPushLimited() && $result->nextAllowedAt !== NULL) {
+      $this->state->set(self::STATE_NEXT_ALLOWED_AT, $result->nextAllowedAt);
+      $this->state->set(self::STATE_PUSH_LIMIT_MESSAGE, $result->message);
+    }
+    else {
+      // Any other outcome means the stored limit no longer applies.
+      $this->state->deleteMultiple([self::STATE_NEXT_ALLOWED_AT, self::STATE_PUSH_LIMIT_MESSAGE]);
+    }
   }
 
   /**
