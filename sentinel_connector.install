@@ -48,3 +48,16 @@ function sentinel_connector_update_10001(): string {
 
   return (string) t('Removed the Sentinel Connector push interval setting. Cron now sends at most one push an hour.');
 }
+
+/**
+ * Remove the unused site token setting.
+ */
+function sentinel_connector_update_10002(): string {
+  // Sentinel authenticates with the API key only; the key is left untouched.
+  $config = \Drupal::configFactory()->getEditable('sentinel_connector.settings');
+  if ($config->get('site_token') !== NULL) {
+    $config->clear('site_token')->save();
+  }
+
+  return (string) t('Removed the unused Sentinel Connector site token setting. The API key is unchanged.');
+}

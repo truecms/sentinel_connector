@@ -29,7 +29,7 @@ final class SettingsForm extends ConfigFormBase {
    * @param \Drupal\sentinel_connector\ApiKeyResolver $apiKeyResolver
    *   The API key resolver.
    * @param \Drupal\Core\State\StateInterface $state
-   *   The state store, used to persist the fallback API key.
+   *   The state store, used to persist the API key entered on the form.
    * @param \Drupal\sentinel_connector\SyncService $syncService
    *   The sync service, for the stored push-limit outcome.
    * @param \Drupal\sentinel_connector\PushLimitFormatter $pushLimitFormatter
@@ -121,12 +121,6 @@ final class SettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('site_name'),
       '#required' => TRUE,
     ];
-    $form['site_token'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Site token (deprecated)'),
-      '#default_value' => $config->get('site_token'),
-      '#description' => $this->t('Legacy setting retained for configuration compatibility. It is no longer sent; authentication uses the API key.'),
-    ];
     $form['report_scope'] = [
       '#type' => 'select',
       '#title' => $this->t('Report scope'),
@@ -137,22 +131,38 @@ final class SettingsForm extends ConfigFormBase {
       ],
       '#default_value' => $config->get('report_scope') ?: 'all',
     ];
-    // API key status (never echo the key).
+    // API key status: the source is shown, the key never is.
     $source = $this->apiKeyResolver->getSource();
     $form['api_key_status'] = [
       '#type' => 'item',
-      '#title' => $this->t('API key'),
-      '#markup' => $source
-        ? $this->t('Configured (source: @s).', ['@s' => $source])
-        : $this->t('Not configured. Set @env, $settings[@settings], or the state value below.', [
-          '@env' => ApiKeyResolver::ENV_VAR,
+      '#title' => $this->t('API key status'),
+      '#markup' => match ($source) {
+        'settings.php' => $this->t('Configured in settings.php. This key is used ahead of the environment variable and any key saved on this form.'),
+        'environment' => $this->t('Configured in the @env environment variable. This key is used ahead of any key saved on this form.', ['@env' => ApiKeyResolver::ENV_VAR]),
+        'state' => $this->t('Configured. The key was saved on this form.'),
+        default => $this->t('Not configured. Enter the API key below, or set $settings[@settings] in settings.php or the @env environment variable.', [
           '@settings' => "'" . ApiKeyResolver::SETTINGS_KEY . "'",
+          '@env' => ApiKeyResolver::ENV_VAR,
         ]),
+      },
     ];
+    // Never given a default value, so a saved key is not sent to the browser.
+    // A key saved here is not used while settings.php or the environment
+    // supplies one, so the field must not claim to replace the active key.
+    $external = $source === 'settings.php' || $source === 'environment';
     $form['api_key_state'] = [
       '#type' => 'password',
-      '#title' => $this->t('Set API key in state (fallback)'),
-      '#description' => $this->t('Leave blank to keep the current value. Prefer settings.php or the environment variable for production.'),
+      '#title' => match (TRUE) {
+        $external => $this->t('API key saved on this form (not in use)'),
+        $source === 'state' => $this->t('Replace API key'),
+        default => $this->t('API key'),
+      },
+      '#description' => $external
+        ? $this->t('Sync requests use the key from @source, not a key saved here. To change or rotate the active key, change it in @source. A key entered here is saved in the database and used only if that key is removed. Leave blank to keep the saved value.', [
+          '@source' => $source === 'settings.php' ? 'settings.php' : ApiKeyResolver::ENV_VAR,
+        ])
+        : $this->t('The key from the site dashboard in Sentinel. It authenticates every sync request and is the only credential needed. Leave blank to keep the current key. The key is saved in the database, not in exported configuration; for production prefer settings.php or the environment variable.'),
+      '#attributes' => ['autocomplete' => 'off'],
     ];
 
     // Queue acceptance and failed attempts are not successful synchronisations.
@@ -229,7 +239,6 @@ final class SettingsForm extends ConfigFormBase {
       ->set('site_uuid', (string) $form_state->getValue('site_uuid'))
       ->set('site_url', (string) $form_state->getValue('site_url'))
       ->set('site_name', (string) $form_state->getValue('site_name'))
-      ->set('site_token', (string) $form_state->getValue('site_token'))
       ->set('report_scope', (string) $form_state->getValue('report_scope'))
       ->save();
 

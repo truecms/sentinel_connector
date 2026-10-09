@@ -74,6 +74,12 @@ Resolved in this order:
 2. Environment variable `SENTINEL_CONNECTOR_API_KEY` (host-set, never in code)
 3. Drupal state (set via the settings form), for simple setups
 
+The API key is the only credential. There is no site token: paste the key from
+the Sentinel dashboard into **API key** on the settings form, or set it in one
+of the first two places. The form never shows a saved key; it shows where the
+active key comes from, and a blank field keeps the current key. Drupal state is
+not encrypted.
+
 ## Triggering a sync
 
 - **Cron** — automatic when enabled on the settings form. At most one push an hour, whatever the cron frequency; see [Push frequency](#push-frequency).

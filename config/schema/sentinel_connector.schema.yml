@@ -14,9 +14,6 @@ sentinel_connector.settings:
     site_name:
       type: string
       label: 'Site name'
-    site_token:
-      type: string
-      label: 'Site token'
     report_scope:
       type: string
       label: 'Report scope'
