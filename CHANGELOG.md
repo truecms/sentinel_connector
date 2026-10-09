@@ -26,15 +26,24 @@ All notable changes to this project are documented here. Versions follow
 
 - Cron sends at most one push an hour, fixed in code. A manual push is not
   bound by this floor.
+- The API key field on the settings form is labelled **API key** (or **Replace
+  API key** once one is set) and says which credential it is. The status line
+  names the active source and says when `settings.php` or the environment
+  variable takes precedence over the key saved on the form. A saved key is
+  never sent back to the browser.
 
 ### Removed
 
 - The `cron_interval` setting. Update `10001` deletes the stored value.
+- The **Site token** field and the `site_token` setting. Sentinel ignores the
+  token; the API key is the only credential. Update `10002` deletes the stored
+  value and leaves the API key unchanged.
 
 ### Upgrade notes
 
 - Run `drush updb`. Sites that keep configuration in code must export it
-  afterwards, or the next import puts the unused `cron_interval` key back.
+  afterwards, or the next import puts the unused `cron_interval` and `site_token` keys
+  back.
 - Sites that pushed less often than hourly now push hourly from cron. Sentinel
   refuses what the plan does not allow, and the module then waits.
 

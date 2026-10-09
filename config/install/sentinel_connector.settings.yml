@@ -2,6 +2,5 @@ api_base_url: ''
 site_uuid: ''
 site_url: ''
 site_name: ''
-site_token: ''
 report_scope: all
 enabled: false

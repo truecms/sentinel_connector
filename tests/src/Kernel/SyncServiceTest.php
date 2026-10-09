@@ -43,7 +43,6 @@ class SyncServiceTest extends KernelTestBase {
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
       ->set('site_url', 'https://example.com')
       ->set('site_name', 'Example')
-      ->set('site_token', 'tok')
       ->set('report_scope', 'all')
       ->set('enabled', TRUE)
       ->save();
