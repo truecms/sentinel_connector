@@ -147,10 +147,21 @@ final class SettingsForm extends ConfigFormBase {
       },
     ];
     // Never given a default value, so a saved key is not sent to the browser.
+    // A key saved here is not used while settings.php or the environment
+    // supplies one, so the field must not claim to replace the active key.
+    $external = $source === 'settings.php' || $source === 'environment';
     $form['api_key_state'] = [
       '#type' => 'password',
-      '#title' => $source === NULL ? $this->t('API key') : $this->t('Replace API key'),
-      '#description' => $this->t('The key from the site dashboard in Sentinel. It authenticates every sync request and is the only credential needed. Leave blank to keep the current key. The key is saved in the database, not in exported configuration; for production prefer settings.php or the environment variable.'),
+      '#title' => match (TRUE) {
+        $external => $this->t('API key saved on this form (not in use)'),
+        $source === 'state' => $this->t('Replace API key'),
+        default => $this->t('API key'),
+      },
+      '#description' => $external
+        ? $this->t('Sync requests use the key from @source, not a key saved here. To change or rotate the active key, change it in @source. A key entered here is saved in the database and used only if that key is removed. Leave blank to keep the saved value.', [
+          '@source' => $source === 'settings.php' ? 'settings.php' : ApiKeyResolver::ENV_VAR,
+        ])
+        : $this->t('The key from the site dashboard in Sentinel. It authenticates every sync request and is the only credential needed. Leave blank to keep the current key. The key is saved in the database, not in exported configuration; for production prefer settings.php or the environment variable.'),
       '#attributes' => ['autocomplete' => 'off'],
     ];
 

@@ -94,6 +94,11 @@ class SettingsFormTest extends KernelTestBase {
     $status = (string) $form['api_key_status']['#markup'];
     $this->assertStringContainsString($expected, $status);
     $this->assertStringContainsString('used ahead of', $status);
+    // A key saved here would not be the active one, and the field says so.
+    $this->assertStringContainsString('not in use', (string) $form['api_key_state']['#title']);
+    $description = (string) $form['api_key_state']['#description'];
+    $this->assertStringContainsString($expected, $description);
+    $this->assertStringNotContainsString('authenticates every sync request', $description);
     $text = serialize($this->plain($form));
     foreach ([self::SAVED_KEY, 'sk_settings_abcdef', 'sk_env_abcdef'] as $secret) {
       $this->assertStringNotContainsString($secret, $text);

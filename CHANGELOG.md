@@ -29,8 +29,9 @@ All notable changes to this project are documented here. Versions follow
 - The API key field on the settings form is labelled **API key** (or **Replace
   API key** once one is set) and says which credential it is. The status line
   names the active source and says when `settings.php` or the environment
-  variable takes precedence over the key saved on the form. A saved key is
-  never sent back to the browser.
+  variable takes precedence over the key saved on the form; the field then
+  says a key saved there is not in use. A saved key is never sent back to the
+  browser.
 
 ### Removed
 
