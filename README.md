@@ -19,13 +19,18 @@ Drupal's Extend page. The machine name remains `sentinel_connector`.
 
 ## Upgrading
 
-No configuration or schema changes are needed between releases so far. After
-updating the module code:
+After updating the module code:
 
 ```bash
+drush updb
 drush cr
 drush sentinel_connector:sync
 ```
+
+The next release after `0.2.0` has a database update: it removes the
+`cron_interval` setting. Sites that keep configuration in code must export
+configuration afterwards (`drush cex`), or the next import puts the unused key
+back.
 
 "Sync now" on the settings form works in place of the Drush command. Sites on
 `0.1.0` must upgrade to `0.2.0` or later for Sentinel to check contrib modules
@@ -54,7 +59,6 @@ Admin UI: **Configuration → Web services → Sentinel Connector**
 | Site UUID | The registered site's UUID (must match Sentinel) |
 | Site URL | Must match the URL registered in Sentinel |
 | Report scope | `all` (default), `contrib_custom`, or `contrib` |
-| Cron interval | Minimum seconds between cron syncs (default 6h) |
 
 ### API key (secret — never stored in exported config)
 
@@ -72,9 +76,84 @@ Resolved in this order:
 
 ## Triggering a sync
 
-- **Cron** — automatic, throttled to the configured interval (under Sentinel's 100/hour cap).
+- **Cron** — automatic when enabled on the settings form. At most one push an hour, whatever the cron frequency; see [Push frequency](#push-frequency).
 - **Drush** — `drush sentinel_connector:sync` (alias `sc-sync`).
 - **Admin button** — "Sync now" on the settings form (requires the *Trigger Sentinel sync* permission).
+
+## Push frequency
+
+There is no interval setting. The module pushes on cron and sends at most one
+push an hour, counted from the last attempt whatever its outcome. This floor is
+fixed in code. How often a push is accepted is decided by Sentinel, by plan.
+
+"Sync now" and the Drush command are not bound by the hourly floor: Sentinel
+enforces the real limit and answers with a clear message. They are still held
+by a stored plan limit (below).
+
+## Push limits
+
+Sentinel limits how often a site may push, by plan: once in 24 hours on Free
+and once an hour on paid plans. A push sent too soon is answered with HTTP 429
+and `error_code: push_limit_reached`. The connector treats this as an expected
+outcome, not as a connection or authentication failure:
+
+- **Sync now** and `drush sentinel_connector:sync` show a warning with
+  Sentinel's message and the time the next push is accepted, in the site's
+  default time zone. The Drush command still exits with 0.
+- **Cron** shows nothing.
+- Every rejection is logged at notice level on the `sentinel_connector`
+  channel with the plan, the limit and the next allowed time.
+- The next allowed time is kept in state (`sentinel_connector.next_allowed_at`).
+  Until it passes nothing is sent: cron skips, and a manual push shows the
+  stored message without contacting Sentinel. Cron pushes on its first run
+  after that time, once the hourly floor has also passed. The settings form
+  shows the time under **Push limit**.
+- A single response can hold pushes back for at most 7 days. To clear a stored
+  limit by hand: `drush state:delete sentinel_connector.next_allowed_at`.
+
+When the response has the error code but no usable message or time, the
+connector uses a generic message and the `Retry-After` header. A 429 without
+the error code is reported as `rate_limited`, as before.
+
+A site on the Free plan therefore sends one refused push a day: the push an
+hour after the accepted one tells the module when the next is allowed, and
+nothing is sent until then.
+
+## Inactive subscription
+
+Sentinel refuses every push while the organisation's subscription is overdue,
+unpaid or paused: HTTP 402 with `error_code: subscription_inactive` and a
+`reason` of `past_due`, `unpaid` or `paused`.
+
+- **Sync now** shows an error with Sentinel's message, or a text for the
+  reason when there is none. `drush sentinel_connector:sync` fails with the
+  same text and a non-zero exit code.
+- **Cron** shows nothing, logs a warning with the reason on the
+  `sentinel_connector` channel, and then tries at most once in 24 hours until
+  a push is accepted.
+- A manual push is never held back, so it can be retried straight after
+  billing is fixed. Any accepted push ends the hold.
+- The settings form shows the reason under **Subscription**.
+
+A 402 without that error code is reported as `rejected`, as before.
+
+## Status report
+
+**Reports → Status report** (`/admin/reports/status`) has a *Sentinel
+Connector* entry:
+
+| State | Severity |
+| --- | --- |
+| API base URL, site UUID or API key missing | Error, with a link to the settings form |
+| Last push refused over an inactive subscription | Error, with the reason |
+| No push accepted in the last 24 hours | Error, with the last attempt, its result and its time |
+| Configured less than 24 hours ago, no push accepted yet | Warning |
+| Next push held by the plan limit, last accepted push under 24 hours old | Information, with the next allowed time |
+| Last accepted push under 24 hours old | OK, with its time |
+
+"Accepted" means Sentinel answered 200 or 202. A plan limit that ended less
+than 6 hours ago also shows as information, so that a Free site does not
+report an error between the end of its daily limit and the next cron run.
 
 ## Permissions
 
@@ -89,7 +168,7 @@ composer install
 ```
 
 Connection failures return an actionable transport error and record the last attempt when Drupal state storage is available. Other payload/configuration errors return an internal error; cron catches remaining failures and attempts to record and log them without exposing request secrets. Storage failures may prevent persistence and return a state error.
-Cron waits for the configured interval after each attempt, including failures.
+Cron waits an hour after each attempt, including failures.
 The settings page displays the last attempt separately from the last successful
 sync. A 202 queued result is accepted for processing and does not imply success.
 

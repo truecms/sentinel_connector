@@ -9,6 +9,9 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\PushLimitFormatter;
+use Drupal\sentinel_connector\SyncResult;
+use Drupal\sentinel_connector\SyncService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -27,12 +30,18 @@ final class SettingsForm extends ConfigFormBase {
    *   The API key resolver.
    * @param \Drupal\Core\State\StateInterface $state
    *   The state store, used to persist the fallback API key.
+   * @param \Drupal\sentinel_connector\SyncService $syncService
+   *   The sync service, for the stored push-limit outcome.
+   * @param \Drupal\sentinel_connector\PushLimitFormatter $pushLimitFormatter
+   *   Builds the text for a refused push.
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
     TypedConfigManagerInterface $typedConfigManager,
     protected ApiKeyResolver $apiKeyResolver,
     protected StateInterface $state,
+    protected SyncService $syncService,
+    protected PushLimitFormatter $pushLimitFormatter,
   ) {
     parent::__construct($config_factory, $typedConfigManager);
   }
@@ -46,6 +55,8 @@ final class SettingsForm extends ConfigFormBase {
       $container->get('config.typed'),
       $container->get('Drupal\sentinel_connector\ApiKeyResolver'),
       $container->get('state'),
+      $container->get('Drupal\sentinel_connector\SyncService'),
+      $container->get('Drupal\sentinel_connector\PushLimitFormatter'),
     );
   }
 
@@ -83,6 +94,7 @@ final class SettingsForm extends ConfigFormBase {
     $form['enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable automatic sync on cron'),
+      '#description' => $this->t('Cron sends at most one push an hour. How often Sentinel accepts a push depends on the plan.'),
       '#default_value' => $config->get('enabled'),
     ];
     $form['api_base_url'] = [
@@ -125,14 +137,6 @@ final class SettingsForm extends ConfigFormBase {
       ],
       '#default_value' => $config->get('report_scope') ?: 'all',
     ];
-    $form['cron_interval'] = [
-      '#type' => 'number',
-      '#title' => $this->t('Minimum seconds between cron syncs'),
-      '#min' => 900,
-      '#default_value' => $config->get('cron_interval') ?: 21600,
-      '#description' => $this->t('Sentinel rate-limits to 100 requests/hour per site.'),
-    ];
-
     // API key status (never echo the key).
     $source = $this->apiKeyResolver->getSource();
     $form['api_key_status'] = [
@@ -165,6 +169,40 @@ final class SettingsForm extends ConfigFormBase {
       ]),
     ];
 
+    // A stored push limit: no push is sent before this time.
+    $pushLimit = $this->syncService->deferredResult();
+    if ($pushLimit !== NULL && $pushLimit->nextAllowedAt !== NULL) {
+      $form['push_limit_status'] = [
+        '#type' => 'item',
+        '#title' => $this->t('Push limit'),
+        '#markup' => $this->t('@message Next push accepted after @time. Cron and "Sync now" send nothing before then.', [
+          '@message' => $pushLimit->message,
+          '@time' => $this->pushLimitFormatter->formatTime($pushLimit->nextAllowedAt),
+        ]),
+      ];
+    }
+
+    // The last push was refused over billing: say why in plain words.
+    if ($this->state->get('sentinel_connector.last_result') === SyncResult::SUBSCRIPTION_INACTIVE) {
+      $reason = $this->state->get(SyncService::STATE_SUBSCRIPTION_REASON);
+      $reason = is_string($reason) && $reason !== '' ? $reason : NULL;
+      $message = $this->state->get('sentinel_connector.last_message', '');
+      $hold = $this->syncService->getSubscriptionHoldUntil();
+      $arguments = [
+        '@reason' => $this->pushLimitFormatter->subscriptionReasonLabel($reason),
+        '@message' => $this->pushLimitFormatter->subscriptionError($reason, is_string($message) ? $message : ''),
+      ];
+      $form['subscription_status'] = [
+        '#type' => 'item',
+        '#title' => $this->t('Subscription'),
+        '#markup' => $hold === NULL
+          ? $this->t('Subscription @reason. @message', $arguments)
+          : $this->t('Subscription @reason. @message Cron will try again after @time. "Sync now" is not held back.', $arguments + [
+            '@time' => $this->pushLimitFormatter->formatTime($hold),
+          ]),
+      ];
+    }
+
     $form['sync_now'] = [
       '#type' => 'link',
       '#title' => $this->t('Sync now'),
@@ -193,13 +231,14 @@ final class SettingsForm extends ConfigFormBase {
       ->set('site_name', (string) $form_state->getValue('site_name'))
       ->set('site_token', (string) $form_state->getValue('site_token'))
       ->set('report_scope', (string) $form_state->getValue('report_scope'))
-      ->set('cron_interval', (int) $form_state->getValue('cron_interval'))
       ->save();
 
     $key = (string) $form_state->getValue('api_key_state');
     if ($key !== '') {
       $this->state->set('sentinel_connector.api_key', $key);
     }
+    // The status report allows a newly configured site a day to push.
+    $this->syncService->markConfigured();
 
     parent::submitForm($form, $form_state);
   }
