@@ -77,10 +77,58 @@ class PushLimitTest extends KernelTestBase {
   }
 
   /**
-   * New installs push once a day.
+   * There is no interval setting, and frequent cron pushes once an hour.
    */
-  public function testDefaultCronIntervalIsDaily(): void {
-    $this->assertSame(86400, $this->config('sentinel_connector.settings')->get('cron_interval'));
+  public function testFrequentCronPushesOnce(): void {
+    $this->assertNull($this->config('sentinel_connector.settings')->get('cron_interval'));
+    // The client is mocked first: building the form creates the sync service.
+    $this->mockResponses([new Response(200, [], json_encode(['message' => 'ok']))]);
+    $form = SettingsForm::create($this->container)->buildForm([], new FormState());
+    $this->assertArrayNotHasKey('cron_interval', $form);
+    $this->container->get('module_handler')->loadAll();
+    sentinel_connector_cron();
+    // Later runs inside the hour would fail on the empty mock queue.
+    sentinel_connector_cron();
+    sentinel_connector_cron();
+
+    $this->assertCount(1, $this->transactions);
+    $state = \Drupal::state();
+    $this->assertSame('success', $state->get('sentinel_connector.last_result'));
+    $this->assertNotEmpty($state->get(SyncService::STATE_LAST_ACCEPTED_TIME));
+    $this->assertNotEmpty($state->get(SyncService::STATE_CONFIGURED_TIME));
+    $sync = \Drupal::service(SyncService::class);
+    $attempt = $state->get('sentinel_connector.last_attempt_time');
+    $this->assertFalse($sync->cronIsDue($attempt + 3599));
+    $this->assertTrue($sync->cronIsDue($attempt + 3600));
+  }
+
+  /**
+   * The update removes the stored interval and seeds the new state.
+   */
+  public function testUpdateRemovesIntervalSetting(): void {
+    // Written to storage directly: the schema no longer knows the key.
+    $storage = $this->container->get('config.storage');
+    $storage->write('sentinel_connector.settings', ['cron_interval' => 21600] + $storage->read('sentinel_connector.settings'));
+    $this->container->get('config.factory')->reset('sentinel_connector.settings');
+    $this->assertSame(21600, $this->config('sentinel_connector.settings')->get('cron_interval'));
+    $state = \Drupal::state();
+    $state->set('sentinel_connector.last_sync_time', 1234567890);
+    $before = $this->config('sentinel_connector.settings')->getRawData();
+
+    $this->container->get('module_handler')->loadInclude('sentinel_connector', 'install');
+    $message = sentinel_connector_update_10001();
+
+    $this->assertStringContainsString('push interval', $message);
+    unset($before['cron_interval']);
+    $this->assertSame($before, $this->config('sentinel_connector.settings')->getRawData());
+    $this->assertArrayNotHasKey('cron_interval', $storage->read('sentinel_connector.settings'));
+    $this->assertSame(1234567890, $state->get(SyncService::STATE_LAST_ACCEPTED_TIME));
+    $this->assertNotEmpty($state->get(SyncService::STATE_CONFIGURED_TIME));
+
+    // A second run changes nothing and keeps a newer accepted time.
+    $state->set(SyncService::STATE_LAST_ACCEPTED_TIME, 1234567999);
+    sentinel_connector_update_10001();
+    $this->assertSame(1234567999, $state->get(SyncService::STATE_LAST_ACCEPTED_TIME));
   }
 
   /**
@@ -227,6 +275,122 @@ class PushLimitTest extends KernelTestBase {
     $this->assertStringContainsString('Next push accepted after ' . $siteTime . '.', $limit);
     $this->assertStringContainsString('&lt;b&gt;Free&lt;/b&gt;', $limit);
     $this->assertStringNotContainsString('<b>', $limit);
+  }
+
+  /**
+   * A billing refusal on cron is logged as a warning and holds cron only.
+   */
+  public function testSubscriptionRefusalOnCron(): void {
+    $refusal = json_encode([
+      'error_code' => 'subscription_inactive',
+      'reason' => 'past_due',
+      'message' => 'Payment for <b>Example Org</b> is overdue.',
+      'detail' => 'Payment for <b>Example Org</b> is overdue.',
+    ]);
+    $this->mockResponses([
+      new Response(402, [], $refusal),
+      new Response(402, [], $refusal),
+      new Response(200, [], json_encode(['message' => 'ok'])),
+    ]);
+    $this->container->get('module_handler')->loadAll();
+    $state = \Drupal::state();
+    $before = time();
+
+    sentinel_connector_cron();
+
+    $this->assertCount(1, $this->transactions);
+    $this->assertSame('subscription_inactive', $state->get('sentinel_connector.last_result'));
+    $this->assertSame('past_due', $state->get(SyncService::STATE_SUBSCRIPTION_REASON));
+    $hold = $state->get(SyncService::STATE_SUBSCRIPTION_HOLD_UNTIL);
+    $this->assertGreaterThanOrEqual($before + 86400, $hold);
+    $this->assertSame([], \Drupal::messenger()->all());
+    $this->assertCount(1, $this->logRecords);
+    $this->assertSame(RfcLogLevel::WARNING, $this->logRecords[0]['level']);
+    $this->assertSame('sentinel_connector', $this->logRecords[0]['context']['channel']);
+    $this->assertSame('past_due', $this->logRecords[0]['context']['@reason']);
+
+    // Cron is held even though the hourly floor has passed.
+    $state->set('sentinel_connector.last_attempt_time', $before - 7200);
+    $sync = \Drupal::service(SyncService::class);
+    $this->assertFalse($sync->cronIsDue(time()));
+    sentinel_connector_cron();
+    $this->assertCount(1, $this->transactions);
+    $this->assertTrue($sync->cronIsDue($hold));
+
+    // The settings form names the reason and escapes the server text.
+    $form = SettingsForm::create($this->container)->buildForm([], new FormState());
+    $this->assertStringContainsString('Result: subscription_inactive.', (string) $form['last_sync_status']['#markup']);
+    $status = (string) $form['subscription_status']['#markup'];
+    $this->assertStringContainsString('Subscription payment overdue.', $status);
+    $this->assertStringContainsString('Payment for &lt;b&gt;Example Org&lt;/b&gt; is overdue.', $status);
+    $this->assertStringNotContainsString('<b>', $status);
+    $formatter = \Drupal::service(PushLimitFormatter::class);
+    $this->assertStringContainsString('Cron will try again after ' . $formatter->formatTime($hold) . '.', $status);
+
+    // A manual push is not held: it reaches Sentinel and is refused again.
+    $result = $sync->sync();
+    $this->assertCount(2, $this->transactions);
+    $this->assertTrue($result->isSubscriptionInactive());
+    $error = (string) $formatter->subscriptionError($result->reason, $result->message);
+    $this->assertSame('Sentinel did not accept this push. Payment for &lt;b&gt;Example Org&lt;/b&gt; is overdue.', $error);
+
+    // An accepted push clears the hold and the status line.
+    $this->assertTrue($sync->sync()->isOk());
+    $this->assertCount(3, $this->transactions);
+    $this->assertNull($state->get(SyncService::STATE_SUBSCRIPTION_HOLD_UNTIL));
+    $this->assertNull($state->get(SyncService::STATE_SUBSCRIPTION_REASON));
+    $form = SettingsForm::create($this->container)->buildForm([], new FormState());
+    $this->assertArrayNotHasKey('subscription_status', $form);
+  }
+
+  /**
+   * Without a server message each reason has its own text.
+   *
+   * @dataProvider subscriptionFallbacks
+   */
+  public function testSubscriptionFallbackMessages(?string $reason, string $text, string $label): void {
+    $body = ['error_code' => 'subscription_inactive'] + ($reason === NULL ? [] : ['reason' => $reason]);
+    $this->mockResponses([new Response(402, [], json_encode($body))]);
+
+    $result = \Drupal::service(SyncService::class)->sync();
+
+    $this->assertTrue($result->isSubscriptionInactive());
+    $formatter = \Drupal::service(PushLimitFormatter::class);
+    $this->assertStringContainsString($text, (string) $formatter->subscriptionError($result->reason, $result->message));
+    $form = SettingsForm::create($this->container)->buildForm([], new FormState());
+    $status = (string) $form['subscription_status']['#markup'];
+    $this->assertStringContainsString('Subscription ' . $label . '.', $status);
+    $this->assertStringContainsString($text, $status);
+  }
+
+  /**
+   * Reasons, the fallback text and the plain-words label for each.
+   *
+   * @return array<string, array{string|null, string, string}>
+   *   Reason, expected text and expected label.
+   */
+  public static function subscriptionFallbacks(): array {
+    return [
+      'past_due' => ['past_due', 'a payment for the subscription is overdue', 'payment overdue'],
+      'unpaid' => ['unpaid', 'the subscription is unpaid', 'unpaid'],
+      'paused' => ['paused', 'the subscription is paused', 'paused'],
+      'unknown reason' => ['cancelled', 'the subscription is not active', 'not active'],
+      'no reason' => [NULL, 'the subscription is not active', 'not active'],
+    ];
+  }
+
+  /**
+   * A 402 without the billing error code is still a generic rejection.
+   */
+  public function testOtherPaymentRequiredKeepsExistingHandling(): void {
+    $this->mockResponses([new Response(402, [], json_encode(['detail' => 'Payment required']))]);
+
+    $result = \Drupal::service(SyncService::class)->sync();
+
+    $this->assertSame('rejected', $result->status);
+    $this->assertNull(\Drupal::state()->get(SyncService::STATE_SUBSCRIPTION_HOLD_UNTIL));
+    $form = SettingsForm::create($this->container)->buildForm([], new FormState());
+    $this->assertArrayNotHasKey('subscription_status', $form);
   }
 
   /**

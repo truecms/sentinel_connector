@@ -207,6 +207,120 @@ class SentinelClientTest extends TestCase {
   }
 
   /**
+   * A billing refusal is its own result, with the reason and the message.
+   *
+   * @dataProvider subscriptionReasons
+   */
+  public function testSubscriptionInactiveIsRecognised(string $reason): void {
+    $body = [
+      'error_code' => 'subscription_inactive',
+      'reason' => $reason,
+      'message' => 'Payment for this organisation is overdue.',
+      'detail' => 'Payment for this organisation is overdue.',
+    ];
+    foreach ([$body, ['detail' => $body]] as $payload) {
+      $result = $this->client(new Response(402, [], json_encode($payload)))
+        ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+      $this->assertSame('subscription_inactive', $result->status);
+      $this->assertTrue($result->isSubscriptionInactive());
+      $this->assertFalse($result->isPushLimited());
+      $this->assertFalse($result->isOk());
+      $this->assertSame(402, $result->httpCode);
+      $this->assertSame($reason, $result->reason);
+      $this->assertSame('Payment for this organisation is overdue.', $result->message);
+      $this->assertNull($result->nextAllowedAt);
+    }
+  }
+
+  /**
+   * The reasons Sentinel sends for an inactive subscription.
+   *
+   * @return array<string, array{string}>
+   *   The reason codes.
+   */
+  public static function subscriptionReasons(): array {
+    return ['past_due' => ['past_due'], 'unpaid' => ['unpaid'], 'paused' => ['paused']];
+  }
+
+  /**
+   * A missing message or an unusable reason leaves them empty, not guessed.
+   *
+   * @param array<string, mixed> $fields
+   *   Body fields besides the error code.
+   * @param string|null $reason
+   *   The expected reason.
+   * @param string $message
+   *   The expected message.
+   *
+   * @dataProvider incompleteSubscriptionBodies
+   */
+  public function testIncompleteSubscriptionBody(array $fields, ?string $reason, string $message): void {
+    $result = $this->client(new Response(402, [], json_encode(['error_code' => 'subscription_inactive'] + $fields)))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertTrue($result->isSubscriptionInactive());
+    $this->assertSame($reason, $result->reason);
+    $this->assertSame($message, $result->message);
+  }
+
+  /**
+   * Billing refusals with missing, malformed or oversized fields.
+   *
+   * @return array<string, array{array<string, mixed>, string|null, string}>
+   *   Body fields, expected reason and expected message.
+   */
+  public static function incompleteSubscriptionBodies(): array {
+    return [
+      'no message' => [['reason' => 'paused'], 'paused', ''],
+      'message of the wrong type' => [['reason' => 'unpaid', 'message' => ['x']], 'unpaid', ''],
+      'unknown reason is kept' => [['reason' => 'cancelled', 'message' => 'Ended.'], 'cancelled', 'Ended.'],
+      'no reason' => [['message' => 'Ended.'], NULL, 'Ended.'],
+      'malformed reason' => [['reason' => '<b>past due</b>'], NULL, ''],
+      'message is one bounded line' => [
+        ['reason' => 'paused', 'message' => "A\nB" . str_repeat('x', 600)],
+        'paused',
+        'A B' . str_repeat('x', 497),
+      ],
+    ];
+  }
+
+  /**
+   * A 402 that is not the billing refusal keeps the generic handling.
+   *
+   * @dataProvider otherPaymentRequiredBodies
+   */
+  public function testOtherPaymentRequiredKeepsExistingHandling(string $body, string $status): void {
+    $result = $this->client(new Response(402, [], $body))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertSame($status, $result->status);
+    $this->assertFalse($result->isSubscriptionInactive());
+    $this->assertNull($result->reason);
+  }
+
+  /**
+   * Bodies of a 402 that is not the billing refusal.
+   *
+   * @return array<string, array{string, string}>
+   *   Raw body and the expected status.
+   */
+  public static function otherPaymentRequiredBodies(): array {
+    return [
+      'empty' => ['', 'invalid_response'],
+      'html' => ['<html>Payment required</html>', 'invalid_response'],
+      'no error code' => ['{"detail": "Payment required"}', 'rejected'],
+      'other error code' => ['{"error_code": "site_limit_reached", "reason": "paused"}', 'rejected'],
+    ];
+  }
+
+  /**
+   * The error code only counts on a 402.
+   */
+  public function testSubscriptionCodeOnOtherStatusIsNotRecognised(): void {
+    $result = $this->client(new Response(400, [], '{"error_code": "subscription_inactive", "reason": "paused"}'))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertSame('rejected', $result->status);
+  }
+
+  /**
    * The push-limit body from the Sentinel API contract.
    *
    * @return array<string, mixed>
