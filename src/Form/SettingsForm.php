@@ -10,6 +10,7 @@ use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
 use Drupal\sentinel_connector\ApiKeyResolver;
 use Drupal\sentinel_connector\PushLimitFormatter;
+use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -32,7 +33,7 @@ final class SettingsForm extends ConfigFormBase {
    * @param \Drupal\sentinel_connector\SyncService $syncService
    *   The sync service, for the stored push-limit outcome.
    * @param \Drupal\sentinel_connector\PushLimitFormatter $pushLimitFormatter
-   *   Formats the next allowed push time.
+   *   Builds the text for a refused push.
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
@@ -93,6 +94,7 @@ final class SettingsForm extends ConfigFormBase {
     $form['enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable automatic sync on cron'),
+      '#description' => $this->t('Cron sends at most one push an hour. How often Sentinel accepts a push depends on the plan.'),
       '#default_value' => $config->get('enabled'),
     ];
     $form['api_base_url'] = [
@@ -135,14 +137,6 @@ final class SettingsForm extends ConfigFormBase {
       ],
       '#default_value' => $config->get('report_scope') ?: 'all',
     ];
-    $form['cron_interval'] = [
-      '#type' => 'number',
-      '#title' => $this->t('Minimum seconds between cron syncs'),
-      '#min' => 900,
-      '#default_value' => $config->get('cron_interval') ?: SyncService::DEFAULT_CRON_INTERVAL,
-      '#description' => $this->t('The default of 86400 seconds is once a day, which fits the Free plan. Paid plans accept a push once an hour. Sentinel refuses a push that is sent too soon.'),
-    ];
-
     // API key status (never echo the key).
     $source = $this->apiKeyResolver->getSource();
     $form['api_key_status'] = [
@@ -188,6 +182,27 @@ final class SettingsForm extends ConfigFormBase {
       ];
     }
 
+    // The last push was refused over billing: say why in plain words.
+    if ($this->state->get('sentinel_connector.last_result') === SyncResult::SUBSCRIPTION_INACTIVE) {
+      $reason = $this->state->get(SyncService::STATE_SUBSCRIPTION_REASON);
+      $reason = is_string($reason) && $reason !== '' ? $reason : NULL;
+      $message = $this->state->get('sentinel_connector.last_message', '');
+      $hold = $this->syncService->getSubscriptionHoldUntil();
+      $arguments = [
+        '@reason' => $this->pushLimitFormatter->subscriptionReasonLabel($reason),
+        '@message' => $this->pushLimitFormatter->subscriptionError($reason, is_string($message) ? $message : ''),
+      ];
+      $form['subscription_status'] = [
+        '#type' => 'item',
+        '#title' => $this->t('Subscription'),
+        '#markup' => $hold === NULL
+          ? $this->t('Subscription @reason. @message', $arguments)
+          : $this->t('Subscription @reason. @message Cron will try again after @time. "Sync now" is not held back.', $arguments + [
+            '@time' => $this->pushLimitFormatter->formatTime($hold),
+          ]),
+      ];
+    }
+
     $form['sync_now'] = [
       '#type' => 'link',
       '#title' => $this->t('Sync now'),
@@ -216,13 +231,14 @@ final class SettingsForm extends ConfigFormBase {
       ->set('site_name', (string) $form_state->getValue('site_name'))
       ->set('site_token', (string) $form_state->getValue('site_token'))
       ->set('report_scope', (string) $form_state->getValue('report_scope'))
-      ->set('cron_interval', (int) $form_state->getValue('cron_interval'))
       ->save();
 
     $key = (string) $form_state->getValue('api_key_state');
     if ($key !== '') {
       $this->state->set('sentinel_connector.api_key', $key);
     }
+    // The status report allows a newly configured site a day to push.
+    $this->syncService->markConfigured();
 
     parent::submitForm($form, $form_state);
   }

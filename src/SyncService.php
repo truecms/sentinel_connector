@@ -13,9 +13,24 @@ use Psr\Log\LoggerInterface;
 class SyncService {
 
   /**
-   * Default minimum seconds between cron pushes: once a day.
+   * Fewest seconds between two pushes sent by cron: one push an hour.
+   *
+   * Fixed on purpose. How often a push is accepted is decided by Sentinel, by
+   * plan. A manual push is not bound by this floor.
    */
-  public const DEFAULT_CRON_INTERVAL = 86400;
+  public const MIN_PUSH_INTERVAL = 3600;
+
+  /**
+   * State key: Unix timestamp of the last push Sentinel accepted.
+   *
+   * Covers both an inline success (200) and a queued push (202).
+   */
+  public const STATE_LAST_ACCEPTED_TIME = 'sentinel_connector.last_accepted_time';
+
+  /**
+   * State key: Unix timestamp at which the configuration became complete.
+   */
+  public const STATE_CONFIGURED_TIME = 'sentinel_connector.configured_time';
 
   /**
    * Longest time a single push-limit response may hold back pushes.
@@ -24,6 +39,24 @@ class SyncService {
    * silencing the connector for good.
    */
   public const MAX_PUSH_DEFERRAL = 604800;
+
+  /**
+   * Seconds cron waits after a refusal over an inactive subscription.
+   */
+  public const SUBSCRIPTION_HOLD = 86400;
+
+  /**
+   * State key: Unix timestamp before which cron sends no push.
+   *
+   * Set when Sentinel refuses a push over an inactive subscription. It never
+   * holds a manual push.
+   */
+  public const STATE_SUBSCRIPTION_HOLD_UNTIL = 'sentinel_connector.subscription_hold_until';
+
+  /**
+   * State key: the reason Sentinel gave for the inactive subscription.
+   */
+  public const STATE_SUBSCRIPTION_REASON = 'sentinel_connector.subscription_reason';
 
   /**
    * State key: Unix timestamp after which Sentinel accepts the next push.
@@ -86,6 +119,9 @@ class SyncService {
         $result = $this->resolvePushLimit($result);
         $this->logPushLimit($result);
       }
+      elseif ($result->isSubscriptionInactive()) {
+        $this->logSubscriptionInactive($result);
+      }
     }
     catch (\Throwable $e) {
       $this->logFailure($e);
@@ -114,6 +150,7 @@ class SyncService {
       $result = SyncResult::failure('unconfigured', NULL, 'Sentinel connector is not fully configured.');
       return $result;
     }
+    $this->markConfigured();
 
     $payload = $this->payloadBuilder->build((string) ($config->get('report_scope') ?: 'all'));
     $payload['site'] = [
@@ -124,6 +161,28 @@ class SyncService {
 
     $result = $this->client->sync($baseUrl, $uuid, $apiKey, $payload);
     return $result;
+  }
+
+  /**
+   * Whether everything a push needs is set: API URL, site UUID and API key.
+   */
+  public function isConfigured(): bool {
+    $config = $this->configFactory->get('sentinel_connector.settings');
+    return (string) $config->get('api_base_url') !== ''
+      && (string) $config->get('site_uuid') !== ''
+      && $this->apiKeyResolver->getKey() !== NULL;
+  }
+
+  /**
+   * Records when the configuration first became complete.
+   *
+   * The status report uses it to give a new site a day before it reports a
+   * missing push as an error.
+   */
+  public function markConfigured(): void {
+    if ($this->isConfigured() && !$this->state->get(self::STATE_CONFIGURED_TIME)) {
+      $this->state->set(self::STATE_CONFIGURED_TIME, $this->time->getCurrentTime());
+    }
   }
 
   /**
@@ -194,25 +253,54 @@ class SyncService {
   }
 
   /**
+   * The time before which cron sends no push, after a billing refusal.
+   *
+   * @return int|null
+   *   A Unix timestamp, or NULL when cron is not held.
+   */
+  public function getSubscriptionHoldUntil(): ?int {
+    $until = (int) $this->state->get(self::STATE_SUBSCRIPTION_HOLD_UNTIL, 0);
+    return $until > 0 ? $until : NULL;
+  }
+
+  /**
+   * Logs a refusal over an inactive subscription, with the reason only.
+   */
+  protected function logSubscriptionInactive(SyncResult $result): void {
+    try {
+      $this->logger->warning('Sentinel refused the push: subscription inactive, reason @reason.', [
+        '@reason' => $result->reason ?? 'unknown',
+      ]);
+    }
+    catch (\Throwable) {
+      // Broken log storage must not hide the outcome from the caller.
+    }
+  }
+
+  /**
    * Whether cron is due to run a sync.
    *
-   * A stored push limit decides on its own: nothing is sent before the time
-   * Sentinel gave, and a push is due as soon as that time has passed. Without
-   * one, the configured interval applies.
+   * Three things hold cron back, and all must have passed: the hold after a
+   * refusal over an inactive subscription (one try a day), the time Sentinel
+   * gave with a push-limit response, and the fixed floor of one push an hour
+   * counted from the last attempt, whatever its outcome.
    */
   public function cronIsDue(int $now): bool {
     $config = $this->configFactory->get('sentinel_connector.settings');
     if (!$config->get('enabled')) {
       return FALSE;
     }
-    $next = $this->getNextAllowedAt();
-    if ($next !== NULL) {
-      return $now >= $next;
+    $hold = $this->getSubscriptionHoldUntil();
+    if ($hold !== NULL && $now < $hold) {
+      return FALSE;
     }
-    $interval = (int) ($config->get('cron_interval') ?: self::DEFAULT_CRON_INTERVAL);
+    $next = $this->getNextAllowedAt();
+    if ($next !== NULL && $now < $next) {
+      return FALSE;
+    }
     $last = (int) $this->state->get('sentinel_connector.last_attempt_time',
       $this->state->get('sentinel_connector.last_sync_time', 0));
-    return ($now - $last) >= $interval;
+    return ($now - $last) >= self::MIN_PUSH_INTERVAL;
   }
 
   /**
@@ -222,6 +310,9 @@ class SyncService {
     $this->state->set('sentinel_connector.last_attempt_time', $this->time->getRequestTime());
     if ($result->status === 'success') {
       $this->state->set('sentinel_connector.last_sync_time', $this->time->getRequestTime());
+    }
+    if ($result->isOk()) {
+      $this->state->set(self::STATE_LAST_ACCEPTED_TIME, $this->time->getRequestTime());
     }
     $this->state->set('sentinel_connector.last_result', $result->status);
     $this->state->set('sentinel_connector.last_message', $result->message);
@@ -233,6 +324,18 @@ class SyncService {
     else {
       // Any other outcome means the stored limit no longer applies.
       $this->state->deleteMultiple([self::STATE_NEXT_ALLOWED_AT, self::STATE_PUSH_LIMIT_MESSAGE]);
+    }
+    if ($result->isSubscriptionInactive()) {
+      // Cron tries again in a day. A manual push is never held by this.
+      $this->state->set(self::STATE_SUBSCRIPTION_HOLD_UNTIL, $this->time->getCurrentTime() + self::SUBSCRIPTION_HOLD);
+      $this->state->set(self::STATE_SUBSCRIPTION_REASON, $result->reason ?? '');
+    }
+    else {
+      $this->state->delete(self::STATE_SUBSCRIPTION_REASON);
+      if ($result->isOk()) {
+        // Only an accepted push shows that billing is in order again.
+        $this->state->delete(self::STATE_SUBSCRIPTION_HOLD_UNTIL);
+      }
     }
   }
 

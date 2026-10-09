@@ -13,6 +13,11 @@ final class SyncResult {
   public const PUSH_LIMITED = 'push_limited';
 
   /**
+   * Machine status of a push refused because the subscription is not active.
+   */
+  public const SUBSCRIPTION_INACTIVE = 'subscription_inactive';
+
+  /**
    * Constructs a SyncResult.
    *
    * @param string $status
@@ -34,6 +39,8 @@ final class SyncResult {
    * @param bool $deferred
    *   TRUE when a stored push limit stopped the push before Sentinel was
    *   contacted.
+   * @param string|null $reason
+   *   Why the subscription is not active, e.g. 'past_due', when known.
    */
   public function __construct(
     public readonly string $status,
@@ -45,6 +52,7 @@ final class SyncResult {
     public readonly ?string $plan = NULL,
     public readonly ?int $limit = NULL,
     public readonly bool $deferred = FALSE,
+    public readonly ?string $reason = NULL,
   ) {}
 
   /**
@@ -99,13 +107,25 @@ final class SyncResult {
   }
 
   /**
+   * Creates a result for a push refused over an inactive subscription.
+   *
+   * @param string $message
+   *   The server's message, or an empty string when the server sent none.
+   * @param string|null $reason
+   *   The server's reason, e.g. 'past_due', 'unpaid' or 'paused', when known.
+   */
+  public static function subscriptionInactive(string $message, ?string $reason = NULL): self {
+    return new self(self::SUBSCRIPTION_INACTIVE, 402, $message, NULL, NULL, NULL, NULL, NULL, FALSE, $reason);
+  }
+
+  /**
    * Returns a copy with the next allowed time replaced.
    *
    * @param int|null $nextAllowedAt
    *   Unix timestamp after which the next push is accepted, or NULL.
    */
   public function withNextAllowedAt(?int $nextAllowedAt): self {
-    return new self($this->status, $this->httpCode, $this->message, $this->taskId, $nextAllowedAt, $this->retryAfterSeconds, $this->plan, $this->limit, $this->deferred);
+    return new self($this->status, $this->httpCode, $this->message, $this->taskId, $nextAllowedAt, $this->retryAfterSeconds, $this->plan, $this->limit, $this->deferred, $this->reason);
   }
 
   /**
@@ -113,6 +133,13 @@ final class SyncResult {
    */
   public function isOk(): bool {
     return in_array($this->status, ['success', 'accepted'], TRUE);
+  }
+
+  /**
+   * Whether Sentinel refused the push because the subscription is not active.
+   */
+  public function isSubscriptionInactive(): bool {
+    return $this->status === self::SUBSCRIPTION_INACTIVE;
   }
 
   /**

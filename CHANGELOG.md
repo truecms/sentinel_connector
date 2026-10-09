@@ -13,11 +13,30 @@ All notable changes to this project are documented here. Versions follow
   time zone; cron stays silent. Every rejection is logged at notice level.
 - The next allowed time is stored in state. Nothing is sent before it, and the
   settings form shows it.
+- A push refused because the subscription is overdue, unpaid or paused (HTTP
+  402 with `error_code: subscription_inactive`) is its own result. A manual
+  push shows an error and the Drush command fails; cron logs a warning and
+  tries at most once in 24 hours until a push is accepted.
+- The status report has a Sentinel Connector entry: an error for incomplete
+  configuration, a billing refusal or no accepted push in 24 hours; a warning
+  for a new site that has not pushed; information while the plan limit holds
+  the next push.
 
 ### Changed
 
-- New installs push once a day (`cron_interval: 86400`, was 21600). Existing
-  installs keep their saved interval; no update hook changes it.
+- Cron sends at most one push an hour, fixed in code. A manual push is not
+  bound by this floor.
+
+### Removed
+
+- The `cron_interval` setting. Update `10001` deletes the stored value.
+
+### Upgrade notes
+
+- Run `drush updb`. Sites that keep configuration in code must export it
+  afterwards, or the next import puts the unused `cron_interval` key back.
+- Sites that pushed less often than hourly now push hourly from cron. Sentinel
+  refuses what the plan does not allow, and the module then waits.
 
 ## 0.2.0 - 2026-10-07
 

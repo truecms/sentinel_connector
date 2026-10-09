@@ -35,8 +35,12 @@ $stateKeys = [
   'last_result',
   'last_message',
   'last_task_id',
+  'last_accepted_time',
+  'configured_time',
   'next_allowed_at',
   'push_limit_message',
+  'subscription_hold_until',
+  'subscription_reason',
 ];
 $originalState = [];
 foreach ($stateKeys as $key) {

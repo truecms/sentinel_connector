@@ -2,33 +2,49 @@
 
 /**
  * @file
- * Install/requirements hooks for Sentinel Connector.
+ * Install, update and requirements hooks for Sentinel Connector.
  */
+
+use Drupal\sentinel_connector\PushHealth;
+use Drupal\sentinel_connector\SyncService;
 
 /**
  * Implements hook_requirements().
+ *
+ * Kept procedural so the same code runs on Drupal 10.3 and 11. The checks
+ * live in the push health service.
  *
  * @phpstan-return array<string, array<string, mixed>>
  *   Runtime requirement entries.
  */
 function sentinel_connector_requirements(string $phase): array {
-  $requirements = [];
   if ($phase !== 'runtime') {
-    return $requirements;
+    return [];
+  }
+  /** @var \Drupal\sentinel_connector\PushHealth $health */
+  $health = \Drupal::service(PushHealth::class);
+  return ['sentinel_connector' => $health->requirement()];
+}
+
+/**
+ * Remove the push interval setting and record the last accepted push.
+ */
+function sentinel_connector_update_10001(): string {
+  // Cron now sends at most one push an hour; Sentinel decides the rest.
+  $config = \Drupal::configFactory()->getEditable('sentinel_connector.settings');
+  if ($config->get('cron_interval') !== NULL) {
+    $config->clear('cron_interval')->save();
   }
 
-  $config = \Drupal::config('sentinel_connector.settings');
-  /** @var \Drupal\sentinel_connector\ApiKeyResolver $resolver */
-  $resolver = \Drupal::service('Drupal\sentinel_connector\ApiKeyResolver');
+  // The status report reads the last accepted push from its own state key.
+  $state = \Drupal::state();
+  $lastSuccess = (int) $state->get('sentinel_connector.last_sync_time', 0);
+  if ($lastSuccess > 0 && !$state->get(SyncService::STATE_LAST_ACCEPTED_TIME)) {
+    $state->set(SyncService::STATE_LAST_ACCEPTED_TIME, $lastSuccess);
+  }
+  /** @var \Drupal\sentinel_connector\SyncService $sync */
+  $sync = \Drupal::service(SyncService::class);
+  $sync->markConfigured();
 
-  $configured = $config->get('api_base_url') && $config->get('site_uuid') && $resolver->getKey();
-  $requirements['sentinel_connector'] = [
-    'title' => t('Sentinel Connector'),
-    'value' => $configured ? t('Configured') : t('Not configured'),
-    'severity' => $configured ? REQUIREMENT_OK : REQUIREMENT_WARNING,
-    'description' => $configured
-      ? t('Reporting to @url.', ['@url' => $config->get('api_base_url')])
-      : t('Set the API base URL, site UUID, and API key on the settings form.'),
-  ];
-  return $requirements;
+  return (string) t('Removed the Sentinel Connector push interval setting. Cron now sends at most one push an hour.');
 }

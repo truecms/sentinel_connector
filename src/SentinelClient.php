@@ -17,6 +17,11 @@ class SentinelClient {
   public const PUSH_LIMIT_ERROR_CODE = 'push_limit_reached';
 
   /**
+   * The error code Sentinel sends when the subscription is not active.
+   */
+  public const SUBSCRIPTION_ERROR_CODE = 'subscription_inactive';
+
+  /**
    * Message used when a push-limit response carries no usable message.
    */
   public const PUSH_LIMIT_FALLBACK_MESSAGE = 'The push limit for this site has been reached.';
@@ -84,6 +89,15 @@ class SentinelClient {
       }
       return SyncResult::failure('rate_limited', 429, $message);
     }
+    // A refusal over billing is its own outcome. Other 402 bodies fall through.
+    if ($code === 402) {
+      $data = $this->errorBody($body, self::SUBSCRIPTION_ERROR_CODE);
+      if ($data !== NULL) {
+        $reason = $data['reason'] ?? NULL;
+        $reason = is_string($reason) && preg_match('/^[a-z0-9_]{1,32}$/', $reason) ? $reason : NULL;
+        return SyncResult::subscriptionInactive($this->cleanMessage($data['message'] ?? NULL) ?? '', $reason);
+      }
+    }
     // Reverse proxies may return HTML for authentication and server errors.
     // Classify their HTTP status before enforcing the success JSON contract.
     if (in_array($code, [401, 403], TRUE) || $code >= 500) {
@@ -135,24 +149,11 @@ class SentinelClient {
    *   The push-limit result, or NULL when this is another kind of 429.
    */
   protected function pushLimit(string $body, string $retryAfter): ?SyncResult {
-    $decoded = json_decode($body, TRUE);
-    if (!is_array($decoded)) {
+    $data = $this->errorBody($body, self::PUSH_LIMIT_ERROR_CODE);
+    if ($data === NULL) {
       return NULL;
     }
-    // FastAPI nests the body of a raised HTTP error under "detail".
-    $data = isset($decoded['error_code']) || !is_array($decoded['detail'] ?? NULL) ? $decoded : $decoded['detail'];
-    if (($data['error_code'] ?? NULL) !== self::PUSH_LIMIT_ERROR_CODE) {
-      return NULL;
-    }
-
-    $message = self::PUSH_LIMIT_FALLBACK_MESSAGE;
-    if (is_string($data['message'] ?? NULL)) {
-      // Server text is shown to administrators: keep it one bounded line.
-      $clean = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $data['message']));
-      if ($clean !== '') {
-        $message = mb_substr($clean, 0, 500);
-      }
-    }
+    $message = $this->cleanMessage($data['message'] ?? NULL) ?? self::PUSH_LIMIT_FALLBACK_MESSAGE;
 
     $nextAllowedAt = $this->timestamp($data['next_allowed_at'] ?? NULL);
     $seconds = $data['retry_after_seconds'] ?? NULL;
@@ -173,6 +174,47 @@ class SentinelClient {
     $limit = is_int($limit) && $limit > 0 ? $limit : NULL;
 
     return SyncResult::pushLimited($message, $nextAllowedAt, $seconds, $plan, $limit);
+  }
+
+  /**
+   * Returns the structured error body that carries the given error code.
+   *
+   * @param string $body
+   *   The raw response body.
+   * @param string $errorCode
+   *   The error code the body must carry.
+   *
+   * @return array<array-key, mixed>|null
+   *   The decoded error object, or NULL when the body is something else.
+   */
+  protected function errorBody(string $body, string $errorCode): ?array {
+    $decoded = json_decode($body, TRUE);
+    if (!is_array($decoded)) {
+      return NULL;
+    }
+    // FastAPI nests the body of a raised HTTP error under "detail".
+    $data = isset($decoded['error_code']) || !is_array($decoded['detail'] ?? NULL) ? $decoded : $decoded['detail'];
+    return ($data['error_code'] ?? NULL) === $errorCode ? $data : NULL;
+  }
+
+  /**
+   * Reduces server text to one bounded line.
+   *
+   * The text is shown to administrators and stored, so control characters
+   * are removed and the length is capped. It is still escaped on output.
+   *
+   * @param mixed $message
+   *   The message from the response body.
+   *
+   * @return string|null
+   *   The cleaned message, or NULL when there is no usable text.
+   */
+  protected function cleanMessage(mixed $message): ?string {
+    if (!is_string($message)) {
+      return NULL;
+    }
+    $clean = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $message));
+    return $clean !== '' ? mb_substr($clean, 0, 500) : NULL;
   }
 
   /**

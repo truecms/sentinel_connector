@@ -8,15 +8,16 @@
 /**
  * Implements hook_cron().
  *
- * Runs a throttled sync respecting the configured interval and the push limit
- * of the site's Sentinel plan. A push refused or held back by that limit is
- * logged by the sync service and shows no message.
+ * Sends at most one push an hour, and none while Sentinel's plan limit or a
+ * billing hold applies. A refused or held push is logged by the sync service
+ * and shows no message.
  */
 function sentinel_connector_cron(): void {
   try {
     /** @var \Drupal\sentinel_connector\SyncService $sync */
     $sync = \Drupal::service('Drupal\sentinel_connector\SyncService');
     $now = \Drupal::time()->getRequestTime();
+    $sync->markConfigured();
     if ($sync->cronIsDue($now)) {
       $sync->sync();
     }

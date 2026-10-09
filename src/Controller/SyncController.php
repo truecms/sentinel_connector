@@ -20,7 +20,7 @@ final class SyncController extends ControllerBase {
    * @param \Drupal\sentinel_connector\SyncService $syncService
    *   The sync service.
    * @param \Drupal\sentinel_connector\PushLimitFormatter $pushLimitFormatter
-   *   Builds the push-limit warning.
+   *   Builds the messages for a refused push.
    */
   public function __construct(
     protected SyncService $syncService,
@@ -48,6 +48,9 @@ final class SyncController extends ControllerBase {
     elseif ($result->isPushLimited()) {
       // A plan limit is an expected outcome, not a connection failure.
       $this->messenger()->addWarning($this->pushLimitFormatter->warning($result));
+    }
+    elseif ($result->isSubscriptionInactive()) {
+      $this->messenger()->addError($this->pushLimitFormatter->subscriptionError($result->reason, $result->message));
     }
     else {
       $this->messenger()->addError($this->t('Sentinel sync failed (@status): @msg', [

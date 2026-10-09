@@ -9,7 +9,9 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\Core\StringTranslation\TranslationInterface;
 
 /**
- * Builds the administrator-facing text for a push-limit outcome.
+ * Builds the administrator-facing text for a push Sentinel refused.
+ *
+ * Covers the plan push limit and an inactive subscription.
  *
  * Text from Sentinel is only ever passed as an escaped placeholder.
  */
@@ -70,6 +72,47 @@ class PushLimitFormatter {
       return $this->t('No push was sent, because Sentinel has already refused one. @message The next push will be accepted after @time.', $arguments);
     }
     return $this->t('Sentinel did not accept this push. @message The next push will be accepted after @time.', $arguments);
+  }
+
+  /**
+   * Builds the error for a push refused over an inactive subscription.
+   *
+   * @param string|null $reason
+   *   The server's reason, e.g. 'past_due', 'unpaid' or 'paused'.
+   * @param string $message
+   *   The server's message, or an empty string to use a text for the reason.
+   *
+   * @return \Drupal\Core\StringTranslation\TranslatableMarkup
+   *   The error. The server message is an escaped placeholder.
+   */
+  public function subscriptionError(?string $reason, string $message = ''): TranslatableMarkup {
+    if ($message !== '') {
+      return $this->t('Sentinel did not accept this push. @message', ['@message' => $message]);
+    }
+    return match ($reason) {
+      'past_due' => $this->t('Sentinel did not accept this push because a payment for the subscription is overdue. Update the payment details in Sentinel, then push again.'),
+      'unpaid' => $this->t('Sentinel did not accept this push because the subscription is unpaid. Pay the outstanding invoice in Sentinel, then push again.'),
+      'paused' => $this->t('Sentinel did not accept this push because the subscription is paused. Resume it in Sentinel, then push again.'),
+      default => $this->t('Sentinel did not accept this push because the subscription is not active. Check billing in Sentinel, then push again.'),
+    };
+  }
+
+  /**
+   * Names the state of an inactive subscription in plain words.
+   *
+   * @param string|null $reason
+   *   The server's reason, e.g. 'past_due', 'unpaid' or 'paused'.
+   *
+   * @return \Drupal\Core\StringTranslation\TranslatableMarkup
+   *   A short label; a generic one for an unknown reason.
+   */
+  public function subscriptionReasonLabel(?string $reason): TranslatableMarkup {
+    return match ($reason) {
+      'past_due' => $this->t('payment overdue'),
+      'unpaid' => $this->t('unpaid'),
+      'paused' => $this->t('paused'),
+      default => $this->t('not active'),
+    };
   }
 
 }

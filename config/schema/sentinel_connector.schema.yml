@@ -20,9 +20,6 @@ sentinel_connector.settings:
     report_scope:
       type: string
       label: 'Report scope'
-    cron_interval:
-      type: integer
-      label: 'Minimum cron interval (seconds)'
     enabled:
       type: boolean
       label: 'Enable cron sync'

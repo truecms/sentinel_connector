@@ -17,7 +17,7 @@ class SentinelCommands extends DrushCommands {
    * @param \Drupal\sentinel_connector\SyncService $syncService
    *   The sync service.
    * @param \Drupal\sentinel_connector\PushLimitFormatter $pushLimitFormatter
-   *   Builds the push-limit warning.
+   *   Builds the messages for a refused push.
    */
   public function __construct(
     protected SyncService $syncService,
@@ -42,6 +42,10 @@ class SentinelCommands extends DrushCommands {
     elseif ($result->isPushLimited()) {
       // Expected outcome of a plan limit: warn, but do not fail the command.
       $this->logger()->warning((string) $this->pushLimitFormatter->warning($result));
+    }
+    elseif ($result->isSubscriptionInactive()) {
+      // No push succeeds until billing is fixed, so the command fails.
+      throw new \RuntimeException((string) $this->pushLimitFormatter->subscriptionError($result->reason, $result->message));
     }
     else {
       throw new \RuntimeException(dt('Sentinel sync failed (@status): @msg', [

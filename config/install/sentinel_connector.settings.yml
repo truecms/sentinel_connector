@@ -4,5 +4,4 @@ site_url: ''
 site_name: ''
 site_token: ''
 report_scope: all
-cron_interval: 86400
 enabled: false
