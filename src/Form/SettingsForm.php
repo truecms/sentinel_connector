@@ -125,7 +125,7 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'select',
       '#title' => $this->t('Report scope'),
       '#options' => [
-        'all' => $this->t('All (contrib + custom + core)'),
+        'all' => $this->t('All (contrib + custom, core by version)'),
         'contrib_custom' => $this->t('Contrib + custom'),
         'contrib' => $this->t('Contrib only'),
       ],
