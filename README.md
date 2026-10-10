@@ -119,14 +119,14 @@ enabled. The comparison uses a hash kept in state
 (`sentinel_connector.last_fingerprint`), which every accepted push updates,
 whether it came from cron, "Sync now" or Drush.
 
-The hash is trusted for 7 days after the push it belongs to. After that the
+The hash is trusted for 24 hours after the push it belongs to. After that the
 command pushes whether or not anything changed, because Sentinel's copy can
 differ without the site knowing: a restored database, another environment
 that pushed with the same credentials, or a site registered again.
 
 | Outcome | Message | Exit code |
 | --- | --- | --- |
-| Nothing changed, last accepted push under 7 days old | "no change since the last accepted push" | 0 |
+| Nothing changed, last accepted push under 24 hours old | "no change since the last accepted push" | 0 |
 | Changed, push accepted | Success | 0 |
 | Changed, held or refused by the [plan limit](#push-limits) | Warning with the next allowed time | 0 |
 | API URL, site UUID or API key missing | Warning, nothing sent | 0 |
@@ -141,10 +141,10 @@ Options and notes:
 - A push that was held, refused or failed is sent by cron later, when cron
   pushes are enabled on the settings form. The command itself works without
   them, but then nothing retries until the next deployment.
-- Cron pushes count against the same plan limit, but cron only pushes when
-  something changed, so the limit is normally free when a deployment needs
-  it. A deployment shortly after another accepted push is held until the
-  limit allows the next one: up to an hour on paid plans, up to a day on Free.
+- Cron pushes count against the same plan limit. On paid plans cron only
+  uses it when something changed and once a day, so it is normally free when
+  a deployment needs it. On Free the daily push uses the whole limit, so a
+  deployment after it is held until the next day's push.
 - The PHP version is part of the inventory. If Drush and the web server run
   different PHP versions and cron runs through the web server, every
   deployment counts as a change and pushes.
@@ -182,7 +182,7 @@ the plan's push limit is kept for real changes:
   push; the payload itself is not stored.
 - When nothing changed, nothing is sent. The check is recorded
   (`sentinel_connector.last_unchanged_time`) and the status report shows it.
-- An unchanged inventory is sent again 7 days after the last accepted push,
+- An unchanged inventory is sent again 24 hours after the last accepted push,
   because Sentinel's copy can differ without the site knowing: a restored
   database, another environment that pushed with the same credentials, or a
   site registered again.
@@ -220,9 +220,10 @@ When the response has the error code but no usable message or time, the
 connector uses a generic message and the `Retry-After` header. A 429 without
 the error code is reported as `rate_limited`, as before.
 
-A site on the Free plan is therefore refused only when it changes twice in a
-day: the refusal tells the module when the next push is allowed, and nothing
-is sent until then.
+A site on the Free plan therefore sends about one push a day, with the latest
+inventory. A change made after that day's push is refused once: the refusal
+tells the module when the next push is allowed, nothing is sent until then,
+and the change goes out with the next push.
 
 ## Inactive subscription
 

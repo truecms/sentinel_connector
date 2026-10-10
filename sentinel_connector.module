@@ -9,7 +9,7 @@
  * Implements hook_cron().
  *
  * Checks at most once an hour and pushes only when the inventory changed, or
- * once a week. Sends nothing while Sentinel's plan limit or a billing hold
+ * once a day. Sends nothing while Sentinel's plan limit or a billing hold
  * applies. A refused or held push is logged by the sync service
  * and shows no message.
  */

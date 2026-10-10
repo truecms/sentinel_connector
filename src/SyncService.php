@@ -78,10 +78,10 @@ class SyncService {
    *
    * Sentinel's copy can differ from the stored fingerprint without this site
    * knowing: another environment pushed with the same credentials, a database
-   * was restored, or the site was registered again. After a week a push is
+   * was restored, or the site was registered again. After a day a push is
    * sent whether or not the inventory changed.
    */
-  public const FINGERPRINT_MAX_AGE = 604800;
+  public const FINGERPRINT_MAX_AGE = 86400;
 
   /**
    * State key: Unix timestamp of the last cron check that found no change.
@@ -232,7 +232,7 @@ class SyncService {
    * Whether the inventory differs from the last push Sentinel accepted.
    *
    * TRUE when nothing was accepted yet, when the last accepted push is older
-   * than a week, and when the inventory cannot be read: in doubt a push is
+   * than a day, and when the inventory cannot be read: in doubt a push is
    * sent.
    */
   public function hasInventoryChanged(): bool {

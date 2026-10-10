@@ -304,7 +304,7 @@ class PushLimitTest extends KernelTestBase {
     sentinel_connector_cron();
     $this->assertCount(2, $this->transactions);
 
-    // Unchanged for a week: the inventory is sent again.
+    // Unchanged for a day: the inventory is sent again.
     $state->set('sentinel_connector.last_attempt_time', time() - 7200);
     $state->set(SyncService::STATE_LAST_ACCEPTED_TIME, time() - SyncService::FINGERPRINT_MAX_AGE);
     sentinel_connector_cron();
