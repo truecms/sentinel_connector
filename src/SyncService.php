@@ -192,6 +192,8 @@ class SyncService {
    *
    * The IP address is left out: it differs between a web request and the
    * command line, and between containers, without anything being deployed.
+   * The API base URL is added: a push accepted by one Sentinel says nothing
+   * about another.
    *
    * @param array<string, mixed> $payload
    *   The payload sent to Sentinel.
@@ -206,6 +208,7 @@ class SyncService {
     // The order of the extension list is not part of the inventory.
     usort($modules, fn (array $a, array $b): int => strcmp((string) ($a['machine_name'] ?? ''), (string) ($b['machine_name'] ?? '')));
     $payload['modules'] = $modules;
+    $payload['api_base_url'] = rtrim((string) $this->configFactory->get('sentinel_connector.settings')->get('api_base_url'), '/');
     ksort($payload);
     return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
   }

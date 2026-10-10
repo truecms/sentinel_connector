@@ -41,6 +41,11 @@ class SyncServiceFingerprintTest extends TestCase {
   private string $siteName = 'Example';
 
   /**
+   * The API base URL in config.
+   */
+  private string $apiBaseUrl = 'https://sentinel.example.com';
+
+  /**
    * The results the mocked client returns, in order.
    *
    * @var \Drupal\sentinel_connector\SyncResult[]
@@ -126,11 +131,12 @@ class SyncServiceFingerprintTest extends TestCase {
       'report scope' => [fn (self $t) => $t->payload['inventory_scope'] = 'contrib'],
       'connector version' => [fn (self $t) => $t->payload['connector_version'] = '9.9.9'],
       'site name' => [fn (self $t) => $t->siteName = 'Renamed'],
+      'api base url' => [fn (self $t) => $t->apiBaseUrl = 'https://sentinel.example.org'],
     ];
   }
 
   /**
-   * The IP address and the order of the list are not a change.
+   * The IP address, list order and a trailing URL slash are not a change.
    */
   public function testIpAddressAndOrderAreIgnored(): void {
     $this->responses = [SyncResult::success(200, 'ok')];
@@ -138,6 +144,7 @@ class SyncServiceFingerprintTest extends TestCase {
     $service->sync();
 
     $this->payload['drupal_info']['ip_address'] = '10.0.0.99';
+    $this->apiBaseUrl .= '/';
     $this->payload['modules'] = array_reverse($this->payload['modules']);
     $this->payload['modules'][0] = array_reverse($this->payload['modules'][0], TRUE);
 
@@ -227,7 +234,7 @@ class SyncServiceFingerprintTest extends TestCase {
   private function service(): SyncService {
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')->willReturnCallback(fn (string $key) => [
-      'api_base_url' => 'https://sentinel.example.com',
+      'api_base_url' => $this->apiBaseUrl,
       'site_uuid' => '11111111-1111-4111-8111-111111111111',
       'site_url' => 'https://example.com',
       'site_name' => $this->siteName,

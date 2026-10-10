@@ -13,7 +13,8 @@ All notable changes to this project are documented here. Versions follow
   pushes regardless. A plan limit or an unconfigured site does not fail the
   command.
 - Every accepted push stores a hash of the inventory in state
-  (`sentinel_connector.last_fingerprint`). The IP address is not part of it.
+  (`sentinel_connector.last_fingerprint`). The IP address is not part of it;
+  the API base URL is.
 
 ## 0.3.0 - 2026-10-09
 

@@ -106,7 +106,7 @@ with the last push Sentinel accepted and sends nothing when the two match, so
 a content-only or theme-only release does not use up a push from the plan's
 limit. A change is any of: a module added, removed, updated, installed or
 uninstalled; the Drupal core or PHP version; the report scope; the site URL,
-name or UUID; the connector's own version. The comparison uses a hash kept in
+name or UUID; the API base URL; the connector's own version. The comparison uses a hash kept in
 state (`sentinel_connector.last_fingerprint`), which every accepted push
 updates, whether it came from cron, "Sync now" or Drush.
 
