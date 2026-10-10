@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- `drush sentinel_connector:deploy` (alias `sc-deploy`) for CI/CD pipelines.
+  Run it as the last step of a production deployment. It pushes only when
+  the inventory differs from the last push Sentinel accepted; `--force`
+  pushes regardless. A plan limit or an unconfigured site does not fail the
+  command.
+- Every accepted push stores a hash of the inventory in state
+  (`sentinel_connector.last_fingerprint`). The IP address is not part of it.
+
 ## 0.3.0 - 2026-10-09
 
 ### Added

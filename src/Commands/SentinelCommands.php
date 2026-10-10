@@ -3,6 +3,7 @@
 namespace Drupal\sentinel_connector\Commands;
 
 use Drupal\sentinel_connector\PushLimitFormatter;
+use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
 use Drush\Commands\DrushCommands;
 
@@ -35,7 +36,46 @@ class SentinelCommands extends DrushCommands {
    *   Collect installed extensions and push them to Sentinel.
    */
   public function sync(): void {
-    $result = $this->syncService->sync();
+    $this->report($this->syncService->sync());
+  }
+
+  /**
+   * Notify Sentinel after a deployment, when the inventory changed.
+   *
+   * Made for CI/CD pipelines: run it as the last step of a production
+   * deployment. No push is sent when the modules, their versions, Drupal core
+   * and PHP are the same as in the last push Sentinel accepted.
+   *
+   * @param array $options
+   *   The command options.
+   *
+   * @command sentinel_connector:deploy
+   * @aliases sc-deploy
+   * @option force Push even when nothing changed since the last accepted push.
+   * @usage drush sentinel_connector:deploy
+   *   Push the inventory to Sentinel if the deployment changed it.
+   * @usage drush sentinel_connector:deploy --force
+   *   Push the inventory to Sentinel whether or not it changed.
+   *
+   * @phpstan-param array{force: bool} $options
+   */
+  public function deploy(array $options = ['force' => FALSE]): void {
+    if (!$this->syncService->isConfigured()) {
+      // The same pipeline often runs on environments that do not report.
+      $this->logger()->warning(dt('Sentinel connector is not fully configured; no push was sent.'));
+      return;
+    }
+    if (!$options['force'] && !$this->syncService->hasInventoryChanged()) {
+      $this->logger()->success(dt('Sentinel deploy: no change since the last accepted push; no push was sent.'));
+      return;
+    }
+    $this->report($this->syncService->sync());
+  }
+
+  /**
+   * Reports the outcome of a push; throws when the command must fail.
+   */
+  protected function report(SyncResult $result): void {
     if ($result->isOk()) {
       $this->logger()->success(dt('Sentinel sync: @msg', ['@msg' => $result->message]));
     }

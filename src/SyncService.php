@@ -69,6 +69,16 @@ class SyncService {
   public const STATE_PUSH_LIMIT_MESSAGE = 'sentinel_connector.push_limit_message';
 
   /**
+   * State key: fingerprint of the inventory in the last push Sentinel accepted.
+   */
+  public const STATE_LAST_FINGERPRINT = 'sentinel_connector.last_fingerprint';
+
+  /**
+   * Fingerprint of the inventory built for the push in progress.
+   */
+  protected ?string $pendingFingerprint = NULL;
+
+  /**
    * Constructs the sync service.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -103,6 +113,7 @@ class SyncService {
    * stored outcome is returned instead.
    */
   public function sync(): SyncResult {
+    $this->pendingFingerprint = NULL;
     try {
       $deferred = $this->deferredResult();
     }
@@ -152,15 +163,71 @@ class SyncService {
     }
     $this->markConfigured();
 
+    $payload = $this->buildPayload();
+    $this->pendingFingerprint = $this->fingerprint($payload);
+
+    $result = $this->client->sync($baseUrl, $uuid, $apiKey, $payload);
+    return $result;
+  }
+
+  /**
+   * Builds the full payload: the inventory plus the site block from config.
+   *
+   * @return array<string, mixed>
+   *   The payload sent to Sentinel.
+   */
+  protected function buildPayload(): array {
+    $config = $this->configFactory->get('sentinel_connector.settings');
     $payload = $this->payloadBuilder->build((string) ($config->get('report_scope') ?: 'all'));
     $payload['site'] = [
       'url' => (string) $config->get('site_url'),
       'name' => (string) $config->get('site_name'),
-      'uuid' => $uuid,
+      'uuid' => (string) $config->get('site_uuid'),
     ];
+    return $payload;
+  }
 
-    $result = $this->client->sync($baseUrl, $uuid, $apiKey, $payload);
-    return $result;
+  /**
+   * A stable hash of everything in a payload that a deployment can change.
+   *
+   * The IP address is left out: it differs between a web request and the
+   * command line, and between containers, without anything being deployed.
+   *
+   * @param array<string, mixed> $payload
+   *   The payload sent to Sentinel.
+   */
+  protected function fingerprint(array $payload): string {
+    unset($payload['drupal_info']['ip_address']);
+    $modules = [];
+    foreach ($payload['modules'] ?? [] as $module) {
+      ksort($module);
+      $modules[] = $module;
+    }
+    // The order of the extension list is not part of the inventory.
+    usort($modules, fn (array $a, array $b): int => strcmp((string) ($a['machine_name'] ?? ''), (string) ($b['machine_name'] ?? '')));
+    $payload['modules'] = $modules;
+    ksort($payload);
+    return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+  }
+
+  /**
+   * Whether the inventory differs from the last push Sentinel accepted.
+   *
+   * TRUE when nothing was accepted yet, and when the inventory cannot be
+   * read: in doubt a push is sent.
+   */
+  public function hasInventoryChanged(): bool {
+    try {
+      $last = $this->state->get(self::STATE_LAST_FINGERPRINT);
+      if (!is_string($last) || $last === '') {
+        return TRUE;
+      }
+      return !hash_equals($last, $this->fingerprint($this->buildPayload()));
+    }
+    catch (\Throwable $e) {
+      $this->logFailure($e);
+      return TRUE;
+    }
   }
 
   /**
@@ -313,6 +380,9 @@ class SyncService {
     }
     if ($result->isOk()) {
       $this->state->set(self::STATE_LAST_ACCEPTED_TIME, $this->time->getRequestTime());
+      if ($this->pendingFingerprint !== NULL) {
+        $this->state->set(self::STATE_LAST_FINGERPRINT, $this->pendingFingerprint);
+      }
     }
     $this->state->set('sentinel_connector.last_result', $result->status);
     $this->state->set('sentinel_connector.last_message', $result->message);
