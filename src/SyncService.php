@@ -74,6 +74,16 @@ class SyncService {
   public const STATE_LAST_FINGERPRINT = 'sentinel_connector.last_fingerprint';
 
   /**
+   * Seconds after an accepted push for which its fingerprint is trusted.
+   *
+   * Sentinel's copy can differ from the stored fingerprint without this site
+   * knowing: another environment pushed with the same credentials, a database
+   * was restored, or the site was registered again. After a day a push is
+   * sent whether or not the inventory changed.
+   */
+  public const FINGERPRINT_MAX_AGE = 86400;
+
+  /**
    * Fingerprint of the inventory built for the push in progress.
    */
   protected ?string $pendingFingerprint = NULL;
@@ -216,13 +226,18 @@ class SyncService {
   /**
    * Whether the inventory differs from the last push Sentinel accepted.
    *
-   * TRUE when nothing was accepted yet, and when the inventory cannot be
-   * read: in doubt a push is sent.
+   * TRUE when nothing was accepted yet, when the last accepted push is older
+   * than a day, and when the inventory cannot be read: in doubt a push is
+   * sent.
    */
   public function hasInventoryChanged(): bool {
     try {
       $last = $this->state->get(self::STATE_LAST_FINGERPRINT);
       if (!is_string($last) || $last === '') {
+        return TRUE;
+      }
+      $accepted = (int) $this->state->get(self::STATE_LAST_ACCEPTED_TIME, 0);
+      if ($this->time->getCurrentTime() - $accepted >= self::FINGERPRINT_MAX_AGE) {
         return TRUE;
       }
       return !hash_equals($last, $this->fingerprint($this->buildPayload()));

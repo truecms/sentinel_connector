@@ -53,6 +53,11 @@ class SyncServiceFingerprintTest extends TestCase {
   private array $responses = [];
 
   /**
+   * The current time reported by the time service.
+   */
+  private int $now = 1791550800;
+
+  /**
    * How many errors were logged.
    */
   private int $errors = 0;
@@ -152,6 +157,20 @@ class SyncServiceFingerprintTest extends TestCase {
   }
 
   /**
+   * A fingerprint is trusted for a day after the push it belongs to.
+   */
+  public function testOldFingerprintCountsAsChanged(): void {
+    $this->responses = [SyncResult::success(200, 'ok')];
+    $service = $this->service();
+    $service->sync();
+
+    $this->now += SyncService::FINGERPRINT_MAX_AGE - 1;
+    $this->assertFalse($service->hasInventoryChanged());
+    $this->now++;
+    $this->assertTrue($service->hasInventoryChanged());
+  }
+
+  /**
    * A push that was not accepted leaves the stored fingerprint alone.
    *
    * @dataProvider refusedResults
@@ -203,6 +222,7 @@ class SyncServiceFingerprintTest extends TestCase {
    */
   public function testUnreadableInventoryCountsAsChanged(): void {
     $this->stateValues[SyncService::STATE_LAST_FINGERPRINT] = str_repeat('a', 64);
+    $this->stateValues[SyncService::STATE_LAST_ACCEPTED_TIME] = $this->now;
     $this->payload = NULL;
 
     $this->assertTrue($this->service()->hasInventoryChanged());
@@ -271,8 +291,8 @@ class SyncServiceFingerprintTest extends TestCase {
     });
 
     $time = $this->createMock(TimeInterface::class);
-    $time->method('getRequestTime')->willReturn(1791550800);
-    $time->method('getCurrentTime')->willReturn(1791550800);
+    $time->method('getRequestTime')->willReturnCallback(fn (): int => $this->now);
+    $time->method('getCurrentTime')->willReturnCallback(fn (): int => $this->now);
 
     $logger = $this->createMock(LoggerInterface::class);
     $logger->method('error')->willReturnCallback(function (): void {

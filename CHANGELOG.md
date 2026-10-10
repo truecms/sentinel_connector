@@ -14,7 +14,8 @@ All notable changes to this project are documented here. Versions follow
   command.
 - Every accepted push stores a hash of the inventory in state
   (`sentinel_connector.last_fingerprint`). The IP address is not part of it;
-  the API base URL is.
+  the API base URL is. The hash is trusted for 24 hours; after that the
+  command pushes whether or not anything changed.
 
 ## 0.4.0 - 2026-10-10
 
