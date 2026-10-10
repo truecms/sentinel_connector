@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\sentinel_connector\SentinelClient;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
@@ -491,9 +492,13 @@ class SentinelClientTest extends TestCase {
 
   /**
    * Builds a client whose actual Guzzle stack returns the given response.
+   *
+   * Its clock stands at 2026-10-09T13:00:00Z, before the dates of the tests.
    */
   private function client(Response $response): SentinelClient {
-    return new SentinelClient(new Client(['handler' => HandlerStack::create(new MockHandler([$response]))]));
+    $time = $this->createMock(TimeInterface::class);
+    $time->method('getCurrentTime')->willReturn(gmmktime(13, 0, 0, 10, 9, 2026));
+    return new SentinelClient(new Client(['handler' => HandlerStack::create(new MockHandler([$response]))]), $time);
   }
 
 }

@@ -2,6 +2,7 @@
 
 namespace Drupal\sentinel_connector;
 
+use Drupal\Component\Datetime\TimeInterface;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\TransferException;
 
@@ -24,6 +25,73 @@ class SentinelClient {
   public const SUBSCRIPTION_ERROR_CODE = 'subscription_inactive';
 
   /**
+   * The outcome of every error code of the sync endpoint's error contract.
+   *
+   * A response with one of these codes is classified by the code alone: the
+   * HTTP status and the wording of the message are not consulted, except for
+   * the codes in STATUS_BOUND_ERROR_CODES. A response without a code, or with
+   * a code that is not listed, is classified by its status and the shape of
+   * its body, as before the contract.
+   *
+   * @var array<string, string>
+   */
+  public const ERROR_CODE_OUTCOMES = [
+    'site_url_mismatch' => 'site_mismatch',
+    'site_uuid_mismatch' => 'site_mismatch',
+    'module_validation_failed' => 'validation_failed',
+    'module_not_on_drupal_org' => 'validation_failed',
+    'body_unreadable' => 'invalid_payload',
+    'authentication_required' => 'auth_error',
+    'api_key_invalid' => 'auth_error',
+    'api_key_inactive' => 'auth_error',
+    'permission_denied' => 'auth_error',
+    // Not a mistake: Sentinel's code "site_mismatch" means the API key belongs
+    // to another site, which is an authentication failure. It only shares its
+    // name with this module's "site_mismatch" outcome, which is for a site URL
+    // or UUID that differs (codes site_url_mismatch and site_uuid_mismatch).
+    'site_mismatch' => 'auth_error',
+    'signature_missing' => 'signature_refused',
+    'signature_invalid' => 'signature_refused',
+    'timestamp_skew' => 'signature_refused',
+    'replay_detected' => 'signature_refused',
+    self::SUBSCRIPTION_ERROR_CODE => SyncResult::SUBSCRIPTION_INACTIVE,
+    'site_unavailable' => 'not_found',
+    'catalog_conflict' => 'conflict',
+    'catalog_entry_unavailable' => 'conflict',
+    'payload_invalid' => 'invalid_payload',
+    'json_invalid' => 'invalid_payload',
+    self::PUSH_LIMIT_ERROR_CODE => SyncResult::PUSH_LIMITED,
+    'site_rate_limited' => 'rate_limited',
+    'auth_rate_limited' => 'rate_limited',
+    'rate_limiter_unavailable' => 'unavailable',
+    'replay_protection_unavailable' => 'unavailable',
+    'queue_unavailable' => 'unavailable',
+    'inventory_busy' => 'unavailable',
+    'auth_rate_limiter_unavailable' => 'unavailable',
+    'internal_error' => 'server_error',
+  ];
+
+  /**
+   * The only HTTP status on which some error codes decide the outcome.
+   *
+   * These two outcomes make this site hold back later pushes: a push limit
+   * stores the time of the next push, an inactive subscription holds cron for
+   * a day. They are therefore honoured only on the status Sentinel sends them
+   * with. On any other status the response is classified without the code.
+   *
+   * @var array<string, int>
+   */
+  public const STATUS_BOUND_ERROR_CODES = [
+    self::PUSH_LIMIT_ERROR_CODE => 429,
+    self::SUBSCRIPTION_ERROR_CODE => 402,
+  ];
+
+  /**
+   * The most characters of a message that is shown, logged and stored.
+   */
+  protected const MAX_MESSAGE_LENGTH = 500;
+
+  /**
    * Message used when a push-limit response carries no usable message.
    */
   public const PUSH_LIMIT_FALLBACK_MESSAGE = 'The push limit for this site has been reached.';
@@ -33,8 +101,18 @@ class SentinelClient {
    */
   protected const MAX_LISTED_MODULES = 5;
 
+  /**
+   * Constructs the client.
+   *
+   * @param \GuzzleHttp\ClientInterface $httpClient
+   *   The HTTP client.
+   * @param \Drupal\Component\Datetime\TimeInterface|null $time
+   *   The time service, used to tell whether a Retry-After date has passed.
+   *   The system clock is used when it is not given.
+   */
   public function __construct(
     protected ClientInterface $httpClient,
+    protected ?TimeInterface $time = NULL,
   ) {}
 
   /**
@@ -67,7 +145,7 @@ class SentinelClient {
       $message = 'Could not connect to Sentinel. Check the API URL and network, then retry.';
       // Never keep the request URL, exception message, headers, or payload.
       $host = parse_url($baseUrl, PHP_URL_HOST);
-      $host = is_string($host) && preg_match('/^[a-zA-Z0-9.\-:]+$/', $host) ? $host : 'unknown';
+      $host = is_string($host) && preg_match('/^[a-zA-Z0-9.\-:]+$/D', $host) ? $host : 'unknown';
       $context = method_exists($e, 'getHandlerContext') ? $e->getHandlerContext() : [];
       return SyncResult::failure('transport_error', NULL, $message, [
         'class' => get_class($e),
@@ -77,34 +155,137 @@ class SentinelClient {
     }
 
     $code = $response->getStatusCode();
-    $body = (string) $response->getBody();
-    // Reverse proxies may return HTML for any error. The HTTP status is
-    // classified first; a JSON body only adds the server's own words.
-    $decoded = json_decode($body, TRUE);
+    // Reverse proxies may return HTML for any error, so the body may not be
+    // JSON at all.
+    $decoded = json_decode((string) $response->getBody(), TRUE);
+    $retry = $this->retryAfter($response->getHeaderLine('Retry-After'));
+    // An error that names a known error code is classified by that code.
+    $error = $code >= 400 ? $this->errorBody($decoded) : NULL;
+    $errorCode = $error !== NULL ? (string) $error['error_code'] : '';
+    if ($error !== NULL && $this->decidesOutcome($errorCode, $code)) {
+      return $this->codedRefusal($code, $error, !isset($decoded['error_code']), $retry);
+    }
+    $result = $this->classify($code, $decoded, $retry);
+    if ($error === NULL) {
+      return $result;
+    }
+    // A code that did not decide the outcome is kept for the log entry: one
+    // this version does not know, or one sent with a status it is not
+    // honoured on.
+    return $result->withDiagnostics([
+      (isset(self::ERROR_CODE_OUTCOMES[$errorCode]) ? 'ignored error code' : 'unknown error code') => $errorCode,
+    ]);
+  }
+
+  /**
+   * Whether an error code decides the outcome of a response.
+   *
+   * @param string $errorCode
+   *   The error code, a safe token.
+   * @param int $code
+   *   The HTTP status code.
+   */
+  protected function decidesOutcome(string $errorCode, int $code): bool {
+    if (!isset(self::ERROR_CODE_OUTCOMES[$errorCode])) {
+      return FALSE;
+    }
+    return !isset(self::STATUS_BOUND_ERROR_CODES[$errorCode]) || self::STATUS_BOUND_ERROR_CODES[$errorCode] === $code;
+  }
+
+  /**
+   * Builds the result of an error response whose error code decides it.
+   *
+   * @param int $code
+   *   The HTTP status code. It is reported, but does not decide the outcome.
+   * @param array<array-key, mixed> $data
+   *   The error object that carries the error code.
+   * @param bool $nested
+   *   TRUE when the error object was found under "detail".
+   * @param array{seconds: int|null, time: int|null} $retry
+   *   The wait of the Retry-After header.
+   */
+  protected function codedRefusal(int $code, array $data, bool $nested, array $retry): SyncResult {
+    $errorCode = (string) $data['error_code'];
+    $outcome = self::ERROR_CODE_OUTCOMES[$errorCode];
+    $diagnostics = ['error code' => $errorCode];
+    if ($outcome === SyncResult::PUSH_LIMITED) {
+      return $this->pushLimit($data, $retry)->withDiagnostics($diagnostics);
+    }
+    if ($outcome === SyncResult::SUBSCRIPTION_INACTIVE) {
+      $reason = $data['reason'] ?? NULL;
+      $reason = is_string($reason) && preg_match('/^[a-z0-9_]{1,32}$/D', $reason) ? $reason : NULL;
+      return SyncResult::subscriptionInactive($this->cleanMessage($data['message'] ?? NULL) ?? '', $reason)->withDiagnostics($diagnostics);
+    }
+    // A nested error object holds its extra fields, such as the rejected
+    // modules, beside the error code.
+    $detail = $nested ? ($data['detail'] ?? $data) : ($data['detail'] ?? NULL);
+    // Only these outcomes show how long to wait.
+    $wait = in_array($outcome, ['rate_limited', 'unavailable'], TRUE) ? $this->retryAfterText($retry) : '';
+    $text = $this->codedText($outcome, $code, $detail, $this->cleanMessage($data['message'] ?? NULL), $wait);
+    return SyncResult::failure($outcome, $code, $text, $diagnostics);
+  }
+
+  /**
+   * Builds the text of an error whose error code decided the outcome.
+   *
+   * Sentinel's message says what to do, so none of this module's own advice
+   * is added to it. What the message cannot hold follows as sentences of
+   * their own: the rejected modules, the first field at fault and the wait.
+   * The message is shortened to make room, so the whole text stays within
+   * the length limit.
+   *
+   * @param string $status
+   *   The outcome, e.g. 'not_found'.
+   * @param int $code
+   *   The HTTP status code.
+   * @param mixed $detail
+   *   The "detail" member of the error object, or NULL.
+   * @param string|null $message
+   *   The cleaned "message" of the error object, or NULL when it has none.
+   * @param string $wait
+   *   The sentence that says how long to wait, or an empty string.
+   */
+  protected function codedText(string $status, int $code, mixed $detail, ?string $message, string $wait): string {
+    if ($message === NULL) {
+      // No message: the words of an older server, or this module's own.
+      return mb_substr($this->refusalText($status, $code, $detail, $wait), 0, self::MAX_MESSAGE_LENGTH);
+    }
+    $additions = [];
+    if ($status === 'validation_failed' && is_array($detail)) {
+      $additions[] = $this->rejectedModules($detail);
+    }
+    if (is_array($detail) && $detail !== [] && array_is_list($detail)) {
+      $field = $this->firstValidationError($detail);
+      $additions[] = $field !== NULL ? 'First field at fault: ' . mb_substr($field, 0, 150) . '.' : '';
+    }
+    $additions[] = $wait;
+    $tail = implode(' ', array_filter($additions, fn (string $sentence): bool => $sentence !== ''));
+    if ($tail === '') {
+      return $message;
+    }
+    $room = max(0, self::MAX_MESSAGE_LENGTH - mb_strlen($tail) - 2);
+    return mb_substr(rtrim(mb_substr($message, 0, $room), '. ') . '. ' . $tail, 0, self::MAX_MESSAGE_LENGTH);
+  }
+
+  /**
+   * Classifies a response by its HTTP status and the shape of its body.
+   *
+   * This is how a response is read whose error code does not decide the
+   * outcome: one from a Sentinel released before the error contract, or from
+   * a reverse proxy. The HTTP status is classified first; a JSON body only
+   * adds the server's own words.
+   *
+   * @param int $code
+   *   The HTTP status code.
+   * @param mixed $decoded
+   *   The decoded response body, or NULL when it is not JSON.
+   * @param array{seconds: int|null, time: int|null} $retry
+   *   The wait of the Retry-After header.
+   */
+  protected function classify(int $code, mixed $decoded, array $retry): SyncResult {
     $detail = is_array($decoded) ? ($decoded['detail'] ?? NULL) : NULL;
     if ($code === 429) {
-      $retry = $response->getHeaderLine('Retry-After');
-      $pushLimit = $this->pushLimit($body, $retry);
-      if ($pushLimit !== NULL) {
-        return $pushLimit;
-      }
-      $message = rtrim($this->detailMessage($detail, 'Sentinel rate limit reached.'), '.') . '.';
-      if (ctype_digit($retry)) {
-        $message .= ' Retry after ' . $retry . ' seconds.';
-      }
-      elseif ($retry !== '' && strtotime($retry) !== FALSE) {
-        $message .= ' Retry after ' . gmdate('c', strtotime($retry)) . '.';
-      }
-      return SyncResult::failure('rate_limited', 429, $message);
-    }
-    // A refusal over billing is its own outcome. Other 402 bodies fall through.
-    if ($code === 402) {
-      $data = $this->errorBody($body, self::SUBSCRIPTION_ERROR_CODE);
-      if ($data !== NULL) {
-        $reason = $data['reason'] ?? NULL;
-        $reason = is_string($reason) && preg_match('/^[a-z0-9_]{1,32}$/', $reason) ? $reason : NULL;
-        return SyncResult::subscriptionInactive($this->cleanMessage($data['message'] ?? NULL) ?? '', $reason);
-      }
+      return $this->refusalResult('rate_limited', 429, $detail, $this->retryAfterText($retry));
     }
     $refusal = $this->refusal($code, $detail);
     if ($refusal !== NULL) {
@@ -115,17 +296,17 @@ class SentinelClient {
     }
 
     if ($code === 200) {
-      return SyncResult::success(200, $this->detailMessage($decoded['message'] ?? NULL, 'Sync completed.'));
+      return SyncResult::success(200, $this->cleanMessage($decoded['message'] ?? NULL) ?? 'Sync completed.');
     }
     if ($code === 202) {
       $taskId = $decoded['task_id'] ?? NULL;
-      if (!is_string($taskId) || !preg_match('/^[A-Za-z0-9_.:\-]{1,128}$/', $taskId)) {
+      if (!is_string($taskId) || !preg_match('/^[A-Za-z0-9_.:\-]{1,128}$/D', $taskId)) {
         return SyncResult::failure('invalid_response', 202, 'Sentinel accepted the sync without a task ID.');
       }
       return SyncResult::accepted($taskId);
     }
 
-    return SyncResult::failure('rejected', $code, $this->detailMessage($detail, 'Sentinel rejected the sync.'));
+    return $this->refusalResult('rejected', $code, $detail);
   }
 
   /**
@@ -143,29 +324,128 @@ class SentinelClient {
     if ($code === 401 || $code === 403) {
       // A refused signature carries a machine-readable code.
       $errorCode = is_array($detail) ? ($detail['code'] ?? NULL) : NULL;
-      $diagnostics = is_string($errorCode) && preg_match('/^[a-z0-9_]{1,64}$/', $errorCode) ? ['code' => $errorCode] : [];
-      if ($code === 401 && $diagnostics !== []) {
-        return SyncResult::failure('signature_refused', 401, $this->detailMessage($detail, 'Sentinel refused the request signature. Check the site clock and the API key.'), $diagnostics);
-      }
-      return SyncResult::failure('auth_error', $code, $this->detailMessage($detail, 'Authentication failed. Check the API key and retry.'), $diagnostics);
+      $diagnostics = is_string($errorCode) && preg_match('/^[a-z0-9_]{1,64}$/D', $errorCode) ? ['code' => $errorCode] : [];
+      return $this->refusalResult($code === 401 && $diagnostics !== [] ? 'signature_refused' : 'auth_error', $code, $detail, '', $diagnostics);
     }
     if ($code === 400) {
       if (is_array($detail) && (isset($detail['invalid_modules']) || isset($detail['error']))) {
-        return SyncResult::failure('validation_failed', 400, $this->validationMessage($detail));
+        return $this->refusalResult('validation_failed', 400, $detail);
       }
       if (is_string($detail) && preg_match('/mismatch|does not match/i', $detail)) {
-        return SyncResult::failure('site_mismatch', 400, rtrim($this->detailMessage($detail, 'The site does not match.'), '.') . '. Check the site URL and site UUID against the site registered in Sentinel.');
+        return $this->refusalResult('site_mismatch', 400, $detail);
       }
       return NULL;
     }
-    return match (TRUE) {
-      $code === 404 => SyncResult::failure('not_found', 404, rtrim($this->detailMessage($detail, 'Sentinel did not find this site.'), '.') . '. Check the API base URL and site UUID.'),
-      $code === 409 => SyncResult::failure('conflict', 409, $this->detailMessage($detail, 'Sentinel could not store the inventory because of a conflict.')),
-      $code === 422 => SyncResult::failure('invalid_payload', 422, $this->detailMessage($detail, 'Sentinel could not read the inventory.')),
-      $code === 503 => SyncResult::failure('unavailable', 503, $this->detailMessage($detail, 'Sentinel is temporarily unavailable. Retry later.')),
-      $code >= 500 => SyncResult::failure('server_error', $code, $this->detailMessage($detail, 'Sentinel server returned HTTP ' . $code . '. Retry later.')),
+    $status = match (TRUE) {
+      $code === 404 => 'not_found',
+      $code === 409 => 'conflict',
+      $code === 422 => 'invalid_payload',
+      $code === 503 => 'unavailable',
+      $code >= 500 => 'server_error',
       default => NULL,
     };
+    return $status !== NULL ? $this->refusalResult($status, $code, $detail) : NULL;
+  }
+
+  /**
+   * Builds the failure of an outcome from the "detail" of the response.
+   *
+   * @param string $status
+   *   The outcome, e.g. 'not_found'.
+   * @param int $code
+   *   The HTTP status code.
+   * @param mixed $detail
+   *   The "detail" member of the response body, or NULL.
+   * @param string $wait
+   *   The sentence that says how long to wait, or an empty string.
+   * @param array<string, int|string> $diagnostics
+   *   Facts for the log entry only.
+   */
+  protected function refusalResult(string $status, int $code, mixed $detail, string $wait = '', array $diagnostics = []): SyncResult {
+    return SyncResult::failure($status, $code, $this->refusalText($status, $code, $detail, $wait), $diagnostics);
+  }
+
+  /**
+   * Builds the text of an outcome from the "detail" of the response.
+   *
+   * The detail of a Sentinel released before the error contract is a short
+   * label, so this module adds its own advice to some outcomes.
+   *
+   * @param string $status
+   *   The outcome, e.g. 'not_found'.
+   * @param int $code
+   *   The HTTP status code.
+   * @param mixed $detail
+   *   The "detail" member of the response body, or NULL.
+   * @param string $wait
+   *   The sentence that says how long to wait, or an empty string.
+   */
+  protected function refusalText(string $status, int $code, mixed $detail, string $wait = ''): string {
+    $text = fn (string $fallback): string => $this->detailMessage($detail, $fallback);
+    $advised = fn (string $fallback, string $advice): string => rtrim($text($fallback), '.') . '. ' . $advice;
+    return match ($status) {
+      'site_mismatch' => $advised('The site does not match.', 'Check the site URL and site UUID against the site registered in Sentinel.'),
+      'validation_failed' => is_array($detail) && !array_is_list($detail)
+        ? $this->validationMessage($detail)
+        : $text('Sentinel rejected one or more modules.'),
+      'signature_refused' => $text('Sentinel refused the request signature. Check the site clock and the API key.'),
+      'auth_error' => $text('Authentication failed. Check the API key and retry.'),
+      'not_found' => $advised('Sentinel did not find this site.', 'Check the API base URL and site UUID.'),
+      'conflict' => $text('Sentinel could not store the inventory because of a conflict.'),
+      'invalid_payload' => $text('Sentinel could not read the inventory.'),
+      'rate_limited' => rtrim($text('Sentinel rate limit reached.'), '.') . '.' . ($wait !== '' ? ' ' . $wait : ''),
+      'unavailable' => $wait !== ''
+        ? rtrim($text('Sentinel is temporarily unavailable.'), '.') . '. ' . $wait
+        : $text('Sentinel is temporarily unavailable. Retry later.'),
+      'server_error' => $text('Sentinel server returned HTTP ' . $code . '. Retry later.'),
+      default => $text('Sentinel rejected the sync.'),
+    };
+  }
+
+  /**
+   * Reads a Retry-After header.
+   *
+   * Only the two forms of RFC 7231 count: a positive number of whole seconds,
+   * and an HTTP date (IMF-fixdate, GMT) that lies in the future. Relative
+   * words, signed numbers, zero and dates in the past give no wait.
+   *
+   * @param string $header
+   *   The Retry-After header value, or an empty string.
+   *
+   * @return array{seconds: int|null, time: int|null}
+   *   The seconds to wait or the Unix timestamp to wait for. Both are NULL
+   *   when the header is missing or unusable.
+   */
+  protected function retryAfter(string $header): array {
+    $header = trim($header);
+    $none = ['seconds' => NULL, 'time' => NULL];
+    if (preg_match('/\A[0-9]{1,9}\z/', $header)) {
+      return (int) $header > 0 ? ['seconds' => (int) $header, 'time' => NULL] : $none;
+    }
+    $format = 'D, d M Y H:i:s \G\M\T';
+    $date = \DateTimeImmutable::createFromFormat('!' . $format, $header, new \DateTimeZone('UTC'));
+    // The date must read back as it was sent: no overflow, no other format.
+    if ($date === FALSE || $date->format($format) !== $header) {
+      return $none;
+    }
+    $now = $this->time?->getCurrentTime() ?? time();
+    return $date->getTimestamp() > $now ? ['seconds' => NULL, 'time' => $date->getTimestamp()] : $none;
+  }
+
+  /**
+   * Turns the wait of a Retry-After header into a sentence.
+   *
+   * @param array{seconds: int|null, time: int|null} $retry
+   *   The wait of the Retry-After header.
+   *
+   * @return string
+   *   The sentence, or an empty string when there is no wait.
+   */
+  protected function retryAfterText(array $retry): string {
+    if ($retry['seconds'] !== NULL) {
+      return 'Retry after ' . $retry['seconds'] . ' seconds.';
+    }
+    return $retry['time'] !== NULL ? 'Retry after ' . gmdate('c', $retry['time']) . '.' : '';
   }
 
   /**
@@ -178,9 +458,23 @@ class SentinelClient {
     $message = $this->cleanMessage($detail['message'] ?? NULL)
       ?? $this->cleanMessage($detail['error'] ?? NULL)
       ?? 'Sentinel rejected one or more modules.';
+    $modules = $this->rejectedModules($detail);
+    return $modules !== '' ? (string) $this->cleanMessage(rtrim($message, '.') . '. ' . $modules) : $message;
+  }
+
+  /**
+   * Lists the modules Sentinel rejected: how many, and the first few names.
+   *
+   * @param array<array-key, mixed> $detail
+   *   The "detail" object of the response.
+   *
+   * @return string
+   *   A sentence, or an empty string when the detail lists no modules.
+   */
+  protected function rejectedModules(array $detail): string {
     $invalid = is_array($detail['invalid_modules'] ?? NULL) ? $detail['invalid_modules'] : [];
     if ($invalid === []) {
-      return $message;
+      return '';
     }
     $names = [];
     foreach (array_slice($invalid, 0, self::MAX_LISTED_MODULES) as $module) {
@@ -188,48 +482,30 @@ class SentinelClient {
       $names[] = $name !== NULL ? mb_substr($name, 0, 64) : 'unnamed';
     }
     $count = count($invalid);
-    $message = rtrim($message, '.') . '. Rejected modules (' . $count . '): ' . implode(', ', $names);
     $more = $count - count($names);
-    return (string) $this->cleanMessage($message . ($more > 0 ? ' and ' . $more . ' more.' : '.'));
+    return 'Rejected modules (' . $count . '): ' . implode(', ', $names) . ($more > 0 ? ' and ' . $more . ' more.' : '.');
   }
 
   /**
    * Maps a plan push-limit response to a typed result.
    *
-   * Only a JSON body carrying the push-limit error code counts. Every other
-   * field is optional: a missing or malformed value falls back to the
-   * Retry-After header and a generic message.
+   * Every field besides the error code is optional: a missing or malformed
+   * value falls back to the Retry-After header and a generic message.
    *
-   * @param string $body
-   *   The raw response body.
-   * @param string $retryAfter
-   *   The Retry-After header value, or an empty string.
-   *
-   * @return \Drupal\sentinel_connector\SyncResult|null
-   *   The push-limit result, or NULL when this is another kind of 429.
+   * @param array<array-key, mixed> $data
+   *   The error object that carries the push-limit error code.
+   * @param array{seconds: int|null, time: int|null} $retry
+   *   The wait of the Retry-After header.
    */
-  protected function pushLimit(string $body, string $retryAfter): ?SyncResult {
-    $data = $this->errorBody($body, self::PUSH_LIMIT_ERROR_CODE);
-    if ($data === NULL) {
-      return NULL;
-    }
+  protected function pushLimit(array $data, array $retry): SyncResult {
     $message = $this->cleanMessage($data['message'] ?? NULL) ?? self::PUSH_LIMIT_FALLBACK_MESSAGE;
 
-    $nextAllowedAt = $this->timestamp($data['next_allowed_at'] ?? NULL);
     $seconds = $data['retry_after_seconds'] ?? NULL;
-    $seconds = is_int($seconds) && $seconds > 0 ? $seconds : NULL;
-    $retryAfter = trim($retryAfter);
-    if ($seconds === NULL && ctype_digit($retryAfter) && strlen($retryAfter) <= 9 && (int) $retryAfter > 0) {
-      $seconds = (int) $retryAfter;
-    }
-    if ($nextAllowedAt === NULL && $retryAfter !== '' && !ctype_digit($retryAfter)) {
-      // Retry-After may also be an HTTP date.
-      $date = strtotime($retryAfter);
-      $nextAllowedAt = $date !== FALSE && $date > 0 ? $date : NULL;
-    }
+    $seconds = is_int($seconds) && $seconds > 0 ? $seconds : $retry['seconds'];
+    $nextAllowedAt = $this->timestamp($data['next_allowed_at'] ?? NULL) ?? $retry['time'];
 
     $plan = $data['plan'] ?? NULL;
-    $plan = is_string($plan) && preg_match('/^[a-zA-Z0-9_\-]{1,32}$/', $plan) ? $plan : NULL;
+    $plan = is_string($plan) && preg_match('/^[a-zA-Z0-9_\-]{1,32}$/D', $plan) ? $plan : NULL;
     $limit = $data['limit'] ?? NULL;
     $limit = is_int($limit) && $limit > 0 ? $limit : NULL;
 
@@ -237,24 +513,24 @@ class SentinelClient {
   }
 
   /**
-   * Returns the structured error body that carries the given error code.
+   * Returns the error object of a response body that names an error code.
    *
-   * @param string $body
-   *   The raw response body.
-   * @param string $errorCode
-   *   The error code the body must carry.
+   * @param mixed $decoded
+   *   The decoded response body, or NULL when it is not JSON.
    *
    * @return array<array-key, mixed>|null
-   *   The decoded error object, or NULL when the body is something else.
+   *   The object whose "error_code" is a safe token, or NULL when the body
+   *   names no usable error code.
    */
-  protected function errorBody(string $body, string $errorCode): ?array {
-    $decoded = json_decode($body, TRUE);
+  protected function errorBody(mixed $decoded): ?array {
     if (!is_array($decoded)) {
       return NULL;
     }
     // FastAPI nests the body of a raised HTTP error under "detail".
     $data = isset($decoded['error_code']) || !is_array($decoded['detail'] ?? NULL) ? $decoded : $decoded['detail'];
-    return ($data['error_code'] ?? NULL) === $errorCode ? $data : NULL;
+    $errorCode = $data['error_code'] ?? NULL;
+    // Anchored at the very end: a trailing newline does not pass.
+    return is_string($errorCode) && preg_match('/\A[a-z0-9_]{1,64}\z/', $errorCode) ? $data : NULL;
   }
 
   /**
@@ -275,7 +551,7 @@ class SentinelClient {
     }
     // Control and format characters, including line and bidi overrides.
     $clean = trim((string) preg_replace('/[\p{Cc}\p{Cf}\x{2028}\x{2029}]+/u', ' ', $message));
-    return $clean !== '' ? mb_substr($clean, 0, 500) : NULL;
+    return $clean !== '' ? mb_substr($clean, 0, self::MAX_MESSAGE_LENGTH) : NULL;
   }
 
   /**
@@ -288,7 +564,7 @@ class SentinelClient {
    *   The timestamp, or NULL when the value is not a usable date-time.
    */
   protected function timestamp(mixed $value): ?int {
-    if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+\-]\d{2}:?\d{2})?$/', $value)) {
+    if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+\-]\d{2}:?\d{2})?$/D', $value)) {
       return NULL;
     }
     try {
@@ -321,16 +597,30 @@ class SentinelClient {
     if (!array_is_list($detail)) {
       return $this->cleanMessage($detail['message'] ?? NULL) ?? $fallback;
     }
-    // A list of validation errors: the first one, and how many follow.
+    $error = $this->firstValidationError($detail);
+    return $error !== NULL ? (string) $this->cleanMessage(rtrim($fallback, '.') . ': ' . $error) : $fallback;
+  }
+
+  /**
+   * Describes a list of validation errors: the first one, and how many follow.
+   *
+   * @param non-empty-list<mixed> $detail
+   *   The "detail" list of the response.
+   *
+   * @return string|null
+   *   The field at fault and what is wrong with it, e.g.
+   *   "body.modules.0.version: Field required (and 1 more)", or NULL when the
+   *   first error holds no usable text.
+   */
+  protected function firstValidationError(array $detail): ?string {
     $first = $detail[0];
     $text = $this->cleanMessage(is_array($first) ? ($first['msg'] ?? NULL) : $first);
     if ($text === NULL) {
-      return $fallback;
+      return NULL;
     }
     $loc = is_array($first) && is_array($first['loc'] ?? NULL) ? implode('.', array_filter($first['loc'], 'is_scalar')) : '';
-    $message = rtrim($fallback, '.') . ': ' . ($loc !== '' ? $loc . ': ' : '') . $text;
     $more = count($detail) - 1;
-    return (string) $this->cleanMessage($message . ($more > 0 ? ' (and ' . $more . ' more)' : ''));
+    return ($loc !== '' ? $loc . ': ' : '') . $text . ($more > 0 ? ' (and ' . $more . ' more)' : '');
   }
 
 }

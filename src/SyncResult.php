@@ -142,6 +142,17 @@ final class SyncResult {
   }
 
   /**
+   * Returns a copy with further facts for the log entry.
+   *
+   * @param array<string, int|string> $diagnostics
+   *   Facts to add, e.g. the error code Sentinel sent. Existing facts are
+   *   kept.
+   */
+  public function withDiagnostics(array $diagnostics): self {
+    return new self($this->status, $this->httpCode, $this->message, $this->taskId, $this->nextAllowedAt, $this->retryAfterSeconds, $this->plan, $this->limit, $this->deferred, $this->reason, $this->diagnostics + $diagnostics);
+  }
+
+  /**
    * Whether the sync succeeded or was accepted for processing.
    */
   public function isOk(): bool {

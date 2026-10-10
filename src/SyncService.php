@@ -198,8 +198,9 @@ class SyncService {
    * Writes the one log entry of a push attempt.
    *
    * The entry holds the outcome, the HTTP status, the trigger, the cleaned
-   * message and, where known, the task ID, the plan limit or the reason. It
-   * never holds the API key, the request URL, headers or the payload.
+   * message and, where known, the task ID, the plan limit, the reason or the
+   * error code Sentinel sent. It never holds the API key, the request URL,
+   * headers or the payload.
    *
    * @param \Drupal\sentinel_connector\SyncResult $result
    *   The outcome of the push.
