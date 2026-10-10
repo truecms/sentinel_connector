@@ -295,8 +295,12 @@ class PushLimitTest extends KernelTestBase {
     sentinel_connector_cron();
     $this->assertCount(1, $this->transactions);
     $this->assertNotNull($sync->getLastUnchangedTime());
-    // The check counts for the hourly floor.
-    $this->assertFalse($sync->cronIsDue(time() + 60));
+    // The check counts for the hourly floor, on cron's own clock: a run
+    // exactly an hour later is due.
+    $request = \Drupal::time()->getRequestTime();
+    $this->assertSame($request, $sync->getLastUnchangedTime());
+    $this->assertFalse($sync->cronIsDue($request + 3599));
+    $this->assertTrue($sync->cronIsDue($request + 3600));
 
     // A changed inventory is pushed on the next due run.
     $state->set(SyncService::STATE_LAST_UNCHANGED_TIME, time() - 7200);

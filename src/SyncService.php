@@ -84,6 +84,15 @@ class SyncService {
   public const FINGERPRINT_MAX_AGE = 86400;
 
   /**
+   * Seconds before the fingerprint's full age at which it already expires.
+   *
+   * A site whose cron runs once a day starts a little earlier or later each
+   * time. Without the margin a run a few seconds early would skip the daily
+   * push, and the next one would come a day late.
+   */
+  public const FINGERPRINT_EXPIRY_MARGIN = 900;
+
+  /**
    * State key: Unix timestamp of the last cron check that found no change.
    */
   public const STATE_LAST_UNCHANGED_TIME = 'sentinel_connector.last_unchanged_time';
@@ -242,7 +251,7 @@ class SyncService {
         return TRUE;
       }
       $accepted = (int) $this->state->get(self::STATE_LAST_ACCEPTED_TIME, 0);
-      if ($this->time->getCurrentTime() - $accepted >= self::FINGERPRINT_MAX_AGE) {
+      if ($this->time->getCurrentTime() - $accepted >= self::FINGERPRINT_MAX_AGE - self::FINGERPRINT_EXPIRY_MARGIN) {
         return TRUE;
       }
       return !hash_equals($last, $this->fingerprint($this->buildPayload()));
@@ -411,7 +420,9 @@ class SyncService {
     if ($this->hasInventoryChanged()) {
       return $this->sync();
     }
-    $this->state->set(self::STATE_LAST_UNCHANGED_TIME, $this->time->getCurrentTime());
+    // Request time, as for an attempt: cron compares both with its own
+    // request time, and a later clock would make every second run not due.
+    $this->state->set(self::STATE_LAST_UNCHANGED_TIME, $this->time->getRequestTime());
     return NULL;
   }
 

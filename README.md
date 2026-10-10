@@ -182,8 +182,9 @@ the plan's push limit is kept for real changes:
   push; the payload itself is not stored.
 - When nothing changed, nothing is sent. The check is recorded
   (`sentinel_connector.last_unchanged_time`) and the status report shows it.
-- An unchanged inventory is sent again 24 hours after the last accepted push,
-  because Sentinel's copy can differ without the site knowing: a restored
+- An unchanged inventory is sent again 24 hours after the last accepted push
+  (from 15 minutes earlier, so that a once-a-day cron run that starts a little
+  early does not skip it), because Sentinel's copy can differ without the site knowing: a restored
   database, another environment that pushed with the same credentials, or a
   site registered again.
 
@@ -193,7 +194,11 @@ How often a push is accepted is decided by Sentinel, by plan.
 and are not bound by the hourly floor: Sentinel enforces the real limit and
 answers with a clear message. They are still held by a stored plan limit
 (below). To make cron push on its next due run:
-`drush state:delete sentinel_connector.last_fingerprint`.
+`drush state:delete sentinel_connector.last_fingerprint`. Saving a new API key
+on the settings form does the same, so a wrong key shows up within the hour.
+
+A push that Sentinel queued (202) and then failed to process is not sent again
+until the inventory changes or the day is over.
 
 ## Push limits
 

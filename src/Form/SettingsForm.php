@@ -245,6 +245,9 @@ final class SettingsForm extends ConfigFormBase {
     $key = (string) $form_state->getValue('api_key_state');
     if ($key !== '') {
       $this->state->set('sentinel_connector.api_key', $key);
+      // Nothing was accepted with the new key yet: cron pushes on its next
+      // due run, so a wrong key shows up within the hour.
+      $this->state->deleteMultiple([SyncService::STATE_LAST_FINGERPRINT, SyncService::STATE_LAST_UNCHANGED_TIME]);
     }
     // The status report allows a newly configured site a day to push.
     $this->syncService->markConfigured();

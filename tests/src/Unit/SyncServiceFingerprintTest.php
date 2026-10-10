@@ -164,7 +164,8 @@ class SyncServiceFingerprintTest extends TestCase {
     $service = $this->service();
     $service->sync();
 
-    $this->now += SyncService::FINGERPRINT_MAX_AGE - 1;
+    // It expires a margin early, so a daily cron run a little early pushes.
+    $this->now += SyncService::FINGERPRINT_MAX_AGE - SyncService::FINGERPRINT_EXPIRY_MARGIN - 1;
     $this->assertFalse($service->hasInventoryChanged());
     $this->now++;
     $this->assertTrue($service->hasInventoryChanged());

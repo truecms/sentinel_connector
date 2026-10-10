@@ -107,9 +107,14 @@ class PushHealth {
     $now = $this->time->getCurrentTime();
     $lastAccepted = (int) $this->state->get(SyncService::STATE_LAST_ACCEPTED_TIME, 0);
     // Cron does not push an unchanged inventory. A recent check that found
-    // no change keeps an older accepted push current.
+    // no change keeps an older accepted push current, unless a push was
+    // attempted since: that attempt was not accepted, or it would be newer.
     $lastUnchanged = $lastAccepted > 0 ? (int) $this->syncService->getLastUnchangedTime() : 0;
-    $unchanged = $lastUnchanged > $lastAccepted && ($now - $lastUnchanged) < self::STALE_AFTER;
+    $lastAttempt = (int) $this->state->get('sentinel_connector.last_attempt_time', 0);
+    $unchanged = $lastUnchanged > $lastAccepted
+      && $lastUnchanged >= $lastAttempt
+      && ($lastUnchanged - $lastAccepted) < SyncService::FINGERPRINT_MAX_AGE
+      && ($now - $lastUnchanged) < self::STALE_AFTER;
     $fresh = $lastAccepted > 0 && (($now - $lastAccepted) < self::STALE_AFTER || $unchanged);
     $acceptedText = $lastAccepted > 0
       ? $this->t('Last push accepted: @time.', ['@time' => $this->formatter->formatTime($lastAccepted)])

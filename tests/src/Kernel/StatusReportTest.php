@@ -172,10 +172,12 @@ class StatusReportTest extends KernelTestBase {
    * An old accepted push stays OK while cron finds nothing changed.
    */
   public function testUnchangedInventoryKeepsOldPushOk(): void {
-    $accepted = $this->now - 3 * 86400;
-    $checked = $this->now - 1800;
+    // The daily push is an hour late, for example behind a slow cron.
+    $accepted = $this->now - 86400 - 3600;
+    $checked = $accepted + 86400 - 1800;
     $this->setState([
       'last_accepted_time' => $accepted,
+      'last_attempt_time' => $accepted,
       'last_result' => 'success',
       'last_unchanged_time' => $checked,
     ]);
@@ -184,8 +186,12 @@ class StatusReportTest extends KernelTestBase {
     $this->assertSame('Last push accepted ' . $this->siteTime($accepted), (string) $entry['value']);
     $this->assertStringContainsString('No change since; last checked ' . $this->siteTime($checked) . '.', (string) $entry['description']);
 
-    // Cron stopped checking a day ago: the old push is an error again.
-    $this->setState(['last_unchanged_time' => $this->now - 86400 - 60]);
+    // A push attempted after the check was not accepted: an error again.
+    $this->setState(['last_attempt_time' => $this->now - 600, 'last_result' => 'unauthorized']);
+    $this->assertSame(PushHealth::SEVERITY_ERROR, $this->entry()['severity']);
+
+    // A check cannot vouch for a push that was already a day old.
+    $this->setState(['last_attempt_time' => $accepted, 'last_unchanged_time' => $accepted + 86400 + 60]);
     $this->assertSame(PushHealth::SEVERITY_ERROR, $this->entry()['severity']);
 
     // A check without any accepted push proves nothing.
