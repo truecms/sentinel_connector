@@ -17,7 +17,7 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '0.3.0';
+  public const CONNECTOR_VERSION = '0.4.0';
 
   public function __construct(
     protected ModuleExtensionList $moduleList,
@@ -30,6 +30,9 @@ class PayloadBuilder {
   /**
    * Build the modules array for the given scope.
    *
+   * Core modules are never listed: core is reported by its version alone.
+   * Sub-modules are folded into the module whose directory contains them.
+   *
    * @param string $scope
    *   One of 'all', 'contrib_custom', 'contrib'.
    *
@@ -39,30 +42,44 @@ class PayloadBuilder {
    */
   public function build(string $scope): array {
     $scope = in_array($scope, ['all', 'contrib_custom', 'contrib'], TRUE) ? $scope : 'all';
+    $extensions = array_filter(
+      $this->moduleList->reset()->getList(),
+      fn(Extension $extension): bool => !$this->isCore($extension),
+    );
+    $parents = $this->parents($extensions);
+    // A project counts as enabled when it or any of its sub-modules is.
+    $enabled = [];
+    foreach ($extensions as $name => $extension) {
+      if ((int) ($extension->status ?? 0) === 1) {
+        $enabled[$parents[$name] ?? $name] = TRUE;
+      }
+    }
     $modules = [];
-    foreach ($this->moduleList->reset()->getList() as $name => $extension) {
+    foreach ($extensions as $name => $extension) {
+      if (isset($parents[$name])) {
+        continue;
+      }
       $info = $extension->info;
-      $core = $this->isCore($extension);
-      $project = $core ? 'drupal' : $this->normaliseProject($info['project'] ?? NULL);
+      $project = $this->normaliseProject($info['project'] ?? NULL);
       $packaged = !empty($info['project']);
-      if (!$core && $project === NULL && $this->composerProjects) {
+      if ($project === NULL && $this->composerProjects) {
         // No usable packaging metadata: ask Composer which drupal/* package
         // ships this extension. The machine name is never used as a guess.
         $package = $this->composerProjects->resolve($extension->getPath());
         $packaged = $packaged || $package !== NULL;
         $project = $this->normaliseProject($package);
       }
-      $type = $core ? 'core' : ($packaged ? 'contrib' : 'custom');
-      if (!$this->inScope($type, $scope)) {
+      $type = $packaged ? 'contrib' : 'custom';
+      if ($scope === 'contrib' && $type !== 'contrib') {
         continue;
       }
-      $version = $info['version'] ?? ($core ? $this->coreVersion : NULL);
+      $version = $info['version'] ?? NULL;
       $versionKnown = is_string($version) && trim($version) !== '';
       $modules[] = [
         'machine_name' => $name,
         'display_name' => $info['name'] ?? $name,
         'module_type' => $type,
-        'enabled' => (int) ($extension->status ?? 0) === 1,
+        'enabled' => isset($enabled[$name]),
         'version' => $versionKnown ? $version : self::VERSION_PLACEHOLDER,
         'version_known' => $versionKnown,
         'reported_project' => $project,
@@ -102,14 +119,34 @@ class PayloadBuilder {
   }
 
   /**
-   * Whether a module type is included in the configured scope.
+   * Maps each sub-module to the outermost module that contains it.
+   *
+   * @param array<string, \Drupal\Core\Extension\Extension> $extensions
+   *   Discovered modules keyed by machine name.
+   *
+   * @return array<string, string>
+   *   Containing module names keyed by sub-module name.
    */
-  protected function inScope(string $type, string $scope): bool {
-    return match ($scope) {
-      'contrib' => $type === 'contrib',
-      'contrib_custom' => $type !== 'core',
-      default => TRUE,
-    };
+  protected function parents(array $extensions): array {
+    $paths = [];
+    foreach ($extensions as $name => $extension) {
+      // A profile is a distribution, not the parent of the modules it ships.
+      if ($extension->getType() !== 'profile') {
+        $paths[$name] = rtrim($extension->getPath(), '/') . '/';
+      }
+    }
+    $parents = [];
+    foreach ($extensions as $name => $extension) {
+      $own = rtrim($extension->getPath(), '/') . '/';
+      $length = strlen($own);
+      foreach ($paths as $candidate => $path) {
+        if (strlen($path) < $length && str_starts_with($own, $path)) {
+          $parents[$name] = $candidate;
+          $length = strlen($path);
+        }
+      }
+    }
+    return $parents;
   }
 
 }
