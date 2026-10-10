@@ -10,8 +10,6 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 
 /**
  * Tests response typing and safe transport diagnostics.
@@ -25,11 +23,13 @@ class SentinelClientTest extends TestCase {
    */
   public function testStructuredAuthenticationErrors(): void {
     foreach ([401, 403] as $code) {
-      $client = $this->client(new Response($code, [], json_encode(['detail' => ['reason' => 'invalid key']])));
+      $detail = ['code' => 'signature_invalid', 'message' => 'The request signature is not valid.'];
+      $client = $this->client(new Response($code, [], json_encode(['detail' => $detail])));
       $result = $client->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
       $this->assertSame('auth_error', $result->status);
       $this->assertSame($code, $result->httpCode);
-      $this->assertStringContainsString('invalid key', $result->message);
+      $this->assertSame('The request signature is not valid.', $result->message);
+      $this->assertSame(['code' => 'signature_invalid'], $result->diagnostics);
     }
   }
 
@@ -40,7 +40,11 @@ class SentinelClientTest extends TestCase {
     foreach ([401, 403, 500, 502, 503] as $code) {
       $result = $this->client(new Response($code, [], '<html>SECRET proxy failure</html>'))
         ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
-      $this->assertSame($code < 500 ? 'auth_error' : 'server_error', $result->status);
+      $this->assertSame(match (TRUE) {
+        $code < 500 => 'auth_error',
+        $code === 503 => 'unavailable',
+        default => 'server_error',
+      }, $result->status);
       $this->assertSame($code, $result->httpCode);
       $this->assertStringNotContainsString('SECRET', $result->message);
       $this->assertFalse($result->isOk());
@@ -339,26 +343,153 @@ class SentinelClientTest extends TestCase {
   }
 
   /**
-   * Diagnostics distinguish transport failures without logging secrets or URLs.
+   * Transport diagnostics are kept on the result without secrets or URLs.
    */
-  public function testTransportLogsOnlySafeStructuredDiagnostics(): void {
+  public function testTransportDiagnosticsAreSafe(): void {
     $exception = new ConnectException('https://user:SECRET@sentinel.example.com/path?token=SECRET', new Request('POST', 'https://sentinel.example.com'), NULL, ['errno' => 7]);
-    $logger = $this->createMock(LoggerInterface::class);
-    $logger->expects($this->once())->method('error')->with(
-      $this->callback(fn ($message) => !str_contains($message, 'SECRET')),
-      $this->callback(fn ($context) => $context['@host'] === 'sentinel.example.com' && $context['@errno'] === 7 && !str_contains(json_encode($context), 'SECRET')),
-    );
     $http = new Client(['handler' => HandlerStack::create(new MockHandler([$exception]))]);
-    $result = (new SentinelClient($http, $logger))->sync('https://user:SECRET@sentinel.example.com?token=SECRET', 'uuid', 'SECRET', []);
+    $result = (new SentinelClient($http))->sync('https://user:SECRET@sentinel.example.com?token=SECRET', 'uuid', 'SECRET', []);
     $this->assertSame('transport_error', $result->status);
+    $this->assertNull($result->httpCode);
     $this->assertStringNotContainsString('SECRET', $result->message);
+    $this->assertSame([
+      'class' => ConnectException::class,
+      'host' => 'sentinel.example.com',
+      'curl errno' => 7,
+    ], $result->diagnostics);
+  }
+
+  /**
+   * Every error status Sentinel sends has its own outcome and message.
+   *
+   * @dataProvider refusals
+   */
+  public function testRefusalsAreMapped(int $code, string $body, string $status, string $message): void {
+    $result = $this->client(new Response($code, [], $body))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertSame($status, $result->status);
+    $this->assertSame($code, $result->httpCode);
+    $this->assertSame($message, $result->message);
+    $this->assertFalse($result->isOk());
+    // A structured detail is never encoded into the message.
+    $this->assertStringNotContainsString('{', $result->message);
+    $this->assertStringNotContainsString('SECRET', $result->message);
+  }
+
+  /**
+   * Error responses with string, object, list and non-JSON bodies.
+   *
+   * @return array<string, array{int, string, string, string}>
+   *   HTTP status, raw body, expected status and expected message.
+   */
+  public static function refusals(): array {
+    $check = '. Check the site URL and site UUID against the site registered in Sentinel.';
+    $modules = fn (int $count): array => array_map(fn (int $i): array => [
+      'module_name' => 'bad_' . $i,
+      'version' => '1.0',
+      'reason' => 'Invalid module name',
+      'result' => 'invalid_name',
+    ], range(1, $count));
+    $validation = fn (int $count): string => (string) json_encode([
+      'detail' => [
+        'error' => 'Module validation failed',
+        'message' => 'All module names and versions must be valid',
+        'invalid_modules' => $modules($count),
+      ],
+    ]);
+    return [
+      'site URL mismatch' => [400, '{"detail": "Site URL mismatch"}', 'site_mismatch', 'Site URL mismatch' . $check],
+      'site UUID mismatch' => [400, '{"detail": "Site UUID mismatch"}', 'site_mismatch', 'Site UUID mismatch' . $check],
+      'two invalid modules' => [
+        400, $validation(2), 'validation_failed',
+        'All module names and versions must be valid. Rejected modules (2): bad_1, bad_2.',
+      ],
+      'many invalid modules' => [
+        400, $validation(8), 'validation_failed',
+        'All module names and versions must be valid. Rejected modules (8): bad_1, bad_2, bad_3, bad_4, bad_5 and 3 more.',
+      ],
+      'validation without modules' => [
+        400, '{"detail": {"error": "Module validation failed"}}', 'validation_failed', 'Module validation failed',
+      ],
+      'other 400' => [
+        400, '{"detail": "Site-module association already exists"}', 'rejected', 'Site-module association already exists',
+      ],
+      'html 400' => [
+        400, '<html>SECRET</html>', 'invalid_response', 'Sentinel returned an invalid JSON response. Check the API base URL and retry.',
+      ],
+      'site not found' => [
+        404, '{"detail": "Site not found"}', 'not_found', 'Site not found. Check the API base URL and site UUID.',
+      ],
+      'html 404' => [
+        404, '<html>SECRET</html>', 'not_found', 'Sentinel did not find this site. Check the API base URL and site UUID.',
+      ],
+      'conflict' => [
+        409, '{"detail": "Reported catalog entry is unavailable"}', 'conflict', 'Reported catalog entry is unavailable',
+      ],
+      'html 409' => [
+        409, '<html>SECRET</html>', 'conflict', 'Sentinel could not store the inventory because of a conflict.',
+      ],
+      'invalid payload list' => [
+        422,
+        '{"detail": [{"loc": ["body", "modules", 0, "version"], "type": "missing", "msg": "Field required"}, {"loc": ["body"], "type": "x", "msg": "Other"}]}',
+        'invalid_payload',
+        'Sentinel could not read the inventory: body.modules.0.version: Field required (and 1 more)',
+      ],
+      'invalid payload string' => [
+        422, '{"detail": "Invalid JSON inventory payload"}', 'invalid_payload', 'Invalid JSON inventory payload',
+      ],
+      'invalid payload object' => [
+        422, '{"detail": {"unexpected": "SECRET"}}', 'invalid_payload', 'Sentinel could not read the inventory.',
+      ],
+      'unavailable' => [
+        503, '{"detail": "Inventory queue is unavailable"}', 'unavailable', 'Inventory queue is unavailable',
+      ],
+      'html 503' => [503, '<html>SECRET</html>', 'unavailable', 'Sentinel is temporarily unavailable. Retry later.'],
+      'server error object' => [
+        500, '{"detail": {"trace": "SECRET"}}', 'server_error', 'Sentinel server returned HTTP 500. Retry later.',
+      ],
+      'signature refused' => [
+        401, '{"detail": {"code": "signature_expired", "message": "The request signature has expired."}}', 'auth_error', 'The request signature has expired.',
+      ],
+      'missing permission' => [
+        403, '{"detail": "Missing permission: site:sync"}', 'auth_error', 'Missing permission: site:sync',
+      ],
+      'unknown status' => [418, '{"detail": ["a", "b"]}', 'rejected', 'Sentinel rejected the sync: a (and 1 more)'],
+    ];
+  }
+
+  /**
+   * An abuse rate limit shows the server's own words and the wait.
+   */
+  public function testAbuseRateLimitUsesServerDetail(): void {
+    $result = $this->client(new Response(429, ['Retry-After' => '60'], '{"detail": "Rate limit exceeded: 100 per 1 hour"}'))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertSame('rate_limited', $result->status);
+    $this->assertSame('Rate limit exceeded: 100 per 1 hour. Retry after 60 seconds.', $result->message);
+
+    $bare = $this->client(new Response(429))->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertSame('Sentinel rate limit reached.', $bare->message);
+  }
+
+  /**
+   * Server text is reduced to one bounded line, and a task ID is validated.
+   */
+  public function testServerTextIsCleaned(): void {
+    $result = $this->client(new Response(409, [], (string) json_encode(['detail' => "line one\r\nline two" . str_repeat('x', 600)])))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertStringStartsWith('line one line two', $result->message);
+    $this->assertSame(500, mb_strlen($result->message));
+
+    $queued = $this->client(new Response(202, [], (string) json_encode(['task_id' => "abc\ninjected"])))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertSame('invalid_response', $queued->status);
   }
 
   /**
    * Builds a client whose actual Guzzle stack returns the given response.
    */
   private function client(Response $response): SentinelClient {
-    return new SentinelClient(new Client(['handler' => HandlerStack::create(new MockHandler([$response]))]), new NullLogger());
+    return new SentinelClient(new Client(['handler' => HandlerStack::create(new MockHandler([$response]))]));
   }
 
 }

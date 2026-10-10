@@ -4,10 +4,12 @@ namespace Drupal\sentinel_connector;
 
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\TransferException;
-use Psr\Log\LoggerInterface;
 
 /**
  * Sends a sync payload to the Sentinel backend.
+ *
+ * Nothing is logged here. Every outcome is returned as a SyncResult, and
+ * SyncService writes the one log entry of a push.
  */
 class SentinelClient {
 
@@ -26,9 +28,13 @@ class SentinelClient {
    */
   public const PUSH_LIMIT_FALLBACK_MESSAGE = 'The push limit for this site has been reached.';
 
+  /**
+   * How many rejected module names a validation message lists.
+   */
+  protected const MAX_LISTED_MODULES = 5;
+
   public function __construct(
     protected ClientInterface $httpClient,
-    protected LoggerInterface $logger,
   ) {}
 
   /**
@@ -59,28 +65,30 @@ class SentinelClient {
     }
     catch (TransferException $e) {
       $message = 'Could not connect to Sentinel. Check the API URL and network, then retry.';
-      // Never log the request URL, exception message, headers, or payload.
+      // Never keep the request URL, exception message, headers, or payload.
       $host = parse_url($baseUrl, PHP_URL_HOST);
       $host = is_string($host) && preg_match('/^[a-zA-Z0-9.\-:]+$/', $host) ? $host : 'unknown';
       $context = method_exists($e, 'getHandlerContext') ? $e->getHandlerContext() : [];
-      $this->logger->error('Sentinel transport failure: @class; host @host; curl errno @errno.', [
-        '@class' => get_class($e),
-        '@host' => $host,
-        '@errno' => (int) ($context['errno'] ?? 0),
+      return SyncResult::failure('transport_error', NULL, $message, [
+        'class' => get_class($e),
+        'host' => $host,
+        'curl errno' => (int) ($context['errno'] ?? 0),
       ]);
-      return SyncResult::failure('transport_error', NULL, $message);
     }
 
     $code = $response->getStatusCode();
     $body = (string) $response->getBody();
-    // A rate-limit response does not need a JSON body.
+    // Reverse proxies may return HTML for any error. The HTTP status is
+    // classified first; a JSON body only adds the server's own words.
+    $decoded = json_decode($body, TRUE);
+    $detail = is_array($decoded) ? ($decoded['detail'] ?? NULL) : NULL;
     if ($code === 429) {
-      $pushLimit = $this->pushLimit($body, $response->getHeaderLine('Retry-After'));
+      $retry = $response->getHeaderLine('Retry-After');
+      $pushLimit = $this->pushLimit($body, $retry);
       if ($pushLimit !== NULL) {
         return $pushLimit;
       }
-      $retry = $response->getHeaderLine('Retry-After');
-      $message = 'Rate limit exceeded (100/hour).';
+      $message = rtrim($this->detailMessage($detail, 'Sentinel rate limit reached.'), '.') . '.';
       if (ctype_digit($retry)) {
         $message .= ' Retry after ' . $retry . ' seconds.';
       }
@@ -98,39 +106,88 @@ class SentinelClient {
         return SyncResult::subscriptionInactive($this->cleanMessage($data['message'] ?? NULL) ?? '', $reason);
       }
     }
-    // Reverse proxies may return HTML for authentication and server errors.
-    // Classify their HTTP status before enforcing the success JSON contract.
-    if (in_array($code, [401, 403], TRUE) || $code >= 500) {
-      $decoded = json_decode($body, TRUE);
-      $detail = is_array($decoded) ? ($decoded['detail'] ?? NULL) : NULL;
-      if (in_array($code, [401, 403], TRUE)) {
-        return SyncResult::failure('auth_error', $code, $this->detail($detail, 'Authentication failed. Check the API key and retry.'));
-      }
-      return SyncResult::failure('server_error', $code, $this->detail($detail, 'Sentinel server returned HTTP ' . $code . '. Retry later.'));
+    $refusal = $this->refusal($code, $detail);
+    if ($refusal !== NULL) {
+      return $refusal;
     }
-    try {
-      $decoded = json_decode($body, TRUE, 512, JSON_THROW_ON_ERROR);
-      if (!is_array($decoded)) {
-        throw new \UnexpectedValueException('Expected a JSON object.');
-      }
-    }
-    catch (\Throwable $e) {
+    if (!is_array($decoded)) {
       return SyncResult::failure('invalid_response', $code, 'Sentinel returned an invalid JSON response. Check the API base URL and retry.');
     }
 
     if ($code === 200) {
-      return SyncResult::success(200, $this->detail($decoded['message'] ?? NULL, 'Sync completed.'));
+      return SyncResult::success(200, $this->detailMessage($decoded['message'] ?? NULL, 'Sync completed.'));
     }
     if ($code === 202) {
-      if (!is_string($decoded['task_id'] ?? NULL) || $decoded['task_id'] === '') {
+      $taskId = $decoded['task_id'] ?? NULL;
+      if (!is_string($taskId) || !preg_match('/^[A-Za-z0-9_.:\-]{1,128}$/', $taskId)) {
         return SyncResult::failure('invalid_response', 202, 'Sentinel accepted the sync without a task ID.');
       }
-      return SyncResult::accepted($decoded['task_id']);
+      return SyncResult::accepted($taskId);
     }
 
-    $detail = $this->detail($decoded['detail'] ?? NULL, 'Sentinel rejected the sync.');
-    $this->logger->error('Sentinel sync rejected with HTTP @code.', ['@code' => $code]);
-    return SyncResult::failure('rejected', $code, $detail);
+    return SyncResult::failure('rejected', $code, $this->detailMessage($detail, 'Sentinel rejected the sync.'));
+  }
+
+  /**
+   * Maps the error statuses Sentinel is known to send to their own outcomes.
+   *
+   * @param int $code
+   *   The HTTP status code.
+   * @param mixed $detail
+   *   The "detail" member of the response body, or NULL.
+   *
+   * @return \Drupal\sentinel_connector\SyncResult|null
+   *   The outcome, or NULL when the status has no outcome of its own.
+   */
+  protected function refusal(int $code, mixed $detail): ?SyncResult {
+    if ($code === 401 || $code === 403) {
+      // A refused signature carries a machine-readable code.
+      $errorCode = is_array($detail) ? ($detail['code'] ?? NULL) : NULL;
+      $diagnostics = is_string($errorCode) && preg_match('/^[a-z0-9_]{1,64}$/', $errorCode) ? ['code' => $errorCode] : [];
+      return SyncResult::failure('auth_error', $code, $this->detailMessage($detail, 'Authentication failed. Check the API key and retry.'), $diagnostics);
+    }
+    if ($code === 400) {
+      if (is_array($detail) && (isset($detail['invalid_modules']) || isset($detail['error']))) {
+        return SyncResult::failure('validation_failed', 400, $this->validationMessage($detail));
+      }
+      if (is_string($detail) && preg_match('/mismatch|does not match/i', $detail)) {
+        return SyncResult::failure('site_mismatch', 400, rtrim($this->detailMessage($detail, 'The site does not match.'), '.') . '. Check the site URL and site UUID against the site registered in Sentinel.');
+      }
+      return NULL;
+    }
+    return match (TRUE) {
+      $code === 404 => SyncResult::failure('not_found', 404, rtrim($this->detailMessage($detail, 'Sentinel did not find this site.'), '.') . '. Check the API base URL and site UUID.'),
+      $code === 409 => SyncResult::failure('conflict', 409, $this->detailMessage($detail, 'Sentinel could not store the inventory because of a conflict.')),
+      $code === 422 => SyncResult::failure('invalid_payload', 422, $this->detailMessage($detail, 'Sentinel could not read the inventory.')),
+      $code === 503 => SyncResult::failure('unavailable', 503, $this->detailMessage($detail, 'Sentinel is temporarily unavailable. Retry later.')),
+      $code >= 500 => SyncResult::failure('server_error', $code, $this->detailMessage($detail, 'Sentinel server returned HTTP ' . $code . '. Retry later.')),
+      default => NULL,
+    };
+  }
+
+  /**
+   * Describes a module validation refusal: how many modules, and which.
+   *
+   * @param array<array-key, mixed> $detail
+   *   The "detail" object of the response.
+   */
+  protected function validationMessage(array $detail): string {
+    $message = $this->cleanMessage($detail['message'] ?? NULL)
+      ?? $this->cleanMessage($detail['error'] ?? NULL)
+      ?? 'Sentinel rejected one or more modules.';
+    $invalid = is_array($detail['invalid_modules'] ?? NULL) ? $detail['invalid_modules'] : [];
+    if ($invalid === []) {
+      return $message;
+    }
+    $names = [];
+    foreach (array_slice($invalid, 0, self::MAX_LISTED_MODULES) as $module) {
+      $name = $this->cleanMessage(is_array($module) ? ($module['module_name'] ?? NULL) : $module);
+      $names[] = $name !== NULL ? mb_substr($name, 0, 64) : 'unnamed';
+    }
+    $count = count($invalid);
+    $message = rtrim($message, '.') . '. Rejected modules (' . $count . '): ' . implode(', ', $names);
+    $more = $count - count($names);
+    return (string) $this->cleanMessage($message . ($more > 0 ? ' and ' . $more . ' more.' : '.'));
   }
 
   /**
@@ -240,16 +297,36 @@ class SentinelClient {
   }
 
   /**
-   * Coerces structured API errors without passing arrays to typed results.
+   * Turns the "detail" of an error response into one bounded line.
+   *
+   * FastAPI sends a string, an object with a "message", or a list of
+   * validation errors. An object or list is never encoded into the message.
+   *
+   * @param mixed $detail
+   *   The "detail" member of the response body.
+   * @param string $fallback
+   *   The message used when the detail holds no usable text.
    */
-  protected function detail(mixed $detail, string $fallback): string {
-    if (is_string($detail) && $detail !== '') {
-      return $detail;
+  protected function detailMessage(mixed $detail, string $fallback): string {
+    if (is_string($detail)) {
+      return $this->cleanMessage($detail) ?? $fallback;
     }
-    if (is_array($detail)) {
-      return json_encode($detail, JSON_INVALID_UTF8_SUBSTITUTE) ?: $fallback;
+    if (!is_array($detail) || $detail === []) {
+      return $fallback;
     }
-    return $fallback;
+    if (!array_is_list($detail)) {
+      return $this->cleanMessage($detail['message'] ?? NULL) ?? $fallback;
+    }
+    // A list of validation errors: the first one, and how many follow.
+    $first = $detail[0];
+    $text = $this->cleanMessage(is_array($first) ? ($first['msg'] ?? NULL) : $first);
+    if ($text === NULL) {
+      return $fallback;
+    }
+    $loc = is_array($first) && is_array($first['loc'] ?? NULL) ? implode('.', array_filter($first['loc'], 'is_scalar')) : '';
+    $message = rtrim($fallback, '.') . ': ' . ($loc !== '' ? $loc . ': ' : '') . $text;
+    $more = count($detail) - 1;
+    return (string) $this->cleanMessage($message . ($more > 0 ? ' (and ' . $more . ' more)' : ''));
   }
 
 }

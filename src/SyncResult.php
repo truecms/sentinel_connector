@@ -21,7 +21,7 @@ final class SyncResult {
    * Constructs a SyncResult.
    *
    * @param string $status
-   *   Machine status, e.g. 'success', 'accepted', 'rejected'.
+   *   Machine status, e.g. 'success', 'accepted', 'not_found'.
    * @param int|null $httpCode
    *   The HTTP status code, or NULL for transport/config failures.
    * @param string $message
@@ -41,6 +41,9 @@ final class SyncResult {
    *   contacted.
    * @param string|null $reason
    *   Why the subscription is not active, e.g. 'past_due', when known.
+   * @param array<string, int|string> $diagnostics
+   *   Facts for the log entry only, e.g. a curl error number. Never holds the
+   *   API key, the request URL, headers, the payload or an exception message.
    */
   public function __construct(
     public readonly string $status,
@@ -53,6 +56,7 @@ final class SyncResult {
     public readonly ?int $limit = NULL,
     public readonly bool $deferred = FALSE,
     public readonly ?string $reason = NULL,
+    public readonly array $diagnostics = [],
   ) {}
 
   /**
@@ -71,9 +75,18 @@ final class SyncResult {
 
   /**
    * Creates a failure result with the given status, code, and message.
+   *
+   * @param string $status
+   *   Machine status, e.g. 'not_found'.
+   * @param int|null $code
+   *   The HTTP status code, or NULL when Sentinel sent no response.
+   * @param string $message
+   *   Human-readable outcome message.
+   * @param array<string, int|string> $diagnostics
+   *   Facts for the log entry only.
    */
-  public static function failure(string $status, ?int $code, string $message): self {
-    return new self($status, $code, $message);
+  public static function failure(string $status, ?int $code, string $message, array $diagnostics = []): self {
+    return new self($status, $code, $message, diagnostics: $diagnostics);
   }
 
   /**
@@ -125,7 +138,7 @@ final class SyncResult {
    *   Unix timestamp after which the next push is accepted, or NULL.
    */
   public function withNextAllowedAt(?int $nextAllowedAt): self {
-    return new self($this->status, $this->httpCode, $this->message, $this->taskId, $nextAllowedAt, $this->retryAfterSeconds, $this->plan, $this->limit, $this->deferred, $this->reason);
+    return new self($this->status, $this->httpCode, $this->message, $this->taskId, $nextAllowedAt, $this->retryAfterSeconds, $this->plan, $this->limit, $this->deferred, $this->reason, $this->diagnostics);
   }
 
   /**

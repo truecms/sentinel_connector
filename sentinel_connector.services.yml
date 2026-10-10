@@ -17,7 +17,7 @@ services:
 
   Drupal\sentinel_connector\SentinelClient:
     class: Drupal\sentinel_connector\SentinelClient
-    arguments: ['@http_client', '@logger.channel.sentinel_connector']
+    arguments: ['@http_client']
 
   Drupal\sentinel_connector\PushLimitFormatter:
     class: Drupal\sentinel_connector\PushLimitFormatter

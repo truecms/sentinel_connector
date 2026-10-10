@@ -99,7 +99,7 @@ class SyncServiceTest extends KernelTestBase {
   }
 
   /**
-   * Tests a 400 validation rejection records the rejected state.
+   * Tests a 400 validation rejection records its own state.
    */
   public function testValidationRejectionRecordsState(): void {
     $stack = HandlerStack::create(new MockHandler([
@@ -111,9 +111,10 @@ class SyncServiceTest extends KernelTestBase {
     $result = $sync->sync();
 
     $this->assertFalse($result->isOk());
-    $this->assertSame('rejected', $result->status);
+    $this->assertSame('validation_failed', $result->status);
     $this->assertSame(400, $result->httpCode);
-    $this->assertSame('rejected', \Drupal::state()->get('sentinel_connector.last_result'));
+    $this->assertSame('Module validation failed', $result->message);
+    $this->assertSame('validation_failed', \Drupal::state()->get('sentinel_connector.last_result'));
   }
 
   /**
