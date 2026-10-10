@@ -82,6 +82,23 @@ class SyncServiceTest extends KernelTestBase {
   }
 
   /**
+   * The real inventory is unchanged after an accepted push, until it changes.
+   */
+  public function testInventoryChangeDetection(): void {
+    $stack = HandlerStack::create(new MockHandler([new Response(200, [], json_encode(['message' => 'ok']))]));
+    $this->container->set('http_client', new Client(['handler' => $stack]));
+    $sync = \Drupal::service(SyncService::class);
+
+    $this->assertTrue($sync->hasInventoryChanged());
+    $sync->sync();
+    $this->assertFalse($sync->hasInventoryChanged());
+
+    // A narrower report scope sends a different inventory.
+    $this->config('sentinel_connector.settings')->set('report_scope', 'contrib')->save();
+    $this->assertTrue($sync->hasInventoryChanged());
+  }
+
+  /**
    * Tests a 400 validation rejection records the rejected state.
    */
   public function testValidationRejectionRecordsState(): void {

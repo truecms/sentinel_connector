@@ -84,7 +84,86 @@ not encrypted.
 
 - **Cron** — automatic when enabled on the settings form. At most one push an hour, whatever the cron frequency; see [Push frequency](#push-frequency).
 - **Drush** — `drush sentinel_connector:sync` (alias `sc-sync`).
+- **Deployment** — `drush sentinel_connector:deploy` (alias `sc-deploy`) from the CI/CD pipeline; see [Notify Sentinel on deployment](#notify-sentinel-on-deployment).
 - **Admin button** — "Sync now" on the settings form (requires the *Trigger Sentinel sync* permission).
+
+## Notify Sentinel on deployment
+
+**Recommended:** run this as the last step of every production deployment,
+after `drush updb`, `drush cim` and `drush cr`:
+
+```bash
+drush sentinel_connector:deploy || true
+```
+
+`|| true` keeps a Sentinel outage or a billing problem from failing the
+deployment. Leave it out if the pipeline should fail when Sentinel cannot be
+told. Run the command on production only: an environment that has a copy of
+the production database also has its site UUID and API key, and would
+overwrite production's inventory in Sentinel.
+
+Sentinel then learns about a module, core or PHP update when it is released,
+not on the next cron run. The command works in any pipeline that can run
+Drush on the deployed site: GitHub Actions, GitLab CI, Lagoon post-rollout
+tasks, Quant Cloud, Acquia or Pantheon hooks, or a shell script.
+
+The command pushes only when something changed. It compares the inventory
+with the last push Sentinel accepted and sends nothing when the two match, so
+a content-only or theme-only release does not use up a push from the plan's
+limit. A change is anything that alters [what is sent](#what-it-sends): a
+listed module added, removed, updated, installed or uninstalled; the Drupal
+core or PHP version; the report scope; the site URL, name or UUID; the API
+base URL; the connector's own version. Core modules are not listed, and a
+sub-module only counts when it changes whether its parent module reports as
+enabled. The comparison uses a hash kept in state
+(`sentinel_connector.last_fingerprint`), which every accepted push updates,
+whether it came from cron, "Sync now" or Drush.
+
+The hash is trusted for 24 hours after the push it belongs to. After that the
+command pushes whether or not anything changed, because Sentinel's copy can
+differ without the site knowing: a restored database, another environment
+that pushed with the same credentials, or a site registered again.
+
+| Outcome | Message | Exit code |
+| --- | --- | --- |
+| Nothing changed, last accepted push under 24 hours old | "no change since the last accepted push" | 0 |
+| Changed, push accepted | Success | 0 |
+| Changed, held or refused by the [plan limit](#push-limits) | Warning with the next allowed time | 0 |
+| API URL, site UUID or API key missing | Warning, nothing sent | 0 |
+| Inactive subscription, or any other failure | Error | non-zero |
+
+Options and notes:
+
+- `--force` pushes even when nothing changed. To make the next run push,
+  `drush state:delete sentinel_connector.last_fingerprint` also works.
+- A site that is not configured exits with 0, so the same pipeline can run on
+  environments that do not report to Sentinel.
+- A push that was held, refused or failed is sent by cron later, when cron
+  pushes are enabled on the settings form. The command itself works without
+  them, but then nothing retries until the next deployment.
+- Cron pushes every hour and counts against the same plan limit. A deployment
+  shortly after a cron push is therefore held until the limit allows the next
+  push: up to an hour on paid plans, up to a day on Free.
+- The PHP version is part of the inventory. If Drush and the web server run
+  different PHP versions and cron runs through the web server, every
+  deployment counts as a change and pushes.
+
+Examples:
+
+```yaml
+# GitHub Actions / GitLab CI: last step of the production deployment job.
+- run: vendor/bin/drush sentinel_connector:deploy || true
+```
+
+```yaml
+# Lagoon: .lagoon.yml
+tasks:
+  post-rollout:
+    - run:
+        name: Notify Sentinel
+        command: if [ "$LAGOON_ENVIRONMENT_TYPE" = "production" ]; then drush sentinel_connector:deploy || true; fi
+        service: cli
+```
 
 ## Push frequency
 
@@ -92,7 +171,7 @@ There is no interval setting. The module pushes on cron and sends at most one
 push an hour, counted from the last attempt whatever its outcome. This floor is
 fixed in code. How often a push is accepted is decided by Sentinel, by plan.
 
-"Sync now" and the Drush command are not bound by the hourly floor: Sentinel
+"Sync now" and the Drush commands are not bound by the hourly floor: Sentinel
 enforces the real limit and answers with a clear message. They are still held
 by a stored plan limit (below).
 
