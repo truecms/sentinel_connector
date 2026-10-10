@@ -82,7 +82,7 @@ not encrypted.
 
 ## Triggering a sync
 
-- **Cron** — automatic when enabled on the settings form. At most one push an hour, whatever the cron frequency; see [Push frequency](#push-frequency).
+- **Cron** — automatic when enabled on the settings form. Pushes only when the inventory changed, at most once an hour; see [Push frequency](#push-frequency).
 - **Drush** — `drush sentinel_connector:sync` (alias `sc-sync`).
 - **Deployment** — `drush sentinel_connector:deploy` (alias `sc-deploy`) from the CI/CD pipeline; see [Notify Sentinel on deployment](#notify-sentinel-on-deployment).
 - **Admin button** — "Sync now" on the settings form (requires the *Trigger Sentinel sync* permission).
@@ -141,9 +141,10 @@ Options and notes:
 - A push that was held, refused or failed is sent by cron later, when cron
   pushes are enabled on the settings form. The command itself works without
   them, but then nothing retries until the next deployment.
-- Cron pushes every hour and counts against the same plan limit. A deployment
-  shortly after a cron push is therefore held until the limit allows the next
-  push: up to an hour on paid plans, up to a day on Free.
+- Cron pushes count against the same plan limit. On paid plans cron only
+  uses it when something changed and once a day, so it is normally free when
+  a deployment needs it. On Free the daily push uses the whole limit, so a
+  deployment after it is held until the next day's push.
 - The PHP version is part of the inventory. If Drush and the web server run
   different PHP versions and cron runs through the web server, every
   deployment counts as a change and pushes.
@@ -167,13 +168,37 @@ tasks:
 
 ## Push frequency
 
-There is no interval setting. The module pushes on cron and sends at most one
-push an hour, counted from the last attempt whatever its outcome. This floor is
-fixed in code. How often a push is accepted is decided by Sentinel, by plan.
+There is no interval setting. Cron pushes only when something changed, so that
+the plan's push limit is kept for real changes:
 
-"Sync now" and the Drush commands are not bound by the hourly floor: Sentinel
-enforces the real limit and answers with a clear message. They are still held
-by a stored plan limit (below).
+- At most once an hour, whatever the cron frequency, cron compares the
+  inventory with the last push Sentinel accepted. The hour is counted from the
+  last attempt whatever its outcome, or from the last check that found no
+  change. This floor is fixed in code.
+- The comparison uses a SHA-256 hash of everything that is sent, apart from
+  the IP address, plus the API base URL. Any difference, down to one
+  character, is a change and is pushed. The hash is kept in state
+  (`sentinel_connector.last_fingerprint`) and is updated by every accepted
+  push; the payload itself is not stored.
+- When nothing changed, nothing is sent. The check is recorded
+  (`sentinel_connector.last_unchanged_time`) and the status report shows it.
+- An unchanged inventory is sent again 24 hours after the last accepted push
+  (from 15 minutes earlier, so that a once-a-day cron run that starts a little
+  early does not skip it), because Sentinel's copy can differ without the site knowing: a restored
+  database, another environment that pushed with the same credentials, or a
+  site registered again.
+
+How often a push is accepted is decided by Sentinel, by plan.
+
+"Sync now" and `drush sentinel_connector:sync` always push, changed or not,
+and are not bound by the hourly floor: Sentinel enforces the real limit and
+answers with a clear message. They are still held by a stored plan limit
+(below). To make cron push on its next due run:
+`drush state:delete sentinel_connector.last_fingerprint`. Saving a new API key
+on the settings form does the same, so a wrong key shows up within the hour.
+
+A push that Sentinel queued (202) and then failed to process is not sent again
+until the inventory changes or the day is over.
 
 ## Push limits
 
@@ -200,9 +225,10 @@ When the response has the error code but no usable message or time, the
 connector uses a generic message and the `Retry-After` header. A 429 without
 the error code is reported as `rate_limited`, as before.
 
-A site on the Free plan therefore sends one refused push a day: the push an
-hour after the accepted one tells the module when the next is allowed, and
-nothing is sent until then.
+A site on the Free plan therefore sends about one push a day, with the latest
+inventory. A change made after that day's push is refused once: the refusal
+tells the module when the next push is allowed, nothing is sent until then,
+and the change goes out with the next push.
 
 ## Inactive subscription
 
@@ -231,10 +257,11 @@ Connector* entry:
 | --- | --- |
 | API base URL, site UUID or API key missing | Error, with a link to the settings form |
 | Last push refused over an inactive subscription | Error, with the reason |
-| No push accepted in the last 24 hours | Error, with the last attempt, its result and its time |
+| No push accepted and no unchanged check in the last 24 hours | Error, with the last attempt, its result and its time |
 | Configured less than 24 hours ago, no push accepted yet | Warning |
 | Next push held by the plan limit, last accepted push under 24 hours old | Information, with the next allowed time |
 | Last accepted push under 24 hours old | OK, with its time |
+| Last accepted push older, cron found no change in the last 24 hours | OK, with the time of the push and of the last check |
 
 "Accepted" means Sentinel answered 200 or 202. A plan limit that ended less
 than 6 hours ago also shows as information, so that a Free site does not
@@ -253,7 +280,7 @@ composer install
 ```
 
 Connection failures return an actionable transport error and record the last attempt when Drupal state storage is available. Other payload/configuration errors return an internal error; cron catches remaining failures and attempts to record and log them without exposing request secrets. Storage failures may prevent persistence and return a state error.
-Cron waits an hour after each attempt, including failures.
+Cron waits an hour after each attempt, including failures, and after each check that found no change.
 The settings page displays the last attempt separately from the last successful
 sync. A 202 queued result is accepted for processing and does not imply success.
 
