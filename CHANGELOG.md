@@ -17,8 +17,21 @@ All notable changes to this project are documented here. Versions follow
   the API base URL is. The hash is trusted for 24 hours; after that a push is
   sent whether or not anything changed.
 
+- Every push writes one entry to the Drupal log on the `sentinel_connector`
+  channel, with the trigger (cron, form or Drush), the outcome, the HTTP
+  status, Sentinel's message and the task ID of a queued push. The README
+  lists the outcomes and their log levels.
+
 ### Changed
 
+- Sentinel's error responses have their own outcomes instead of `rejected`:
+  `site_mismatch` and `validation_failed` (400), `signature_refused` (401),
+  `not_found` (404),
+  `conflict` (409), `invalid_payload` (422) and `unavailable` (503). A
+  structured error is shown as a sentence, never as JSON. A rate limit shows
+  Sentinel's own message instead of a fixed "100/hour".
+- `SentinelClient` no longer takes a logger; `SyncService::sync()` takes the
+  trigger of the push.
 - Cron pushes only when the inventory changed since the last push Sentinel
   accepted, and once every 24 hours otherwise. It still checks at most once an
   hour. Before, it pushed every hour and used up the plan's push limit.

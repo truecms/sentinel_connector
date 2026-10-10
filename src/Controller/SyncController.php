@@ -41,7 +41,7 @@ final class SyncController extends ControllerBase {
    * Run a sync and redirect back to the settings form with a status message.
    */
   public function syncNow(): RedirectResponse {
-    $result = $this->syncService->sync();
+    $result = $this->syncService->sync(SyncService::TRIGGER_FORM);
     if ($result->isOk()) {
       $this->messenger()->addStatus($this->t('Sentinel sync: @msg', ['@msg' => $result->message]));
     }

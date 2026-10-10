@@ -212,7 +212,8 @@ outcome, not as a connection or authentication failure:
   default time zone. The Drush command still exits with 0.
 - **Cron** shows nothing.
 - Every rejection is logged at notice level on the `sentinel_connector`
-  channel with the plan, the limit and the next allowed time.
+  channel with the plan, the limit and the next allowed time. A push held
+  back afterwards is logged at debug level. See [Push log](#push-log).
 - The next allowed time is kept in state (`sentinel_connector.next_allowed_at`).
   Until it passes nothing is sent: cron skips, and a manual push shows the
   stored message without contacting Sentinel. Cron pushes on its first run
@@ -247,6 +248,49 @@ unpaid or paused: HTTP 402 with `error_code: subscription_inactive` and a
 - The settings form shows the reason under **Subscription**.
 
 A 402 without that error code is reported as `rejected`, as before.
+
+## Push log
+
+Every push writes one entry to the Drupal log on the `sentinel_connector`
+channel, whether it was started by cron, by **Sync now** or by Drush:
+
+```
+Sentinel push (cron): not_found, HTTP 404. Site not found. Check the API base URL and site UUID. [no details]
+```
+
+The entry holds the trigger (`cron`, `form` or `drush`), the outcome, the HTTP
+status, Sentinel's message and, in brackets, what else is known: the task ID
+of a queued push, the plan limit, the reason for a billing refusal, or the
+error class and curl error number of a connection failure. It never holds the
+API key, the request URL, headers, the payload or an exception message.
+Sentinel's text is reduced to one line of at most 500 characters. A cron run
+that finds no change sends nothing and logs nothing.
+
+| Outcome | HTTP | Level | Meaning |
+|---------|------|-------|---------|
+| `success` | 200 | info | The inventory was stored. |
+| `accepted` | 202 | info | The inventory was queued; the entry has the task ID. |
+| `push_deferred` | none | debug | A stored plan limit held the push back; no request was sent. |
+| `push_limited` | 429 | notice | The plan's push limit was reached. |
+| `rate_limited` | 429 | notice | Sentinel's general rate limit was reached. The message is Sentinel's own, with the `Retry-After` wait. |
+| `subscription_inactive` | 402 | warning | The subscription is overdue, unpaid or paused. |
+| `site_mismatch` | 400 | warning | The site URL or UUID differs from the site registered in Sentinel. |
+| `validation_failed` | 400 | warning | Sentinel rejected module names or versions. The message has the count and the first five names. |
+| `not_found` | 404 | warning | Sentinel does not know the site, or the API base URL is wrong. |
+| `conflict` | 409 | warning | Sentinel could not store a reported module. |
+| `unconfigured` | none | warning; debug on cron | The API URL, site UUID or API key is missing; no request was sent. |
+| `signature_refused` | 401 | error | The request signature was refused; the entry has Sentinel's code. |
+| `auth_error` | 401, 403 | error | The API key was refused, or it lacks permission. |
+| `invalid_payload` | 422 | error | Sentinel could not read the payload. The message has the first field at fault. |
+| `unavailable` | 503 | error | Sentinel is temporarily unavailable. |
+| `server_error` | other 5xx | error | Sentinel failed. |
+| `transport_error` | none | error | Sentinel could not be reached. |
+| `invalid_response` | any | error | The response was not the JSON the connector expects. |
+| `rejected` | other | error | Any other refusal. |
+| `internal_error`, `state_error` | none | error | The push failed on this site; the entry has the error class. |
+
+The same outcome is shown on the settings form and by Drush, and stored in
+state as `sentinel_connector.last_result`.
 
 ## Status report
 

@@ -13,6 +13,7 @@ use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 
 /**
  * Tests how the sync service stores and honours a push limit.
@@ -58,6 +59,28 @@ class SyncServicePushLimitTest extends TestCase {
   private array $notices = [];
 
   /**
+   * Every log entry written, as level, message and context.
+   *
+   * @var array<int, array{string, string, array<string, mixed>}>
+   */
+  private array $logs = [];
+
+  /**
+   * Whether the first read of the stored push limit throws.
+   */
+  private bool $stateReadFails = FALSE;
+
+  /**
+   * Whether the logger throws on every entry.
+   */
+  private bool $loggerFails = FALSE;
+
+  /**
+   * An exception the fake client throws instead of returning a result.
+   */
+  private ?\Throwable $clientError = NULL;
+
+  /**
    * The warnings written to the logger.
    *
    * @var array<int, array{string, array<string, mixed>}>
@@ -83,9 +106,11 @@ class SyncServicePushLimitTest extends TestCase {
     $this->assertArrayNotHasKey('sentinel_connector.last_sync_time', $this->stateValues);
     $this->assertCount(1, $this->notices);
     $this->assertSame([
-      '@plan' => 'free',
-      '@limit' => 1,
-      '@next' => gmdate('Y-m-d\TH:i:s\Z', $next),
+      '@trigger' => 'form',
+      '@outcome' => 'push_limited',
+      '@code' => 429,
+      '@message' => 'Once every 24 hours on the Free plan.',
+      '@details' => 'plan free; limit 1; next push allowed at ' . gmdate('Y-m-d\TH:i:s\Z', $next),
     ], $this->notices[0][1]);
   }
 
@@ -112,9 +137,13 @@ class SyncServicePushLimitTest extends TestCase {
     $this->assertNull($held->httpCode);
     $this->assertSame('Once an hour on paid plans.', $held->message);
     $this->assertSame($next, $held->nextAllowedAt);
-    // A held push is not an attempt and is not logged again.
+    // A held push is not an attempt. It is logged for debugging only.
     $this->assertSame(self::NOW, $this->stateValues['sentinel_connector.last_attempt_time']);
     $this->assertCount(1, $this->notices);
+    $this->assertSame(LogLevel::DEBUG, $this->logs[1][0]);
+    $this->assertSame('push_deferred', $this->logs[1][2]['@outcome']);
+    $this->assertSame('none', $this->logs[1][2]['@code']);
+    $this->assertStringStartsWith('no request sent', $this->logs[1][2]['@details']);
 
     // Once the time has passed cron is due and a manual push goes through.
     $this->now = $next;
@@ -152,9 +181,8 @@ class SyncServicePushLimitTest extends TestCase {
     $expected = $expectedOffset === NULL ? NULL : self::NOW + $expectedOffset;
     $this->assertSame($expected, $result->nextAllowedAt);
     $this->assertSame($expected, $this->stateValues[SyncService::STATE_NEXT_ALLOWED_AT] ?? NULL);
-    $this->assertSame($expected === NULL ? 'unknown' : gmdate('Y-m-d\TH:i:s\Z', $expected), $this->notices[0][1]['@next']);
-    $this->assertSame('unknown', $this->notices[0][1]['@plan']);
-    $this->assertSame('unknown', $this->notices[0][1]['@limit']);
+    $next = $expected === NULL ? 'unknown' : gmdate('Y-m-d\TH:i:s\Z', $expected);
+    $this->assertSame('plan unknown; limit unknown; next push allowed at ' . $next, $this->notices[0][1]['@details']);
   }
 
   /**
@@ -204,6 +232,9 @@ class SyncServicePushLimitTest extends TestCase {
     $this->assertArrayNotHasKey(SyncService::STATE_NEXT_ALLOWED_AT, $this->stateValues);
     $this->assertSame([], $this->notices);
     $this->assertSame([], $this->warnings);
+    $this->assertCount(1, $this->logs);
+    $this->assertSame(LogLevel::ERROR, $this->logs[0][0]);
+    $this->assertSame(503, $this->logs[0][2]['@code']);
     $this->assertFalse($service->cronIsDue(self::NOW + 60));
   }
 
@@ -307,7 +338,10 @@ class SyncServicePushLimitTest extends TestCase {
     $this->assertSame('subscription_inactive', $this->stateValues['sentinel_connector.last_result']);
     $this->assertSame('Payment is overdue.', $this->stateValues['sentinel_connector.last_message']);
     $this->assertArrayNotHasKey(SyncService::STATE_NEXT_ALLOWED_AT, $this->stateValues);
-    $this->assertSame([['Sentinel refused the push: subscription inactive, reason @reason.', ['@reason' => 'past_due']]], $this->warnings);
+    $this->assertCount(1, $this->warnings);
+    $this->assertSame('subscription_inactive', $this->warnings[0][1]['@outcome']);
+    $this->assertSame(402, $this->warnings[0][1]['@code']);
+    $this->assertSame('reason past_due', $this->warnings[0][1]['@details']);
     $this->assertSame([], $this->notices);
     // The hourly floor has passed, but the hold has not.
     $this->assertFalse($service->cronIsDue(self::NOW + 3600));
@@ -337,7 +371,7 @@ class SyncServicePushLimitTest extends TestCase {
     $this->assertFalse($second->deferred);
     $this->assertSame($this->now + SyncService::SUBSCRIPTION_HOLD, $this->stateValues[SyncService::STATE_SUBSCRIPTION_HOLD_UNTIL]);
     $this->assertSame('', $this->stateValues[SyncService::STATE_SUBSCRIPTION_REASON]);
-    $this->assertSame('unknown', $this->warnings[1][1]['@reason']);
+    $this->assertSame('reason unknown', $this->warnings[1][1]['@details']);
 
     // A failure that is not about billing keeps the hold.
     $hold = $service->getSubscriptionHoldUntil();
@@ -358,6 +392,131 @@ class SyncServicePushLimitTest extends TestCase {
   }
 
   /**
+   * Every push writes one log entry, at the level of its outcome.
+   *
+   * @dataProvider outcomes
+   */
+  public function testEveryOutcomeIsLoggedOnce(SyncResult $response, string $trigger, string $level, string $details): void {
+    $this->responses = [$response];
+
+    $result = $this->service()->sync($trigger);
+
+    $this->assertSame($response->status, $result->status);
+    $this->assertCount(1, $this->logs);
+    [$logged, $message, $context] = $this->logs[0];
+    $this->assertSame($level, $logged);
+    $this->assertSame('Sentinel push (@trigger): @outcome, HTTP @code. @message [@details]', $message);
+    $this->assertSame([
+      '@trigger' => $trigger,
+      '@outcome' => $response->status,
+      '@code' => $response->httpCode ?? 'none',
+      '@message' => $response->message,
+      '@details' => $details,
+    ], $context);
+  }
+
+  /**
+   * Outcomes with the trigger, the expected level and the expected details.
+   *
+   * @return array<string, array{\Drupal\sentinel_connector\SyncResult, string, string, string}>
+   *   The client's result, the trigger, the log level and the details.
+   */
+  public static function outcomes(): array {
+    $transport = [
+      'class' => 'GuzzleHttp\\Exception\\ConnectException',
+      'host' => 'sentinel.example.com',
+      'curl errno' => 7,
+    ];
+    return [
+      'success' => [SyncResult::success(200, 'ok'), SyncService::TRIGGER_FORM, LogLevel::INFO, 'no details'],
+      'accepted' => [SyncResult::accepted('task-123'), SyncService::TRIGGER_DRUSH, LogLevel::INFO, 'task ID task-123'],
+      'rate limited' => [
+        SyncResult::failure('rate_limited', 429, 'Slow down.'), SyncService::TRIGGER_CRON, LogLevel::NOTICE, 'no details',
+      ],
+      'subscription' => [
+        SyncResult::subscriptionInactive('Overdue.', 'past_due'), SyncService::TRIGGER_CRON, LogLevel::WARNING, 'reason past_due',
+      ],
+      'site mismatch' => [
+        SyncResult::failure('site_mismatch', 400, 'Site URL mismatch.'), SyncService::TRIGGER_FORM, LogLevel::WARNING, 'no details',
+      ],
+      'validation' => [
+        SyncResult::failure('validation_failed', 400, 'Rejected modules (1): bad.'), SyncService::TRIGGER_DRUSH, LogLevel::WARNING, 'no details',
+      ],
+      'not found' => [
+        SyncResult::failure('not_found', 404, 'Site not found.'), SyncService::TRIGGER_CRON, LogLevel::WARNING, 'no details',
+      ],
+      'conflict' => [
+        SyncResult::failure('conflict', 409, 'Conflict.'), SyncService::TRIGGER_CRON, LogLevel::WARNING, 'no details',
+      ],
+      'invalid payload' => [
+        SyncResult::failure('invalid_payload', 422, 'Field required.'), SyncService::TRIGGER_CRON, LogLevel::ERROR, 'no details',
+      ],
+      'authentication' => [
+        SyncResult::failure('auth_error', 401, 'Expired.', ['code' => 'signature_expired']), SyncService::TRIGGER_CRON, LogLevel::ERROR, 'code signature_expired',
+      ],
+      'unavailable' => [
+        SyncResult::failure('unavailable', 503, 'Retry later.'), SyncService::TRIGGER_CRON, LogLevel::ERROR, 'no details',
+      ],
+      'server' => [
+        SyncResult::failure('server_error', 500, 'Retry later.'), SyncService::TRIGGER_CRON, LogLevel::ERROR, 'no details',
+      ],
+      'transport' => [
+        SyncResult::failure('transport_error', NULL, 'Could not connect.', $transport), SyncService::TRIGGER_CRON, LogLevel::ERROR, 'class GuzzleHttp\\Exception\\ConnectException; host sentinel.example.com; curl errno 7',
+      ],
+      'invalid response' => [
+        SyncResult::failure('invalid_response', 200, 'Invalid JSON.'), SyncService::TRIGGER_CRON, LogLevel::ERROR, 'no details',
+      ],
+      'rejected' => [
+        SyncResult::failure('rejected', 418, 'No.'), SyncService::TRIGGER_CRON, LogLevel::ERROR, 'no details',
+      ],
+    ];
+  }
+
+  /**
+   * An exception is logged by class only, and an unknown trigger is replaced.
+   */
+  public function testInternalErrorLogsClassOnly(): void {
+    $this->clientError = new \RuntimeException('https://user:SECRET@sentinel.example.com');
+
+    $result = $this->service()->sync("made\nup");
+
+    $this->assertSame('internal_error', $result->status);
+    $this->assertCount(1, $this->logs);
+    $this->assertSame(LogLevel::ERROR, $this->logs[0][0]);
+    $this->assertSame('unknown', $this->logs[0][2]['@trigger']);
+    $this->assertSame('class RuntimeException', $this->logs[0][2]['@details']);
+    $this->assertStringNotContainsString('SECRET', (string) json_encode($this->logs));
+  }
+
+  /**
+   * A state read that fails before the push adds no second log entry.
+   */
+  public function testFailedStateReadIsPartOfTheOneEntry(): void {
+    $this->stateReadFails = TRUE;
+    $this->responses = [SyncResult::success(200, 'ok')];
+
+    $this->assertTrue($this->service()->sync(SyncService::TRIGGER_CRON)->isOk());
+
+    $this->assertCount(1, $this->logs);
+    $this->assertSame('state read failed with RuntimeException', $this->logs[0][2]['@details']);
+  }
+
+  /**
+   * A logger that fails does not change the outcome of the push.
+   */
+  public function testFailingLoggerKeepsOutcome(): void {
+    $this->loggerFails = TRUE;
+    $this->responses = [SyncResult::success(200, 'ok'), SyncResult::pushLimited('Later.', self::NOW + 600)];
+    $service = $this->service();
+
+    $this->assertSame('success', $service->sync()->status);
+    $this->assertSame('success', $this->stateValues['sentinel_connector.last_result']);
+    $this->assertTrue($service->sync()->isPushLimited());
+    $this->assertTrue($service->sync()->deferred);
+    $this->assertSame(2, $this->calls);
+  }
+
+  /**
    * Builds the service around in-memory state, a fixed clock and a fake client.
    */
   private function service(bool $enabled = TRUE): SyncService {
@@ -375,7 +534,13 @@ class SyncServicePushLimitTest extends TestCase {
     $configFactory->method('get')->willReturn($config);
 
     $state = $this->createMock(StateInterface::class);
-    $state->method('get')->willReturnCallback(fn (string $key, mixed $default = NULL) => $this->stateValues[$key] ?? $default);
+    $state->method('get')->willReturnCallback(function (string $key, mixed $default = NULL) {
+      if ($this->stateReadFails && $key === SyncService::STATE_NEXT_ALLOWED_AT) {
+        $this->stateReadFails = FALSE;
+        throw new \RuntimeException('state unavailable');
+      }
+      return $this->stateValues[$key] ?? $default;
+    });
     $state->method('set')->willReturnCallback(function (string $key, mixed $value): void {
       $this->stateValues[$key] = $value;
     });
@@ -396,6 +561,9 @@ class SyncServicePushLimitTest extends TestCase {
     $client = $this->createMock(SentinelClient::class);
     $client->method('sync')->willReturnCallback(function (): SyncResult {
       $this->calls++;
+      if ($this->clientError !== NULL) {
+        throw $this->clientError;
+      }
       $response = array_shift($this->responses);
       $this->assertNotNull($response, 'Sentinel was called more often than expected.');
       return $response;
@@ -406,12 +574,17 @@ class SyncServicePushLimitTest extends TestCase {
     $time->method('getCurrentTime')->willReturnCallback(fn (): int => $this->now);
 
     $logger = $this->createMock(LoggerInterface::class);
-    $logger->method('notice')->willReturnCallback(function (string|\Stringable $message, array $context = []): void {
-      $this->notices[] = [(string) $message, $context];
-    });
-    $logger->expects($this->never())->method('error');
-    $logger->method('warning')->willReturnCallback(function (string|\Stringable $message, array $context = []): void {
-      $this->warnings[] = [(string) $message, $context];
+    $logger->method('log')->willReturnCallback(function (string $level, string|\Stringable $message, array $context = []): void {
+      if ($this->loggerFails) {
+        throw new \RuntimeException('log storage unavailable');
+      }
+      $this->logs[] = [$level, (string) $message, $context];
+      if ($level === LogLevel::NOTICE) {
+        $this->notices[] = [(string) $message, $context];
+      }
+      elseif ($level === LogLevel::WARNING) {
+        $this->warnings[] = [(string) $message, $context];
+      }
     });
 
     return new SyncService($configFactory, $state, $builder, $resolver, $client, $time, $logger);

@@ -154,9 +154,10 @@ class PushLimitTest extends KernelTestBase {
     $record = $this->logRecords[0];
     $this->assertSame(RfcLogLevel::NOTICE, $record['level']);
     $this->assertSame('sentinel_connector', $record['context']['channel']);
-    $this->assertSame('free', $record['context']['@plan']);
-    $this->assertSame(1, $record['context']['@limit']);
-    $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', $next), $record['context']['@next']);
+    $this->assertSame('cron', $record['context']['@trigger']);
+    $this->assertSame('push_limited', $record['context']['@outcome']);
+    $this->assertSame(429, $record['context']['@code']);
+    $this->assertSame('plan free; limit 1; next push allowed at ' . gmdate('Y-m-d\TH:i:s\Z', $next), $record['context']['@details']);
 
     $sync = \Drupal::service(SyncService::class);
     $this->assertFalse($sync->cronIsDue($next - 1));
@@ -192,8 +193,12 @@ class PushLimitTest extends KernelTestBase {
     $this->assertStringContainsString('No push was sent', $warning);
     $this->assertStringContainsString('&lt;b&gt;Free&lt;/b&gt;', $warning);
     $this->assertStringContainsString($siteTime, $warning);
-    // Only the real rejection is logged.
-    $this->assertCount(1, $this->logRecords);
+    // The rejection is a notice. The held push is a debug entry.
+    $this->assertCount(2, $this->logRecords);
+    $this->assertSame(RfcLogLevel::NOTICE, $this->logRecords[0]['level']);
+    $this->assertSame('form', $this->logRecords[0]['context']['@trigger']);
+    $this->assertSame(RfcLogLevel::DEBUG, $this->logRecords[1]['level']);
+    $this->assertSame('push_deferred', $this->logRecords[1]['context']['@outcome']);
   }
 
   /**
@@ -219,7 +224,7 @@ class PushLimitTest extends KernelTestBase {
     $warning = (string) \Drupal::service(PushLimitFormatter::class)->warning($result);
     $this->assertStringContainsString(SentinelClient::PUSH_LIMIT_FALLBACK_MESSAGE, $warning);
     $this->assertStringContainsString('The next push will be accepted after', $warning);
-    $this->assertSame('unknown', $this->logRecords[0]['context']['@plan']);
+    $this->assertStringStartsWith('plan unknown; limit unknown; next push allowed at 2', $this->logRecords[0]['context']['@details']);
   }
 
   /**
@@ -233,7 +238,9 @@ class PushLimitTest extends KernelTestBase {
     $this->assertSame('rate_limited', $result->status);
     $this->assertStringContainsString('Retry after 120 seconds', $result->message);
     $this->assertNull(\Drupal::state()->get(SyncService::STATE_NEXT_ALLOWED_AT));
-    $this->assertSame([], $this->logRecords);
+    $this->assertCount(1, $this->logRecords);
+    $this->assertSame(RfcLogLevel::NOTICE, $this->logRecords[0]['level']);
+    $this->assertSame('rate_limited', $this->logRecords[0]['context']['@outcome']);
   }
 
   /**
@@ -252,7 +259,9 @@ class PushLimitTest extends KernelTestBase {
     $this->assertNull($state->get(SyncService::STATE_NEXT_ALLOWED_AT));
     $this->assertNull($state->get(SyncService::STATE_PUSH_LIMIT_MESSAGE));
     $this->assertSame('success', $state->get('sentinel_connector.last_result'));
-    $this->assertSame([], $this->logRecords);
+    $this->assertCount(1, $this->logRecords);
+    $this->assertSame(RfcLogLevel::INFO, $this->logRecords[0]['level']);
+    $this->assertSame(200, $this->logRecords[0]['context']['@code']);
   }
 
   /**
@@ -349,7 +358,8 @@ class PushLimitTest extends KernelTestBase {
     $this->assertCount(1, $this->logRecords);
     $this->assertSame(RfcLogLevel::WARNING, $this->logRecords[0]['level']);
     $this->assertSame('sentinel_connector', $this->logRecords[0]['context']['channel']);
-    $this->assertSame('past_due', $this->logRecords[0]['context']['@reason']);
+    $this->assertSame('cron', $this->logRecords[0]['context']['@trigger']);
+    $this->assertSame('reason past_due', $this->logRecords[0]['context']['@details']);
 
     // Cron is held even though the hourly floor has passed.
     $state->set('sentinel_connector.last_attempt_time', $before - 7200);

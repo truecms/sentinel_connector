@@ -36,7 +36,7 @@ class SentinelCommands extends DrushCommands {
    *   Collect installed extensions and push them to Sentinel.
    */
   public function sync(): void {
-    $this->report($this->syncService->sync());
+    $this->report($this->syncService->sync(SyncService::TRIGGER_DRUSH));
   }
 
   /**
@@ -69,7 +69,7 @@ class SentinelCommands extends DrushCommands {
       $this->logger()->success(dt('Sentinel deploy: no change since the last accepted push; no push was sent.'));
       return;
     }
-    $this->report($this->syncService->sync());
+    $this->report($this->syncService->sync(SyncService::TRIGGER_DRUSH));
   }
 
   /**

@@ -6,6 +6,7 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\State\StateInterface;
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 
 /**
  * Single entry point for a Sentinel sync, shared by cron, drush, and the UI.
@@ -98,6 +99,21 @@ class SyncService {
   public const STATE_LAST_UNCHANGED_TIME = 'sentinel_connector.last_unchanged_time';
 
   /**
+   * Trigger of a push: the cron run.
+   */
+  public const TRIGGER_CRON = 'cron';
+
+  /**
+   * Trigger of a push: "Sync now" on the settings form.
+   */
+  public const TRIGGER_FORM = 'form';
+
+  /**
+   * Trigger of a push: a Drush command.
+   */
+  public const TRIGGER_DRUSH = 'drush';
+
+  /**
    * Fingerprint of the inventory built for the push in progress.
    */
   protected ?string $pendingFingerprint = NULL;
@@ -134,42 +150,115 @@ class SyncService {
    * Run a sync now. Returns a SyncResult describing the outcome.
    *
    * While a stored push limit is in force, Sentinel is not contacted and the
-   * stored outcome is returned instead.
+   * stored outcome is returned instead. Every call writes one log entry with
+   * the outcome.
+   *
+   * @param string $trigger
+   *   What started the push: one of the TRIGGER_* constants.
    */
-  public function sync(): SyncResult {
+  public function sync(string $trigger = self::TRIGGER_FORM): SyncResult {
     $this->pendingFingerprint = NULL;
+    $extra = [];
     try {
       $deferred = $this->deferredResult();
     }
     catch (\Throwable $e) {
-      $this->logFailure($e);
+      // The push goes ahead; its one log entry names the failed read.
+      $extra['state read failed with'] = get_class($e);
       $deferred = NULL;
     }
     if ($deferred !== NULL) {
+      $this->logOutcome($deferred, $trigger);
       return $deferred;
     }
     try {
       $result = $this->performSync();
       if ($result->isPushLimited()) {
         $result = $this->resolvePushLimit($result);
-        $this->logPushLimit($result);
-      }
-      elseif ($result->isSubscriptionInactive()) {
-        $this->logSubscriptionInactive($result);
       }
     }
     catch (\Throwable $e) {
-      $this->logFailure($e);
-      $result = SyncResult::failure('internal_error', NULL, 'Sentinel sync could not complete. Check the connector configuration and Drupal logs.');
+      // Only the class: an exception message may carry request material.
+      $result = SyncResult::failure('internal_error', NULL, 'Sentinel sync could not complete. Check the connector configuration and Drupal logs.', ['class' => get_class($e)]);
     }
     try {
       $this->recordResult($result);
     }
     catch (\Throwable $e) {
-      $this->logFailure($e);
-      return SyncResult::failure('state_error', $result->httpCode, 'The sync outcome could not be saved. Check Drupal state storage and logs.');
+      $result = SyncResult::failure('state_error', $result->httpCode, 'The sync outcome could not be saved. Check Drupal state storage and logs.', [
+        'class' => get_class($e),
+        'push outcome' => $result->status,
+      ] + ($result->taskId !== NULL ? ['task ID' => $result->taskId] : []));
     }
+    $this->logOutcome($result, $trigger, $extra);
     return $result;
+  }
+
+  /**
+   * Writes the one log entry of a push attempt.
+   *
+   * The entry holds the outcome, the HTTP status, the trigger, the cleaned
+   * message and, where known, the task ID, the plan limit or the reason. It
+   * never holds the API key, the request URL, headers or the payload.
+   *
+   * @param \Drupal\sentinel_connector\SyncResult $result
+   *   The outcome of the push.
+   * @param string $trigger
+   *   What started the push.
+   * @param array<string, string> $extra
+   *   Further facts for the entry that are not part of the outcome.
+   */
+  protected function logOutcome(SyncResult $result, string $trigger, array $extra = []): void {
+    try {
+      $trigger = in_array($trigger, [self::TRIGGER_CRON, self::TRIGGER_FORM, self::TRIGGER_DRUSH], TRUE) ? $trigger : 'unknown';
+      $details = $result->deferred ? ['no request sent'] : [];
+      if ($result->taskId !== NULL) {
+        $details[] = 'task ID ' . $result->taskId;
+      }
+      if ($result->isPushLimited()) {
+        $details[] = 'plan ' . ($result->plan ?? 'unknown');
+        $details[] = 'limit ' . ($result->limit ?? 'unknown');
+        $details[] = 'next push allowed at ' . ($result->nextAllowedAt !== NULL ? gmdate('Y-m-d\TH:i:s\Z', $result->nextAllowedAt) : 'unknown');
+      }
+      if ($result->isSubscriptionInactive()) {
+        $details[] = 'reason ' . ($result->reason ?? 'unknown');
+      }
+      foreach ($result->diagnostics + $extra as $name => $value) {
+        $details[] = $name . ' ' . $value;
+      }
+      $this->logger->log($this->logLevel($result, $trigger), 'Sentinel push (@trigger): @outcome, HTTP @code. @message [@details]', [
+        '@trigger' => $trigger,
+        '@outcome' => $result->deferred ? 'push_deferred' : $result->status,
+        '@code' => $result->httpCode ?? 'none',
+        '@message' => $result->message,
+        '@details' => $details !== [] ? implode('; ', $details) : 'no details',
+      ]);
+    }
+    catch (\Throwable) {
+      // Broken log storage must not change the outcome of the push.
+    }
+  }
+
+  /**
+   * The log level of an outcome.
+   *
+   * Info for an accepted push, debug for a push held back on this site,
+   * notice for expected throttling, warning for a refusal an administrator
+   * can fix, and error for everything else. Cron on a site that is not
+   * configured logs at debug: it would otherwise warn every hour.
+   */
+  protected function logLevel(SyncResult $result, string $trigger): string {
+    if ($result->isOk()) {
+      return LogLevel::INFO;
+    }
+    if ($result->deferred || ($result->status === 'unconfigured' && $trigger === self::TRIGGER_CRON)) {
+      return LogLevel::DEBUG;
+    }
+    return match ($result->status) {
+      SyncResult::PUSH_LIMITED, 'rate_limited' => LogLevel::NOTICE,
+      SyncResult::SUBSCRIPTION_INACTIVE, 'site_mismatch', 'validation_failed', 'not_found', 'conflict', 'unconfigured' => LogLevel::WARNING,
+      default => LogLevel::ERROR,
+    };
   }
 
   /**
@@ -336,22 +425,6 @@ class SyncService {
   }
 
   /**
-   * Logs a push-limit rejection. It is expected, so it is a notice.
-   */
-  protected function logPushLimit(SyncResult $result): void {
-    try {
-      $this->logger->notice('Sentinel push limit reached: plan @plan, limit @limit, next push allowed at @next.', [
-        '@plan' => $result->plan ?? 'unknown',
-        '@limit' => $result->limit ?? 'unknown',
-        '@next' => $result->nextAllowedAt !== NULL ? gmdate('Y-m-d\TH:i:s\Z', $result->nextAllowedAt) : 'unknown',
-      ]);
-    }
-    catch (\Throwable) {
-      // Broken log storage must not turn an expected outcome into a failure.
-    }
-  }
-
-  /**
    * The time before which cron sends no push, after a billing refusal.
    *
    * @return int|null
@@ -360,20 +433,6 @@ class SyncService {
   public function getSubscriptionHoldUntil(): ?int {
     $until = (int) $this->state->get(self::STATE_SUBSCRIPTION_HOLD_UNTIL, 0);
     return $until > 0 ? $until : NULL;
-  }
-
-  /**
-   * Logs a refusal over an inactive subscription, with the reason only.
-   */
-  protected function logSubscriptionInactive(SyncResult $result): void {
-    try {
-      $this->logger->warning('Sentinel refused the push: subscription inactive, reason @reason.', [
-        '@reason' => $result->reason ?? 'unknown',
-      ]);
-    }
-    catch (\Throwable) {
-      // Broken log storage must not hide the outcome from the caller.
-    }
   }
 
   /**
@@ -418,7 +477,7 @@ class SyncService {
    */
   public function syncIfChanged(): ?SyncResult {
     if ($this->hasInventoryChanged()) {
-      return $this->sync();
+      return $this->sync(self::TRIGGER_CRON);
     }
     // Request time, as for an attempt: cron compares both with its own
     // request time, and a later clock would make every second run not due.
