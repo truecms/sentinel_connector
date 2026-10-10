@@ -16,6 +16,18 @@ All notable changes to this project are documented here. Versions follow
   (`sentinel_connector.last_fingerprint`). The IP address is not part of it;
   the API base URL is.
 
+## 0.4.0 - 2026-10-10
+
+### Changed
+
+- Sub-modules are no longer sent. A module whose directory is inside another
+  module's directory is folded into that module, which reports as enabled when
+  it or any of its sub-modules is enabled. Modules shipped inside an install
+  profile are still listed.
+- Core modules are no longer sent; core is reported by
+  `drupal_info.core_version` alone. The `all` and `contrib_custom` report
+  scopes now list the same modules.
+
 ## 0.3.0 - 2026-10-09
 
 ### Added

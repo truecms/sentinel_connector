@@ -91,16 +91,14 @@ class PayloadBuilderTest extends TestCase {
       $byName[$m['machine_name']] = $m;
     }
 
-    $this->assertSame('core', $byName['node']['module_type']);
+    // Core is reported through drupal_info only.
+    $this->assertArrayNotHasKey('node', $byName);
     $this->assertSame('contrib', $byName['token']['module_type']);
     $this->assertSame('custom', $byName['my_custom']['module_type']);
 
     $this->assertSame('8.x-1.15', $byName['token']['version']);
     $this->assertTrue($byName['token']['version_known']);
     $this->assertSame('token', $byName['token']['reported_project']);
-    $this->assertSame('drupal', $byName['node']['reported_project']);
-    $this->assertSame('10.3.0', $byName['node']['version']);
-    $this->assertTrue($byName['node']['version_known']);
     $this->assertTrue($byName['token']['enabled']);
     $this->assertSame('Token', $byName['token']['display_name']);
 
@@ -125,7 +123,8 @@ class PayloadBuilderTest extends TestCase {
 
     $names = fn(array $p) => array_column($p['modules'], 'machine_name');
 
-    $this->assertEqualsCanonicalizing(['node', 'token', 'my_custom'], $names($this->builder($extensions)->build('all')));
+    $this->assertEqualsCanonicalizing(['token', 'my_custom'], $names($this->builder($extensions)->build('all')));
+    $this->assertSame('all', $this->builder($extensions)->build('all')['inventory_scope']);
     $this->assertEqualsCanonicalizing(['token', 'my_custom'], $names($this->builder($extensions)->build('contrib_custom')));
     $this->assertEqualsCanonicalizing(['token'], $names($this->builder($extensions)->build('contrib')));
     $this->assertSame('contrib', $this->builder($extensions)->build('contrib')['inventory_scope']);
@@ -133,13 +132,59 @@ class PayloadBuilderTest extends TestCase {
   }
 
   /**
+   * Sub-modules are folded into the module whose directory contains them.
+   *
+   * @covers ::build
+   * @covers ::parents
+   */
+  public function testSubmodulesAreExcluded(): void {
+    $profile = $this->getMockBuilder(TestExtension::class)
+      ->disableOriginalConstructor()
+      ->onlyMethods(['getName', 'getPath', 'getType'])
+      ->getMock();
+    $profile->method('getName')->willReturn('distro');
+    $profile->method('getPath')->willReturn('profiles/contrib/distro');
+    $profile->method('getType')->willReturn('profile');
+    $profile->info = ['project' => 'distro', 'version' => '1.0.0'];
+    $extensions = [
+      'webform' => $this->ext('webform', ['project' => 'webform', 'version' => '6.2.8'], 1, 'modules/contrib/webform'),
+      'webform_ui' => $this->ext('webform_ui', ['project' => 'webform', 'version' => '6.2.8'], 1, 'modules/contrib/webform/modules/webform_ui'),
+      // A sibling whose name shares a prefix is not a sub-module.
+      'webform_views' => $this->ext('webform_views', ['project' => 'webform_views', 'version' => '5.0.0'], 0, 'modules/contrib/webform_views'),
+      // Disabled parent with an enabled sub-module two levels down.
+      'commerce' => $this->ext('commerce', ['project' => 'commerce', 'version' => '2.40.0'], 0, 'modules/contrib/commerce'),
+      'commerce_order' => $this->ext('commerce_order', ['project' => 'commerce'], 0, 'modules/contrib/commerce/modules/order'),
+      'commerce_order_test' => $this->ext('commerce_order_test', ['project' => 'commerce'], 1, 'modules/contrib/commerce/modules/order/tests/commerce_order_test'),
+      // Disabled parent whose sub-modules are all disabled.
+      'my_custom' => $this->ext('my_custom', [], 0, 'modules/custom/my_custom'),
+      'my_custom_sub' => $this->ext('my_custom_sub', [], 0, 'modules/custom/my_custom/modules/my_custom_sub'),
+      // A sub-module whose parent module is absent stays as its own row.
+      'orphan_ui' => $this->ext('orphan_ui', ['project' => 'orphan', 'version' => '1.0.0'], 1, 'modules/contrib/orphan/modules/orphan_ui'),
+      // Modules shipped by a profile are not its sub-modules.
+      'distro' => $profile,
+      'distro_feature' => $this->ext('distro_feature', ['project' => 'distro', 'version' => '1.0.0'], 1, 'profiles/contrib/distro/modules/distro_feature'),
+    ];
+    $byName = array_column($this->builder($extensions)->build('all')['modules'], NULL, 'machine_name');
+
+    $this->assertEqualsCanonicalizing(
+      ['webform', 'webform_views', 'commerce', 'my_custom', 'orphan_ui', 'distro', 'distro_feature'],
+      array_keys($byName),
+    );
+    $this->assertTrue($byName['webform']['enabled']);
+    $this->assertFalse($byName['webform_views']['enabled']);
+    $this->assertTrue($byName['commerce']['enabled']);
+    $this->assertSame('2.40.0', $byName['commerce']['version']);
+    $this->assertFalse($byName['my_custom']['enabled']);
+    $this->assertSame('orphan', $byName['orphan_ui']['reported_project']);
+  }
+
+  /**
    * Project identity follows packaging metadata, never extension names.
    *
    * @covers ::build
    */
-  public function testSubmodulesAndUnknownMetadata(): void {
+  public function testUnknownMetadata(): void {
     $extensions = [
-      'webform_ui' => $this->ext('webform_ui', ['project' => 'webform', 'version' => '6.2.8'], 0, 'modules/contrib/webform/modules/webform_ui'),
       'token' => $this->ext('token', ['version' => ''], 1, 'modules/custom/token'),
       'invalid_project' => $this->ext('invalid_project', [
         'project' => 'https://internal.example.com/project',
@@ -148,9 +193,6 @@ class PayloadBuilderTest extends TestCase {
     ];
     $payload = $this->builder($extensions)->build('all');
     $byName = array_column($payload['modules'], NULL, 'machine_name');
-    $this->assertSame('webform', $byName['webform_ui']['reported_project']);
-    $this->assertSame('6.2.8', $byName['webform_ui']['version']);
-    $this->assertFalse($byName['webform_ui']['enabled']);
     $this->assertSame('custom', $byName['token']['module_type']);
     $this->assertNull($byName['token']['reported_project']);
     $this->assertFalse($byName['token']['version_known']);
@@ -169,7 +211,7 @@ class PayloadBuilderTest extends TestCase {
       'node' => $this->ext('node', ['name' => 'Node'], 1, 'core/modules/node'),
       // Packaged contrib: info.yml wins and Composer is not consulted.
       'token' => $this->ext('token', ['project' => 'token', 'version' => '8.x-1.15'], 1, 'modules/contrib/token'),
-      // Git checkout of a contrib module and its sub-module.
+      // Git checkout of a contrib module; its sub-module is not listed.
       'admin_toolbar' => $this->ext('admin_toolbar', ['name' => 'Admin Toolbar'], 1, 'modules/contrib/admin_toolbar'),
       'admin_toolbar_links_access_filter' => $this->ext(
         'admin_toolbar_links_access_filter',
@@ -190,16 +232,16 @@ class PayloadBuilderTest extends TestCase {
     $byName = array_column($this->builder($extensions, $packages)->build('all')['modules'], NULL, 'machine_name');
 
     $identity = fn(string $name): array => [$byName[$name]['module_type'], $byName[$name]['reported_project']];
-    $this->assertSame(['core', 'drupal'], $identity('node'));
+    $this->assertArrayNotHasKey('node', $byName);
+    $this->assertArrayNotHasKey('admin_toolbar_links_access_filter', $byName);
     $this->assertSame(['contrib', 'token'], $identity('token'));
     $this->assertSame(['contrib', 'admin_toolbar'], $identity('admin_toolbar'));
-    $this->assertSame(['contrib', 'admin_toolbar'], $identity('admin_toolbar_links_access_filter'));
     $this->assertSame(['contrib', NULL], $identity('odd'));
     $this->assertSame(['custom', NULL], $identity('pathauto'));
 
     // The 'contrib' scope now keeps Composer-identified modules.
     $names = array_column($this->builder($extensions, $packages)->build('contrib')['modules'], 'machine_name');
-    $this->assertEqualsCanonicalizing(['token', 'admin_toolbar', 'admin_toolbar_links_access_filter', 'odd'], $names);
+    $this->assertEqualsCanonicalizing(['token', 'admin_toolbar', 'odd'], $names);
   }
 
   /**

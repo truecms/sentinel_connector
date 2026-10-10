@@ -240,9 +240,13 @@ sync. A 202 queued result is accepted for processing and does not imply success.
 Payloads also report the configured `inventory_scope`, the connector's own
 release as `connector_version`, per-extension `reported_project`, and
 `version_known`.
-Submodules retain their package project (for example, `webform_ui` reports
-`webform`); custom names are never guessed as Drupal.org projects. Core
-extensions report `drupal` and the installed core version.
+Sub-modules are not listed: a module whose directory is inside another
+module's directory (for example, `webform_ui` inside `webform`) is folded into
+that module, which reports `enabled: true` when it or any of its sub-modules is
+enabled. Modules shipped inside an install profile are listed normally. Core
+modules are not listed either; core is reported by `drupal_info.core_version`
+alone, so the `all` and `contrib_custom` scopes list the same modules. Custom
+names are never guessed as Drupal.org projects.
 
 The project comes from the `project` key that Drupal.org packaging adds to
 `info.yml`. Modules installed from a git clone, a VCS Composer repository or a
@@ -251,7 +255,7 @@ dev checkout have no such key, so the connector then looks for the installed
 
 | Module source | `module_type` | `reported_project` |
 | --- | --- | --- |
-| Drupal core | `core` | `drupal` |
+| Drupal core | not listed | not listed |
 | `info.yml` has a valid `project` key | `contrib` | that project |
 | No `project` key, inside a `drupal/*` package | `contrib` | package short name, e.g. `admin_toolbar` |
 | Inside a `drupal/*` package with an unusable name | `contrib` | `null` (Sentinel shows "missing project") |
