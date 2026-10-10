@@ -157,7 +157,7 @@ class SyncServiceFingerprintTest extends TestCase {
   }
 
   /**
-   * A fingerprint is trusted for a day after the push it belongs to.
+   * A fingerprint is trusted for a week after the push it belongs to.
    */
   public function testOldFingerprintCountsAsChanged(): void {
     $this->responses = [SyncResult::success(200, 'ok')];

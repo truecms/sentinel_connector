@@ -14,8 +14,18 @@ All notable changes to this project are documented here. Versions follow
   command.
 - Every accepted push stores a hash of the inventory in state
   (`sentinel_connector.last_fingerprint`). The IP address is not part of it;
-  the API base URL is. The hash is trusted for 24 hours; after that the
-  command pushes whether or not anything changed.
+  the API base URL is. The hash is trusted for 7 days; after that a push is
+  sent whether or not anything changed.
+
+### Changed
+
+- Cron pushes only when the inventory changed since the last push Sentinel
+  accepted, and once every 7 days otherwise. It still checks at most once an
+  hour. Before, it pushed every hour and used up the plan's push limit.
+  "Sync now" and `drush sentinel_connector:sync` always push.
+- The status report stays OK while cron finds no change: a check in the last
+  24 hours keeps an older accepted push current, and the entry shows both
+  times.
 
 ## 0.4.0 - 2026-10-10
 

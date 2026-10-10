@@ -278,6 +278,44 @@ class PushLimitTest extends KernelTestBase {
   }
 
   /**
+   * Cron pushes only when the inventory changed since the accepted push.
+   */
+  public function testCronPushesOnlyOnChange(): void {
+    $ok = fn (): Response => new Response(200, [], json_encode(['message' => 'ok']));
+    $this->mockResponses([$ok(), $ok(), $ok(), $ok()]);
+    $this->container->get('module_handler')->loadAll();
+    $state = \Drupal::state();
+    $sync = \Drupal::service(SyncService::class);
+
+    sentinel_connector_cron();
+    $this->assertCount(1, $this->transactions);
+
+    // An hour later nothing changed: the check is recorded, nothing is sent.
+    $state->set('sentinel_connector.last_attempt_time', time() - 7200);
+    sentinel_connector_cron();
+    $this->assertCount(1, $this->transactions);
+    $this->assertNotNull($sync->getLastUnchangedTime());
+    // The check counts for the hourly floor.
+    $this->assertFalse($sync->cronIsDue(time() + 60));
+
+    // A changed inventory is pushed on the next due run.
+    $state->set(SyncService::STATE_LAST_UNCHANGED_TIME, time() - 7200);
+    $this->config('sentinel_connector.settings')->set('site_name', 'Renamed')->save();
+    sentinel_connector_cron();
+    $this->assertCount(2, $this->transactions);
+
+    // Unchanged for a week: the inventory is sent again.
+    $state->set('sentinel_connector.last_attempt_time', time() - 7200);
+    $state->set(SyncService::STATE_LAST_ACCEPTED_TIME, time() - SyncService::FINGERPRINT_MAX_AGE);
+    sentinel_connector_cron();
+    $this->assertCount(3, $this->transactions);
+
+    // A manual push is sent whether or not anything changed.
+    $this->assertTrue($sync->sync()->isOk());
+    $this->assertCount(4, $this->transactions);
+  }
+
+  /**
    * A billing refusal on cron is logged as a warning and holds cron only.
    */
   public function testSubscriptionRefusalOnCron(): void {

@@ -78,10 +78,15 @@ class SyncService {
    *
    * Sentinel's copy can differ from the stored fingerprint without this site
    * knowing: another environment pushed with the same credentials, a database
-   * was restored, or the site was registered again. After a day a push is
+   * was restored, or the site was registered again. After a week a push is
    * sent whether or not the inventory changed.
    */
-  public const FINGERPRINT_MAX_AGE = 86400;
+  public const FINGERPRINT_MAX_AGE = 604800;
+
+  /**
+   * State key: Unix timestamp of the last cron check that found no change.
+   */
+  public const STATE_LAST_UNCHANGED_TIME = 'sentinel_connector.last_unchanged_time';
 
   /**
    * Fingerprint of the inventory built for the push in progress.
@@ -227,7 +232,7 @@ class SyncService {
    * Whether the inventory differs from the last push Sentinel accepted.
    *
    * TRUE when nothing was accepted yet, when the last accepted push is older
-   * than a day, and when the inventory cannot be read: in doubt a push is
+   * than a week, and when the inventory cannot be read: in doubt a push is
    * sent.
    */
   public function hasInventoryChanged(): bool {
@@ -368,7 +373,8 @@ class SyncService {
    * Three things hold cron back, and all must have passed: the hold after a
    * refusal over an inactive subscription (one try a day), the time Sentinel
    * gave with a push-limit response, and the fixed floor of one push an hour
-   * counted from the last attempt, whatever its outcome.
+   * counted from the last attempt, whatever its outcome, or from the last
+   * check that found nothing to push.
    */
   public function cronIsDue(int $now): bool {
     $config = $this->configFactory->get('sentinel_connector.settings');
@@ -383,9 +389,41 @@ class SyncService {
     if ($next !== NULL && $now < $next) {
       return FALSE;
     }
-    $last = (int) $this->state->get('sentinel_connector.last_attempt_time',
-      $this->state->get('sentinel_connector.last_sync_time', 0));
+    $last = max(
+      (int) $this->state->get('sentinel_connector.last_attempt_time',
+        $this->state->get('sentinel_connector.last_sync_time', 0)),
+      (int) $this->state->get(self::STATE_LAST_UNCHANGED_TIME, 0),
+    );
     return ($now - $last) >= self::MIN_PUSH_INTERVAL;
+  }
+
+  /**
+   * The cron push: sends the inventory only when it changed.
+   *
+   * An unchanged inventory is not sent, so that the plan's push limit is kept
+   * for real changes. The check is recorded: it counts for the hourly floor
+   * and tells the status report that the connector works.
+   *
+   * @return \Drupal\sentinel_connector\SyncResult|null
+   *   The outcome of the push, or NULL when there was nothing to push.
+   */
+  public function syncIfChanged(): ?SyncResult {
+    if ($this->hasInventoryChanged()) {
+      return $this->sync();
+    }
+    $this->state->set(self::STATE_LAST_UNCHANGED_TIME, $this->time->getCurrentTime());
+    return NULL;
+  }
+
+  /**
+   * The time of the last cron check that found no change, when one is stored.
+   *
+   * @return int|null
+   *   A Unix timestamp, or NULL when no such check was made.
+   */
+  public function getLastUnchangedTime(): ?int {
+    $time = (int) $this->state->get(self::STATE_LAST_UNCHANGED_TIME, 0);
+    return $time > 0 ? $time : NULL;
   }
 
   /**

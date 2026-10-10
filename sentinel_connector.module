@@ -8,8 +8,9 @@
 /**
  * Implements hook_cron().
  *
- * Sends at most one push an hour, and none while Sentinel's plan limit or a
- * billing hold applies. A refused or held push is logged by the sync service
+ * Checks at most once an hour and pushes only when the inventory changed, or
+ * once a week. Sends nothing while Sentinel's plan limit or a billing hold
+ * applies. A refused or held push is logged by the sync service
  * and shows no message.
  */
 function sentinel_connector_cron(): void {
@@ -19,7 +20,7 @@ function sentinel_connector_cron(): void {
     $now = \Drupal::time()->getRequestTime();
     $sync->markConfigured();
     if ($sync->cronIsDue($now)) {
-      $sync->sync();
+      $sync->syncIfChanged();
     }
   }
   catch (\Throwable $error) {

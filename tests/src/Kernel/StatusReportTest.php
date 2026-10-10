@@ -169,6 +169,31 @@ class StatusReportTest extends KernelTestBase {
   }
 
   /**
+   * An old accepted push stays OK while cron finds nothing changed.
+   */
+  public function testUnchangedInventoryKeepsOldPushOk(): void {
+    $accepted = $this->now - 3 * 86400;
+    $checked = $this->now - 1800;
+    $this->setState([
+      'last_accepted_time' => $accepted,
+      'last_result' => 'success',
+      'last_unchanged_time' => $checked,
+    ]);
+    $entry = $this->entry();
+    $this->assertSame(PushHealth::SEVERITY_OK, $entry['severity']);
+    $this->assertSame('Last push accepted ' . $this->siteTime($accepted), (string) $entry['value']);
+    $this->assertStringContainsString('No change since; last checked ' . $this->siteTime($checked) . '.', (string) $entry['description']);
+
+    // Cron stopped checking a day ago: the old push is an error again.
+    $this->setState(['last_unchanged_time' => $this->now - 86400 - 60]);
+    $this->assertSame(PushHealth::SEVERITY_ERROR, $this->entry()['severity']);
+
+    // A check without any accepted push proves nothing.
+    $this->setState(['last_accepted_time' => 0, 'last_unchanged_time' => $checked]);
+    $this->assertSame(PushHealth::SEVERITY_ERROR, $this->entry()['severity']);
+  }
+
+  /**
    * A push held by the plan limit is information, not an error.
    */
   public function testPushHeldByPlanLimitIsInformation(): void {

@@ -106,10 +106,20 @@ class PushHealth {
 
     $now = $this->time->getCurrentTime();
     $lastAccepted = (int) $this->state->get(SyncService::STATE_LAST_ACCEPTED_TIME, 0);
-    $fresh = $lastAccepted > 0 && ($now - $lastAccepted) < self::STALE_AFTER;
+    // Cron does not push an unchanged inventory. A recent check that found
+    // no change keeps an older accepted push current.
+    $lastUnchanged = $lastAccepted > 0 ? (int) $this->syncService->getLastUnchangedTime() : 0;
+    $unchanged = $lastUnchanged > $lastAccepted && ($now - $lastUnchanged) < self::STALE_AFTER;
+    $fresh = $lastAccepted > 0 && (($now - $lastAccepted) < self::STALE_AFTER || $unchanged);
     $acceptedText = $lastAccepted > 0
       ? $this->t('Last push accepted: @time.', ['@time' => $this->formatter->formatTime($lastAccepted)])
       : $this->t('Sentinel has not accepted a push from this site yet.');
+    if ($unchanged) {
+      $acceptedText = $this->t('@accepted No change since; last checked @time.', [
+        '@accepted' => $acceptedText,
+        '@time' => $this->formatter->formatTime($lastUnchanged),
+      ]);
+    }
 
     // A billing refusal is an error however recent the last accepted push is:
     // no push succeeds until billing is fixed.
@@ -135,7 +145,12 @@ class PushHealth {
           '@next' => $this->formatter->formatTime($next),
         ]));
       }
-      return $entry(self::SEVERITY_OK, $this->t('Last push accepted @time', ['@time' => $this->formatter->formatTime($lastAccepted)]), $this->cronNote($settingsUrl));
+      return $entry(self::SEVERITY_OK, $this->t('Last push accepted @time', ['@time' => $this->formatter->formatTime($lastAccepted)]), $unchanged
+        ? $this->t('No change since; last checked @time. @cron', [
+          '@time' => $this->formatter->formatTime($lastUnchanged),
+          '@cron' => $this->cronNote($settingsUrl),
+        ])
+        : $this->cronNote($settingsUrl));
     }
 
     if ($lastAccepted === 0) {
