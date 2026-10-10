@@ -66,6 +66,11 @@ class SyncServicePushLimitTest extends TestCase {
   private array $logs = [];
 
   /**
+   * Whether the first read of the stored push limit throws.
+   */
+  private bool $stateReadFails = FALSE;
+
+  /**
    * Whether the logger throws on every entry.
    */
   private bool $loggerFails = FALSE;
@@ -484,6 +489,19 @@ class SyncServicePushLimitTest extends TestCase {
   }
 
   /**
+   * A state read that fails before the push adds no second log entry.
+   */
+  public function testFailedStateReadIsPartOfTheOneEntry(): void {
+    $this->stateReadFails = TRUE;
+    $this->responses = [SyncResult::success(200, 'ok')];
+
+    $this->assertTrue($this->service()->sync(SyncService::TRIGGER_CRON)->isOk());
+
+    $this->assertCount(1, $this->logs);
+    $this->assertSame('state read failed with RuntimeException', $this->logs[0][2]['@details']);
+  }
+
+  /**
    * A logger that fails does not change the outcome of the push.
    */
   public function testFailingLoggerKeepsOutcome(): void {
@@ -516,7 +534,13 @@ class SyncServicePushLimitTest extends TestCase {
     $configFactory->method('get')->willReturn($config);
 
     $state = $this->createMock(StateInterface::class);
-    $state->method('get')->willReturnCallback(fn (string $key, mixed $default = NULL) => $this->stateValues[$key] ?? $default);
+    $state->method('get')->willReturnCallback(function (string $key, mixed $default = NULL) {
+      if ($this->stateReadFails && $key === SyncService::STATE_NEXT_ALLOWED_AT) {
+        $this->stateReadFails = FALSE;
+        throw new \RuntimeException('state unavailable');
+      }
+      return $this->stateValues[$key] ?? $default;
+    });
     $state->method('set')->willReturnCallback(function (string $key, mixed $value): void {
       $this->stateValues[$key] = $value;
     });

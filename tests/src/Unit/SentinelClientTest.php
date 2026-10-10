@@ -26,7 +26,7 @@ class SentinelClientTest extends TestCase {
       $detail = ['code' => 'signature_invalid', 'message' => 'The request signature is not valid.'];
       $client = $this->client(new Response($code, [], json_encode(['detail' => $detail])));
       $result = $client->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
-      $this->assertSame('auth_error', $result->status);
+      $this->assertSame($code === 401 ? 'signature_refused' : 'auth_error', $result->status);
       $this->assertSame($code, $result->httpCode);
       $this->assertSame('The request signature is not valid.', $result->message);
       $this->assertSame(['code' => 'signature_invalid'], $result->diagnostics);
@@ -449,7 +449,7 @@ class SentinelClientTest extends TestCase {
         500, '{"detail": {"trace": "SECRET"}}', 'server_error', 'Sentinel server returned HTTP 500. Retry later.',
       ],
       'signature refused' => [
-        401, '{"detail": {"code": "signature_expired", "message": "The request signature has expired."}}', 'auth_error', 'The request signature has expired.',
+        401, '{"detail": {"code": "signature_expired", "message": "The request signature has expired."}}', 'signature_refused', 'The request signature has expired.',
       ],
       'missing permission' => [
         403, '{"detail": "Missing permission: site:sync"}', 'auth_error', 'Missing permission: site:sync',
@@ -479,6 +479,10 @@ class SentinelClientTest extends TestCase {
       ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
     $this->assertStringStartsWith('line one line two', $result->message);
     $this->assertSame(500, mb_strlen($result->message));
+
+    $bidi = $this->client(new Response(409, [], (string) json_encode(['detail' => "a\u{202E}b\u{2028}c\u{0085}d"])))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertSame('a b c d', $bidi->message);
 
     $queued = $this->client(new Response(202, [], (string) json_encode(['task_id' => "abc\ninjected"])))
       ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);

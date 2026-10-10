@@ -144,6 +144,9 @@ class SentinelClient {
       // A refused signature carries a machine-readable code.
       $errorCode = is_array($detail) ? ($detail['code'] ?? NULL) : NULL;
       $diagnostics = is_string($errorCode) && preg_match('/^[a-z0-9_]{1,64}$/', $errorCode) ? ['code' => $errorCode] : [];
+      if ($code === 401 && $diagnostics !== []) {
+        return SyncResult::failure('signature_refused', 401, $this->detailMessage($detail, 'Sentinel refused the request signature. Check the site clock and the API key.'), $diagnostics);
+      }
       return SyncResult::failure('auth_error', $code, $this->detailMessage($detail, 'Authentication failed. Check the API key and retry.'), $diagnostics);
     }
     if ($code === 400) {
@@ -270,7 +273,8 @@ class SentinelClient {
     if (!is_string($message)) {
       return NULL;
     }
-    $clean = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $message));
+    // Control and format characters, including line and bidi overrides.
+    $clean = trim((string) preg_replace('/[\p{Cc}\p{Cf}\x{2028}\x{2029}]+/u', ' ', $message));
     return $clean !== '' ? mb_substr($clean, 0, 500) : NULL;
   }
 

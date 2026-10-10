@@ -278,8 +278,9 @@ that finds no change sends nothing and logs nothing.
 | `validation_failed` | 400 | warning | Sentinel rejected module names or versions. The message has the count and the first five names. |
 | `not_found` | 404 | warning | Sentinel does not know the site, or the API base URL is wrong. |
 | `conflict` | 409 | warning | Sentinel could not store a reported module. |
-| `unconfigured` | none | warning | The API URL, site UUID or API key is missing; no request was sent. |
-| `auth_error` | 401, 403 | error | The API key or the request signature was refused. |
+| `unconfigured` | none | warning; debug on cron | The API URL, site UUID or API key is missing; no request was sent. |
+| `signature_refused` | 401 | error | The request signature was refused; the entry has Sentinel's code. |
+| `auth_error` | 401, 403 | error | The API key was refused, or it lacks permission. |
 | `invalid_payload` | 422 | error | Sentinel could not read the payload. The message has the first field at fault. |
 | `unavailable` | 503 | error | Sentinel is temporarily unavailable. |
 | `server_error` | other 5xx | error | Sentinel failed. |

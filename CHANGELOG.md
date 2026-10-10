@@ -25,7 +25,8 @@ All notable changes to this project are documented here. Versions follow
 ### Changed
 
 - Sentinel's error responses have their own outcomes instead of `rejected`:
-  `site_mismatch` and `validation_failed` (400), `not_found` (404),
+  `site_mismatch` and `validation_failed` (400), `signature_refused` (401),
+  `not_found` (404),
   `conflict` (409), `invalid_payload` (422) and `unavailable` (503). A
   structured error is shown as a sentence, never as JSON. A rate limit shows
   Sentinel's own message instead of a fixed "100/hour".

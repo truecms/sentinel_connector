@@ -158,11 +158,13 @@ class SyncService {
    */
   public function sync(string $trigger = self::TRIGGER_FORM): SyncResult {
     $this->pendingFingerprint = NULL;
+    $extra = [];
     try {
       $deferred = $this->deferredResult();
     }
     catch (\Throwable $e) {
-      $this->logFailure($e);
+      // The push goes ahead; its one log entry names the failed read.
+      $extra['state read failed with'] = get_class($e);
       $deferred = NULL;
     }
     if ($deferred !== NULL) {
@@ -186,9 +188,9 @@ class SyncService {
       $result = SyncResult::failure('state_error', $result->httpCode, 'The sync outcome could not be saved. Check Drupal state storage and logs.', [
         'class' => get_class($e),
         'push outcome' => $result->status,
-      ]);
+      ] + ($result->taskId !== NULL ? ['task ID' => $result->taskId] : []));
     }
-    $this->logOutcome($result, $trigger);
+    $this->logOutcome($result, $trigger, $extra);
     return $result;
   }
 
@@ -198,8 +200,15 @@ class SyncService {
    * The entry holds the outcome, the HTTP status, the trigger, the cleaned
    * message and, where known, the task ID, the plan limit or the reason. It
    * never holds the API key, the request URL, headers or the payload.
+   *
+   * @param \Drupal\sentinel_connector\SyncResult $result
+   *   The outcome of the push.
+   * @param string $trigger
+   *   What started the push.
+   * @param array<string, string> $extra
+   *   Further facts for the entry that are not part of the outcome.
    */
-  protected function logOutcome(SyncResult $result, string $trigger): void {
+  protected function logOutcome(SyncResult $result, string $trigger, array $extra = []): void {
     try {
       $trigger = in_array($trigger, [self::TRIGGER_CRON, self::TRIGGER_FORM, self::TRIGGER_DRUSH], TRUE) ? $trigger : 'unknown';
       $details = $result->deferred ? ['no request sent'] : [];
@@ -214,10 +223,10 @@ class SyncService {
       if ($result->isSubscriptionInactive()) {
         $details[] = 'reason ' . ($result->reason ?? 'unknown');
       }
-      foreach ($result->diagnostics as $name => $value) {
+      foreach ($result->diagnostics + $extra as $name => $value) {
         $details[] = $name . ' ' . $value;
       }
-      $this->logger->log($this->logLevel($result), 'Sentinel push (@trigger): @outcome, HTTP @code. @message [@details]', [
+      $this->logger->log($this->logLevel($result, $trigger), 'Sentinel push (@trigger): @outcome, HTTP @code. @message [@details]', [
         '@trigger' => $trigger,
         '@outcome' => $result->deferred ? 'push_deferred' : $result->status,
         '@code' => $result->httpCode ?? 'none',
@@ -235,13 +244,14 @@ class SyncService {
    *
    * Info for an accepted push, debug for a push held back on this site,
    * notice for expected throttling, warning for a refusal an administrator
-   * can fix, and error for everything else.
+   * can fix, and error for everything else. Cron on a site that is not
+   * configured logs at debug: it would otherwise warn every hour.
    */
-  protected function logLevel(SyncResult $result): string {
+  protected function logLevel(SyncResult $result, string $trigger): string {
     if ($result->isOk()) {
       return LogLevel::INFO;
     }
-    if ($result->deferred) {
+    if ($result->deferred || ($result->status === 'unconfigured' && $trigger === self::TRIGGER_CRON)) {
       return LogLevel::DEBUG;
     }
     return match ($result->status) {
