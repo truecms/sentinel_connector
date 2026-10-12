@@ -268,12 +268,19 @@ class SyncService {
   protected function performSync(): SyncResult {
     $config = $this->configFactory->get('sentinel_connector.settings');
     $baseUrl = (string) $config->get('api_base_url');
-    $uuid = (string) $config->get('site_uuid');
+    $stored = (string) $config->get('site_uuid');
     $apiKey = $this->apiKeyResolver->getKey();
 
-    if ($baseUrl === '' || $uuid === '' || $apiKey === NULL) {
+    if ($baseUrl === '' || $stored === '' || $apiKey === NULL) {
       $result = SyncResult::failure('unconfigured', NULL, 'Sentinel connector is not fully configured.');
       return $result;
+    }
+    // A stored UUID in another notation is sent in the canonical one. One
+    // that is no UUID at all is not sent: Sentinel would refuse it in words
+    // that point at the API key.
+    $uuid = SiteUuid::normalize($stored);
+    if ($uuid === NULL) {
+      return SyncResult::failure('unconfigured', NULL, 'The Site UUID in the Sentinel connector settings is not a valid UUID. Correct it on the settings form.');
     }
     $this->markConfigured();
 
@@ -296,7 +303,8 @@ class SyncService {
     $payload['site'] = [
       'url' => (string) $config->get('site_url'),
       'name' => (string) $config->get('site_name'),
-      'uuid' => (string) $config->get('site_uuid'),
+      // The same form as in the request path: Sentinel compares the two.
+      'uuid' => SiteUuid::normalize((string) $config->get('site_uuid')) ?? (string) $config->get('site_uuid'),
     ];
     return $payload;
   }
@@ -354,11 +362,13 @@ class SyncService {
 
   /**
    * Whether everything a push needs is set: API URL, site UUID and API key.
+   *
+   * A site UUID that is not a UUID counts as not set.
    */
   public function isConfigured(): bool {
     $config = $this->configFactory->get('sentinel_connector.settings');
     return (string) $config->get('api_base_url') !== ''
-      && (string) $config->get('site_uuid') !== ''
+      && SiteUuid::normalize((string) $config->get('site_uuid')) !== NULL
       && $this->apiKeyResolver->getKey() !== NULL;
   }
 

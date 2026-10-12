@@ -4,8 +4,8 @@
     "branch": "feature/485-sync-error-codes",
     "registry": "app/core/sync_errors.py",
     "bodies": "tests/test_api/test_sync_error_contract.py",
-    "retry_after": "Seconds of the Retry-After header; null when the header is not sent.",
-    "examples": "Values the server builds per response are examples: subscription_inactive, push_limit_reached, the 422 lists, invalid_modules and the skew window."
+    "retry_after": "Seconds of the Retry-After header; null when the header is not sent. The server sends it on every 429 and 503, as a positive whole number of at most 86400.",
+    "examples": "Values the server builds per response are examples: subscription_inactive, push_limit_reached, the json_invalid list, invalid_modules and the skew window. The payload_invalid body is from a server test run."
   },
   "codes": {
     "site_url_mismatch": {
@@ -215,31 +215,12 @@
           {
             "loc": [
               "body",
-              "site",
-              "uuid"
-            ],
-            "msg": "Input should be a valid UUID",
-            "type": "uuid_parsing"
-          },
-          {
-            "loc": [
-              "body",
               "modules",
               0,
               "machine_name"
             ],
-            "msg": "Invalid value",
-            "type": "value_error"
-          },
-          {
-            "loc": [
-              "body",
-              "modules",
-              0,
-              "*"
-            ],
-            "msg": "Invalid value",
-            "type": "extra_forbidden"
+            "msg": "String should match pattern '^[a-zA-Z0-9_]+$'",
+            "type": "string_pattern_mismatch"
           }
         ]
       }
@@ -299,7 +280,7 @@
       "retry_after": null,
       "body": {
         "error_code": "internal_error",
-        "message": "Sentinel could not process this request because of an internal error. Try again later.",
+        "message": "Sentinel hit an unexpected error and may not have stored this data. Check the site in Sentinel before sending it again.",
         "detail": "Internal server error"
       }
     },

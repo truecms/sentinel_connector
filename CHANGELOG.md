@@ -34,6 +34,17 @@ All notable changes to this project are documented here. Versions follow
   its HTTP status and body as before, so older Sentinel servers and reverse
   proxies that answer with HTML are still supported.
 
+- The settings form validates the Site UUID. It trims the value, removes
+  surrounding braces, lowers upper case and adds the hyphens to 32 hexadecimal
+  digits; anything that is not a UUID is rejected with an error. Sentinel
+  accepts only the lower-case hyphenated form and refuses any other as if the
+  API key were wrong.
+- A Site UUID already stored in another notation is sent in the canonical
+  form, in the request path and in the payload, without a re-save. A stored
+  value that is not a UUID is not sent: the push ends as `unconfigured` with a
+  message naming the Site UUID, and the status report shows the site as not
+  configured.
+
 ### Changed
 
 - Sentinel's error responses have their own outcomes instead of `rejected`:
@@ -51,6 +62,11 @@ All notable changes to this project are documented here. Versions follow
 - `Retry-After` counts only as a positive number of seconds or as an HTTP date
   in the future. A relative phrase, zero, a negative number or a past date is
   ignored, also for the stored time of a push limit.
+- Values Sentinel sends are no longer accepted with a trailing newline. This
+  also applies to responses without an `error_code`: a 202 whose `task_id`
+  ends in a newline is now `invalid_response`; a 401 whose `detail.code` ends
+  in a newline is now `auth_error` without the code in the log detail; a
+  `reason` or `plan` that ends in a newline is dropped.
 - The log detail of a refused signature reads `error code timestamp_skew`
   when Sentinel sends an `error_code`; before it was `code timestamp_skew`.
 - `SentinelClient` takes the time service as an optional second argument. Its

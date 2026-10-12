@@ -56,7 +56,7 @@ Admin UI: **Configuration → Web services → Sentinel Connector**
 | Setting | Description |
 | --- | --- |
 | API base URL | Sentinel base URL, e.g. `https://sentinel.example.com` |
-| Site UUID | The registered site's UUID (must match Sentinel) |
+| Site UUID | The registered site's UUID (must match Sentinel). Saved and sent in lower case with hyphens; see below |
 | Site URL | Must match the URL registered in Sentinel |
 | Report scope | `all` (default), `contrib_custom`, or `contrib` |
 
@@ -67,6 +67,16 @@ In Sentinel, open the registered site's dashboard and choose **Create API key**
 once into Drupal; Sentinel stores its hash and never returns it on later reads.
 The Site UUID and Site URL on the dashboard must match this module's settings.
 Revoke a key in Sentinel to disable it immediately.
+
+Sentinel accepts the Site UUID in one notation only: lower case with hyphens,
+such as `123e4567-e89b-42d3-a456-426614174000`. Any other notation is refused
+with a misleading "Access denied" or "This API key belongs to a different
+site". The settings form therefore trims the value, removes surrounding
+braces, lowers upper case, adds the hyphens to 32 hexadecimal digits, and
+rejects anything else. A value already stored in another notation, or set in
+`settings.php`, is sent in the canonical form without a re-save. A stored
+value that is not a UUID at all is never sent: the push ends as `unconfigured`
+with a message that names the Site UUID.
 
 Resolved in this order:
 
@@ -129,7 +139,7 @@ that pushed with the same credentials, or a site registered again.
 | Nothing changed, last accepted push under 24 hours old | "no change since the last accepted push" | 0 |
 | Changed, push accepted | Success | 0 |
 | Changed, held or refused by the [plan limit](#push-limits) | Warning with the next allowed time | 0 |
-| API URL, site UUID or API key missing | Warning, nothing sent | 0 |
+| API URL, site UUID or API key missing, or site UUID not a UUID | Warning, nothing sent | 0 |
 | Inactive subscription, or any other failure | Error | non-zero |
 
 Options and notes:
@@ -284,8 +294,10 @@ With a known code the text shown and logged is Sentinel's `message`, without
 the connector's own advice. What the message cannot hold follows as sentences
 of their own: the rejected modules, the first field at fault of an invalid
 payload, and the `Retry-After` wait of a `rate_limited` or `unavailable`
-outcome. The whole text is at most 500 characters. When there is no `message`
-the older `detail` is used, as for a response without a code.
+outcome. The whole text is at most 500 characters; a message too long for that
+is cut at a word and ends with an ellipsis. When there is no `message`, or it
+holds no letter or digit, the older `detail` is used, as for a response
+without a code.
 
 `Retry-After` counts as a positive number of whole seconds, or as an HTTP date
 (`Sat, 10 Oct 2026 03:15:00 GMT`) in the future. Any other value, such as `0`,
@@ -311,7 +323,7 @@ lower-case letters, digits or underscores is ignored.
 | `validation_failed` | 400 | `module_validation_failed`, `module_not_on_drupal_org` | warning | Sentinel rejected module names or versions, or a module that is not on drupal.org. The message has the count and the first five names when Sentinel lists them. |
 | `not_found` | 404 | `site_unavailable` | warning | Sentinel does not know the site, the site or its organisation is inactive, or the API base URL is wrong. |
 | `conflict` | 409 | `catalog_conflict`, `catalog_entry_unavailable` | warning | Sentinel could not store a reported module. |
-| `unconfigured` | none | | warning; debug on cron | The API URL, site UUID or API key is missing; no request was sent. |
+| `unconfigured` | none | | warning; debug on cron | The API URL, site UUID or API key is missing, or the site UUID is not a UUID; no request was sent. |
 | `signature_refused` | 401 | `signature_missing`, `signature_invalid`, `timestamp_skew`, `replay_detected` | error | The request signature was refused; the entry has Sentinel's code. |
 | `auth_error` | 401, 403 | `authentication_required`, `api_key_invalid`, `api_key_inactive`, `permission_denied`, `site_mismatch` | error | The API key is missing, wrong, expired or inactive, lacks permission, or belongs to another site. |
 | `invalid_payload` | 400, 422 | `payload_invalid`, `json_invalid`, `body_unreadable` | error | Sentinel could not read or decode the payload. The message has the first field at fault when Sentinel names one. |
@@ -321,6 +333,11 @@ lower-case letters, digits or underscores is ignored.
 | `invalid_response` | any | | error | The response was not the JSON the connector expects. |
 | `rejected` | other | | error | Any other refusal. |
 | `internal_error`, `state_error` | none | | error | The push failed on this site; the entry has the error class. Not to be confused with Sentinel's `internal_error` code, which is a `server_error`. |
+
+A 403 without an `error_code` is also reported as `auth_error`. Such a
+response can come from in front of Sentinel, for example a network-level
+"Access denied" from a firewall or proxy, so the cause may be the network path
+rather than the API key.
 
 The HTTP column is the status Sentinel sends with the outcome. A known
 `error_code` gives its outcome on any error status (400 and above), except
@@ -343,7 +360,7 @@ Connector* entry:
 
 | State | Severity |
 | --- | --- |
-| API base URL, site UUID or API key missing | Error, with a link to the settings form |
+| API base URL, site UUID or API key missing, or site UUID not a UUID | Error, with a link to the settings form |
 | Last push refused over an inactive subscription | Error, with the reason |
 | No push accepted and no unchanged check in the last 24 hours | Error, with the last attempt, its result and its time |
 | Configured less than 24 hours ago, no push accepted yet | Warning |

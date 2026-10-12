@@ -10,6 +10,7 @@ use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
 use Drupal\sentinel_connector\ApiKeyResolver;
 use Drupal\sentinel_connector\PushLimitFormatter;
+use Drupal\sentinel_connector\SiteUuid;
 use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -106,6 +107,7 @@ final class SettingsForm extends ConfigFormBase {
     $form['site_uuid'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Site UUID'),
+      '#description' => $this->t('The UUID of the site in Sentinel, for example @example. It is saved in lower case with hyphens.', ['@example' => SiteUuid::EXAMPLE]),
       '#default_value' => $config->get('site_uuid'),
       '#required' => TRUE,
     ];
@@ -222,6 +224,28 @@ final class SettingsForm extends ConfigFormBase {
     ];
 
     return parent::buildForm($form, $form_state);
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * @param array<array-key, mixed> $form
+   *   The form structure.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
+   */
+  public function validateForm(array &$form, FormStateInterface $form_state): void {
+    parent::validateForm($form, $form_state);
+    $entered = $form_state->getValue('site_uuid');
+    $uuid = is_string($entered) ? SiteUuid::normalize($entered) : NULL;
+    if ($uuid !== NULL) {
+      // Saved in the one form Sentinel accepts in the request path.
+      $form_state->setValue('site_uuid', $uuid);
+    }
+    elseif (is_string($entered) && trim($entered) !== '') {
+      // An empty value is reported by the required field itself.
+      $form_state->setErrorByName('site_uuid', $this->t('The Site UUID is not a valid UUID. Copy it from the site in Sentinel: 32 hexadecimal digits in five groups, for example @example.', ['@example' => SiteUuid::EXAMPLE]));
+    }
   }
 
   /**

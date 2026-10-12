@@ -60,7 +60,7 @@ class SentinelErrorCodeTest extends TestCase {
     'payload_invalid' => [
       'invalid_payload',
       LogLevel::ERROR,
-      ' First field at fault: body.site.uuid: Input should be a valid UUID (and 2 more).',
+      " First field at fault: body.modules.0.machine_name: String should match pattern '^[a-zA-Z0-9_]+$'.",
     ],
     'json_invalid' => ['invalid_payload', LogLevel::ERROR, ' First field at fault: body.10: JSON decode error.'],
     'push_limit_reached' => ['push_limited', LogLevel::NOTICE, ''],
@@ -580,7 +580,7 @@ class SentinelErrorCodeTest extends TestCase {
     $busy = $this->client(new Response(503, ['Retry-After' => '30'], (string) json_encode($body)))
       ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
     $this->assertSame(500, mb_strlen($busy->message));
-    $this->assertStringEndsWith('x. Retry after 30 seconds.', $busy->message);
+    $this->assertStringEndsWith("x\u{2026} Retry after 30 seconds.", $busy->message);
 
     $modules = array_map(fn (int $i): array => ['module_name' => str_repeat('m', 80) . $i], range(1, 9));
     $many = $this->respond(400, (string) json_encode([
@@ -589,7 +589,7 @@ class SentinelErrorCodeTest extends TestCase {
       'detail' => ['invalid_modules' => $modules],
     ]));
     $this->assertSame(500, mb_strlen($many->message));
-    $this->assertStringContainsString('x. Rejected modules (9): ' . str_repeat('m', 64) . ', ', $many->message);
+    $this->assertStringContainsString("x\u{2026} Rejected modules (9): " . str_repeat('m', 64) . ', ', $many->message);
     $this->assertStringEndsWith(' and 4 more.', $many->message);
 
     $field = $this->respond(422, (string) json_encode([
@@ -598,7 +598,222 @@ class SentinelErrorCodeTest extends TestCase {
       'detail' => [['loc' => ['body', str_repeat('l', 300)], 'msg' => str_repeat('w', 500), 'type' => 'x']],
     ]));
     $this->assertSame(500, mb_strlen($field->message));
-    $this->assertStringContainsString('x. First field at fault: body.lll', $field->message);
+    $this->assertStringContainsString("x\u{2026} First field at fault: body.lll", $field->message);
+  }
+
+  /**
+   * Server text in a validation error is cleaned on a coded response too.
+   *
+   * The location and the words of the error reach the log, the stored state
+   * and the page. Neither may carry a line break or a bidi override.
+   */
+  public function testValidationErrorTextIsCleaned(): void {
+    $error = [
+      'loc' => ['body', "a\nFAKE LOG LINE\u{202E}b\u{0007}"],
+      'msg' => "x\r\ny\u{202E}z\u{2028}w",
+      'type' => "t\n",
+    ];
+    $body = ['error_code' => 'payload_invalid', 'message' => 'Bad.', 'detail' => [$error, $error]];
+    $expected = 'Bad. First field at fault: body.a FAKE LOG LINE b: x y z w (and 1 more).';
+
+    $result = $this->push(new Response(422, [], (string) json_encode($body)));
+
+    $this->assertSame($expected, $result->message);
+    $this->assertSame($expected, $this->stateValues['sentinel_connector.last_message']);
+    $this->assertSame($expected, $this->logs[0][2]['@message']);
+    $this->assertDoesNotMatchRegularExpression('/[\p{Cc}\p{Cf}\x{2028}\x{2029}]/u', (string) json_encode($this->logs, JSON_UNESCAPED_UNICODE));
+
+    // The same body from an older server reads the same way.
+    $older = $this->respond(422, (string) json_encode(['detail' => [$error, $error]]));
+    $this->assertSame('Sentinel could not read the inventory: body.a FAKE LOG LINE b: x y z w (and 1 more)', $older->message);
+  }
+
+  /**
+   * Module names and the message itself are cleaned on a coded response.
+   */
+  public function testModuleNamesAreCleaned(): void {
+    $modules = $this->push(new Response(400, [], (string) json_encode([
+      'error_code' => 'module_validation_failed',
+      'message' => "Two\nlines\u{202E}.",
+      'detail' => ['invalid_modules' => [['module_name' => "bad\n\u{202E}one"], ['module_name' => "\u{202E}"]]],
+    ])));
+    $this->assertSame('Two lines . Rejected modules (2): bad one, unnamed.', $modules->message);
+    $this->assertSame($modules->message, $this->stateValues['sentinel_connector.last_message']);
+    $this->assertSame($modules->message, $this->logs[0][2]['@message']);
+  }
+
+  /**
+   * What follows the message is joined to it with the right punctuation.
+   *
+   * @dataProvider punctuation
+   */
+  public function testPunctuationOfAdditions(string $message, string $msg, string $expected): void {
+    $body = ['error_code' => 'payload_invalid', 'message' => $message, 'detail' => [['loc' => ['body'], 'msg' => $msg]]];
+    $this->assertSame($expected, $this->respond(422, (string) json_encode($body))->message);
+  }
+
+  /**
+   * Messages and validation errors with and without final punctuation.
+   *
+   * @return array<string, array{string, string, string}>
+   *   The message, the words of the validation error and the expected text.
+   */
+  public static function punctuation(): array {
+    $field = ' First field at fault: body: Field required.';
+    return [
+      'full stop' => ['Not valid.', 'Field required', 'Not valid.' . $field],
+      'no full stop' => ['Not valid', 'Field required', 'Not valid.' . $field],
+      'question mark' => ['Is the module up to date?', 'Field required', 'Is the module up to date?' . $field],
+      'exclamation mark' => ['Not valid!', 'Field required', 'Not valid!' . $field],
+      'ellipsis' => ["Not valid\u{2026}", 'Field required', "Not valid\u{2026}" . $field],
+      'error ends in a full stop' => ['Not valid.', 'Field required.', 'Not valid.' . $field],
+      'error ends in full stops' => ['Not valid.', 'Field required. . .', 'Not valid.' . $field],
+      'error is only a full stop' => ['Not valid.', '.', 'Not valid.'],
+      'message is only punctuation' => [
+        '...', 'Field required', 'Sentinel could not read the inventory: body: Field required',
+      ],
+      'message is only symbols' => [
+        '?! - ', 'Field required', 'Sentinel could not read the inventory: body: Field required',
+      ],
+      'message is empty after cleaning' => [
+        "\u{202E}\n ", 'Field required', 'Sentinel could not read the inventory: body: Field required',
+      ],
+    ];
+  }
+
+  /**
+   * A message too long for the cap is cut at a word and ends in an ellipsis.
+   */
+  public function testLongMessageIsShortenedAtWordBoundary(): void {
+    $wait = ' Retry after 30 seconds.';
+    $send = fn (string $message): string => $this->client(new Response(503, ['Retry-After' => '30'], (string) json_encode([
+      'error_code' => 'queue_unavailable',
+      'message' => $message,
+    ])))->sync('https://sentinel.example.com', 'uuid', 'SECRET', [])->message;
+
+    // Words: the cut is at a space, and no word is broken.
+    $words = $send(trim(str_repeat('word ', 120)));
+    $this->assertLessThanOrEqual(500, mb_strlen($words));
+    $this->assertGreaterThan(490, mb_strlen($words));
+    $this->assertStringEndsWith("word\u{2026}" . $wait, $words);
+    $this->assertStringNotContainsString("wor\u{2026}", $words);
+
+    // No space to cut at, and characters of more than one byte.
+    $accents = $send(str_repeat("\u{00E9}", 600));
+    $this->assertSame(500, mb_strlen($accents));
+    $this->assertTrue(mb_check_encoding($accents, 'UTF-8'));
+    $this->assertSame(str_repeat("\u{00E9}", 475) . "\u{2026}" . $wait, $accents);
+
+    // A message that just fits is not touched.
+    $fits = str_repeat('x', 475) . '.';
+    $this->assertSame($fits . $wait, $send($fits));
+    $this->assertSame(500, mb_strlen($send($fits)));
+    $this->assertSame(str_repeat('x', 474) . '.' . $wait, $send(str_repeat('x', 474)));
+    $this->assertSame(str_repeat('x', 475) . "\u{2026}" . $wait, $send(str_repeat('x', 476)));
+  }
+
+  /**
+   * Rejected modules beside a nested error code are listed.
+   *
+   * A nested error object can have a "detail" of its own. The modules are
+   * then read from the object that carries the code.
+   */
+  public function testRejectedModulesBesideNestedCode(): void {
+    $modules = [['module_name' => 'bad_1'], ['module_name' => 'bad_2']];
+    $nested = $this->respond(400, (string) json_encode([
+      'detail' => [
+        'error_code' => 'module_validation_failed',
+        'message' => 'Two modules were rejected.',
+        'detail' => 'Module validation failed',
+        'invalid_modules' => $modules,
+      ],
+    ]));
+    $this->assertSame('validation_failed', $nested->status);
+    $this->assertSame('Two modules were rejected. Rejected modules (2): bad_1, bad_2.', $nested->message);
+
+    // Without a message, the words of the nested detail come first.
+    $bare = $this->respond(400, (string) json_encode([
+      'detail' => [
+        'error_code' => 'module_validation_failed',
+        'detail' => 'Module validation failed',
+        'invalid_modules' => $modules,
+      ],
+    ]));
+    $this->assertSame('Module validation failed. Rejected modules (2): bad_1, bad_2.', $bare->message);
+
+    // The same beside a code at the top level.
+    $flat = $this->respond(400, (string) json_encode([
+      'error_code' => 'module_validation_failed',
+      'message' => 'Two modules were rejected.',
+      'detail' => 'Module validation failed',
+      'invalid_modules' => $modules,
+    ]));
+    $this->assertSame('Two modules were rejected. Rejected modules (2): bad_1, bad_2.', $flat->message);
+
+    // The modules in the detail win when both list some.
+    $both = $this->respond(400, (string) json_encode([
+      'error_code' => 'module_validation_failed',
+      'message' => 'Rejected.',
+      'detail' => ['invalid_modules' => [['module_name' => 'from_detail']]],
+      'invalid_modules' => $modules,
+    ]));
+    $this->assertSame('Rejected. Rejected modules (1): from_detail.', $both->message);
+  }
+
+  /**
+   * Without the time service the system clock decides whether a date passed.
+   */
+  public function testRetryAfterDateWithoutTimeService(): void {
+    $format = 'D, d M Y H:i:s \G\M\T';
+    $send = fn (string $header): string => (new SentinelClient(new Client([
+      'handler' => HandlerStack::create(new MockHandler([
+        new Response(503, ['Retry-After' => $header], '{"error_code": "queue_unavailable", "message": "Busy."}'),
+      ])),
+    ])))->sync('https://sentinel.example.com', 'uuid', 'SECRET', [])->message;
+
+    $future = time() + 3600;
+    $this->assertSame('Busy. Retry after ' . gmdate('c', $future) . '.', $send(gmdate($format, $future)));
+    $this->assertSame('Busy.', $send(gmdate($format, time() - 3600)));
+    $this->assertSame('Busy. Retry after 30 seconds.', $send('30'));
+  }
+
+  /**
+   * An HTTP date is read as GMT whatever the site's default time zone is.
+   *
+   * @dataProvider timeZones
+   */
+  public function testRetryAfterDateIgnoresDefaultTimeZone(string $zone): void {
+    $default = date_default_timezone_get();
+    date_default_timezone_set($zone);
+    try {
+      $send = fn (string $header): SyncResult => $this->client(new Response(429, ['Retry-After' => $header], '{"error_code": "push_limit_reached"}'))
+        ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+      // Three hours after the fixed clock, in GMT.
+      $this->assertSame(self::NOW + 10800, $send('Fri, 09 Oct 2026 16:00:00 GMT')->nextAllowedAt);
+      // One hour before it: past in GMT, though not in every local time.
+      $this->assertNull($send('Fri, 09 Oct 2026 12:00:00 GMT')->nextAllowedAt);
+      $wait = $this->client(new Response(503, ['Retry-After' => 'Fri, 09 Oct 2026 16:00:00 GMT'], '{"error_code": "queue_unavailable", "message": "Busy."}'))
+        ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+      $this->assertSame('Busy. Retry after 2026-10-09T16:00:00+00:00.', $wait->message);
+    }
+    finally {
+      date_default_timezone_set($default);
+    }
+  }
+
+  /**
+   * Default time zones west and east of GMT.
+   *
+   * @return array<string, array{string}>
+   *   Time zone names.
+   */
+  public static function timeZones(): array {
+    return [
+      'UTC' => ['UTC'],
+      'Pacific/Auckland' => ['Pacific/Auckland'],
+      'America/Los_Angeles' => ['America/Los_Angeles'],
+      'Asia/Kolkata' => ['Asia/Kolkata'],
+    ];
   }
 
   /**

@@ -219,10 +219,20 @@ class SentinelClient {
     // A nested error object holds its extra fields, such as the rejected
     // modules, beside the error code.
     $detail = $nested ? ($data['detail'] ?? $data) : ($data['detail'] ?? NULL);
+    $listed = is_array($detail) && is_array($detail['invalid_modules'] ?? NULL);
+    if ($outcome === 'validation_failed' && !$listed && is_array($data['invalid_modules'] ?? NULL)) {
+      // The rejected modules are beside the error code, not in its detail.
+      $words = is_array($detail) && !array_is_list($detail) ? $detail : ['message' => $detail];
+      $detail = ['invalid_modules' => $data['invalid_modules']] + $words;
+    }
     // Only these outcomes show how long to wait.
     $wait = in_array($outcome, ['rate_limited', 'unavailable'], TRUE) ? $this->retryAfterText($retry) : '';
-    $text = $this->codedText($outcome, $code, $detail, $this->cleanMessage($data['message'] ?? NULL), $wait);
-    return SyncResult::failure($outcome, $code, $text, $diagnostics);
+    $message = $this->cleanMessage($data['message'] ?? NULL);
+    if ($message !== NULL && !preg_match('/[\p{L}\p{N}]/u', $message)) {
+      // Punctuation alone says nothing: it counts as no message.
+      $message = NULL;
+    }
+    return SyncResult::failure($outcome, $code, $this->codedText($outcome, $code, $detail, $message, $wait), $diagnostics);
   }
 
   /**
@@ -232,7 +242,7 @@ class SentinelClient {
    * is added to it. What the message cannot hold follows as sentences of
    * their own: the rejected modules, the first field at fault and the wait.
    * The message is shortened to make room, so the whole text stays within
-   * the length limit.
+   * the length limit. Every part is cleaned, and so is the whole.
    *
    * @param string $status
    *   The outcome, e.g. 'not_found'.
@@ -255,16 +265,43 @@ class SentinelClient {
       $additions[] = $this->rejectedModules($detail);
     }
     if (is_array($detail) && $detail !== [] && array_is_list($detail)) {
-      $field = $this->firstValidationError($detail);
-      $additions[] = $field !== NULL ? 'First field at fault: ' . mb_substr($field, 0, 150) . '.' : '';
+      $field = $this->firstValidationError($detail, TRUE);
+      $additions[] = $field !== NULL ? 'First field at fault: ' . rtrim(mb_substr($field, 0, 150), '. ') . '.' : '';
     }
     $additions[] = $wait;
     $tail = implode(' ', array_filter($additions, fn (string $sentence): bool => $sentence !== ''));
     if ($tail === '') {
       return $message;
     }
-    $room = max(0, self::MAX_MESSAGE_LENGTH - mb_strlen($tail) - 2);
-    return mb_substr(rtrim(mb_substr($message, 0, $room), '. ') . '. ' . $tail, 0, self::MAX_MESSAGE_LENGTH);
+    // A message that ends a sentence itself gets no full stop.
+    if (!preg_match('/[.?!\x{2026}]\z/u', $message)) {
+      $message .= '.';
+    }
+    $message = $this->shorten($message, max(1, self::MAX_MESSAGE_LENGTH - 1 - mb_strlen($tail)));
+    return (string) $this->cleanMessage($message . ' ' . $tail);
+  }
+
+  /**
+   * Shortens a text to a length, at a word boundary where there is one.
+   *
+   * @param string $text
+   *   The cleaned text.
+   * @param int $length
+   *   The most characters to return, at least 1.
+   *
+   * @return string
+   *   The text, ending in an ellipsis when it was shortened.
+   */
+  protected function shorten(string $text, int $length): string {
+    if (mb_strlen($text) <= $length) {
+      return $text;
+    }
+    $cut = mb_substr($text, 0, $length - 1);
+    $space = mb_strrpos($cut, ' ');
+    if ($space !== FALSE && $space > 0) {
+      $cut = mb_substr($cut, 0, $space);
+    }
+    return rtrim($cut, ' .,;:') . "\u{2026}";
   }
 
   /**
@@ -606,19 +643,27 @@ class SentinelClient {
    *
    * @param non-empty-list<mixed> $detail
    *   The "detail" list of the response.
+   * @param bool $bare
+   *   TRUE to leave out a full stop at the end of the error's own words, for
+   *   a caller that ends the sentence itself.
    *
    * @return string|null
    *   The field at fault and what is wrong with it, e.g.
    *   "body.modules.0.version: Field required (and 1 more)", or NULL when the
-   *   first error holds no usable text.
+   *   first error holds no usable text. Both parts are cleaned.
    */
-  protected function firstValidationError(array $detail): ?string {
+  protected function firstValidationError(array $detail, bool $bare = FALSE): ?string {
     $first = $detail[0];
     $text = $this->cleanMessage(is_array($first) ? ($first['msg'] ?? NULL) : $first);
+    if ($text !== NULL && $bare) {
+      $text = $this->cleanMessage(rtrim($text, '. '));
+    }
     if ($text === NULL) {
       return NULL;
     }
+    // The location is server text like the words: it is cleaned as well.
     $loc = is_array($first) && is_array($first['loc'] ?? NULL) ? implode('.', array_filter($first['loc'], 'is_scalar')) : '';
+    $loc = $this->cleanMessage($loc) ?? '';
     $more = count($detail) - 1;
     return ($loc !== '' ? $loc . ': ' : '') . $text . ($more > 0 ? ' (and ' . $more . ' more)' : '');
   }
