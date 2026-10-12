@@ -17,7 +17,7 @@ services:
 
   Drupal\sentinel_connector\SentinelClient:
     class: Drupal\sentinel_connector\SentinelClient
-    arguments: ['@http_client']
+    arguments: ['@http_client', '@datetime.time']
 
   Drupal\sentinel_connector\PushLimitFormatter:
     class: Drupal\sentinel_connector\PushLimitFormatter

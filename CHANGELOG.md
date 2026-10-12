@@ -21,6 +21,29 @@ All notable changes to this project are documented here. Versions follow
   channel, with the trigger (cron, form or Drush), the outcome, the HTTP
   status, Sentinel's message and the task ID of a queued push. The README
   lists the outcomes and their log levels.
+- Sentinel's `error_code` decides the outcome of a refused push. Each code of
+  the sync endpoint's error contract maps to one of the existing outcomes
+  (the README lists them), on any error status and whatever the wording of
+  the message. The log entry has the code: `error code <code>`, or
+  `unknown error code <code>` for a code this release does not know.
+- `push_limit_reached` and `subscription_inactive` still count only on a 429
+  and a 402, because they hold back later pushes. On another status the
+  response is classified by its status and the log entry has
+  `ignored error code <code>`.
+- A response without an `error_code`, or with an unknown one, is classified by
+  its HTTP status and body as before, so older Sentinel servers and reverse
+  proxies that answer with HTML are still supported.
+
+- The settings form validates the Site UUID. It trims the value, removes
+  surrounding braces, lowers upper case and adds the hyphens to 32 hexadecimal
+  digits; anything that is not a UUID is rejected with an error. Sentinel
+  accepts only the lower-case hyphenated form and refuses any other as if the
+  API key were wrong.
+- A Site UUID already stored in another notation is sent in the canonical
+  form, in the request path and in the payload, without a re-save. A stored
+  value that is not a UUID is not sent: the push ends as `unconfigured` with a
+  message naming the Site UUID, and the status report shows the site as not
+  configured.
 
 ### Changed
 
@@ -30,6 +53,29 @@ All notable changes to this project are documented here. Versions follow
   `conflict` (409), `invalid_payload` (422) and `unavailable` (503). A
   structured error is shown as a sentence, never as JSON. A rate limit shows
   Sentinel's own message instead of a fixed "100/hour".
+- With a known `error_code`, the text shown and logged is Sentinel's `message`
+  rather than `detail`, without the connector's own advice. The rejected
+  modules, the first field at fault and the wait follow it as sentences of
+  their own, and the whole text is at most 500 characters.
+- The `Retry-After` wait is shown by outcome: for `rate_limited`, and with a
+  known `error_code` also for `unavailable`.
+- `Retry-After` counts only as a positive number of seconds or as an HTTP date
+  in the future. A relative phrase, zero, a negative number or a past date is
+  ignored, also for the stored time of a push limit.
+- Values Sentinel sends are no longer accepted with a trailing newline. This
+  also applies to responses without an `error_code`: a 202 whose `task_id`
+  ends in a newline is now `invalid_response`; a 401 whose `detail.code` ends
+  in a newline is now `auth_error` without the code in the log detail; a
+  `reason` or `plan` that ends in a newline is dropped.
+- The log detail of a refused signature reads `error code timestamp_skew`
+  when Sentinel sends an `error_code`; before it was `code timestamp_skew`.
+- `SentinelClient` takes the time service as an optional second argument. Its
+  protected `errorBody()` and `pushLimit()` have new signatures: `errorBody()`
+  takes the decoded body and returns the object with a valid `error_code`,
+  `pushLimit()` takes that object and the parsed `Retry-After`. Subclasses
+  that override them need updating.
+- A 200 shows Sentinel's `message` only when it is a non-empty string;
+  otherwise "Sync completed."
 - `SentinelClient` no longer takes a logger; `SyncService::sync()` takes the
   trigger of the push.
 - Cron pushes only when the inventory changed since the last push Sentinel

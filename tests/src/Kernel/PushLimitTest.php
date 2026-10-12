@@ -157,7 +157,7 @@ class PushLimitTest extends KernelTestBase {
     $this->assertSame('cron', $record['context']['@trigger']);
     $this->assertSame('push_limited', $record['context']['@outcome']);
     $this->assertSame(429, $record['context']['@code']);
-    $this->assertSame('plan free; limit 1; next push allowed at ' . gmdate('Y-m-d\TH:i:s\Z', $next), $record['context']['@details']);
+    $this->assertSame('plan free; limit 1; next push allowed at ' . gmdate('Y-m-d\TH:i:s\Z', $next) . '; error code push_limit_reached', $record['context']['@details']);
 
     $sync = \Drupal::service(SyncService::class);
     $this->assertFalse($sync->cronIsDue($next - 1));
@@ -359,7 +359,7 @@ class PushLimitTest extends KernelTestBase {
     $this->assertSame(RfcLogLevel::WARNING, $this->logRecords[0]['level']);
     $this->assertSame('sentinel_connector', $this->logRecords[0]['context']['channel']);
     $this->assertSame('cron', $this->logRecords[0]['context']['@trigger']);
-    $this->assertSame('reason past_due', $this->logRecords[0]['context']['@details']);
+    $this->assertSame('reason past_due; error code subscription_inactive', $this->logRecords[0]['context']['@details']);
 
     // Cron is held even though the hourly floor has passed.
     $state->set('sentinel_connector.last_attempt_time', $before - 7200);

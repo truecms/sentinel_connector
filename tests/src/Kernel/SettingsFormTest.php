@@ -139,6 +139,79 @@ class SettingsFormTest extends KernelTestBase {
   }
 
   /**
+   * The Site UUID is saved in the one form Sentinel accepts.
+   *
+   * @dataProvider acceptedSiteUuids
+   */
+  public function testSiteUuidIsNormalised(string $entered): void {
+    $this->submitSettingsForm(['site_uuid' => $entered]);
+
+    $this->assertSame('123e4567-e89b-42d3-a456-426614174000', $this->config('sentinel_connector.settings')->get('site_uuid'));
+  }
+
+  /**
+   * Notations of one UUID that the form accepts.
+   *
+   * @return array<string, array{string}>
+   *   The value entered.
+   */
+  public static function acceptedSiteUuids(): array {
+    return [
+      'canonical' => ['123e4567-e89b-42d3-a456-426614174000'],
+      'padded' => ["  123e4567-e89b-42d3-a456-426614174000\t"],
+      'upper case' => ['123E4567-E89B-42D3-A456-426614174000'],
+      'braced' => ['{123e4567-e89b-42d3-a456-426614174000}'],
+      'unhyphenated' => ['123e4567e89b42d3a456426614174000'],
+      'braced, upper case, unhyphenated and padded' => [' { 123E4567E89B42D3A456426614174000 } '],
+    ];
+  }
+
+  /**
+   * A value that is not a UUID is refused, and the stored value is kept.
+   *
+   * @dataProvider rejectedSiteUuids
+   */
+  public function testInvalidSiteUuidIsRejected(string $entered): void {
+    $config = $this->config('sentinel_connector.settings');
+    $form_state = (new FormState())->setValues([
+      'enabled' => $config->get('enabled'),
+      'api_base_url' => $config->get('api_base_url'),
+      'site_uuid' => $entered,
+      'site_url' => $config->get('site_url'),
+      'site_name' => 'Must not be saved',
+      'report_scope' => $config->get('report_scope'),
+    ]);
+    \Drupal::formBuilder()->submitForm(SettingsForm::class, $form_state);
+
+    $errors = $form_state->getErrors();
+    $this->assertSame(['site_uuid'], array_keys($errors));
+    $this->assertStringContainsString('The Site UUID is not a valid UUID.', (string) $errors['site_uuid']);
+    $this->assertStringContainsString('123e4567-e89b-42d3-a456-426614174000', (string) $errors['site_uuid']);
+    $stored = $this->config('sentinel_connector.settings');
+    $this->assertSame('11111111-1111-4111-8111-111111111111', $stored->get('site_uuid'));
+    $this->assertSame('Example', $stored->get('site_name'));
+  }
+
+  /**
+   * Values that are not a UUID in any accepted notation.
+   *
+   * @return array<string, array{string}>
+   *   The value entered.
+   */
+  public static function rejectedSiteUuids(): array {
+    return [
+      'word' => ['my-site'],
+      'too short' => ['123e4567-e89b-42d3-a456-42661417400'],
+      'too long' => ['123e4567-e89b-42d3-a456-4266141740000'],
+      'not hexadecimal' => ['123e4567-e89b-42d3-a456-42661417400g'],
+      'hyphens in other places' => ['123e-4567e89b-42d3-a456-426614174000'],
+      'two UUIDs' => ['123e4567-e89b-42d3-a456-426614174000 123e4567-e89b-42d3-a456-426614174000'],
+      'URL' => ['https://sentinel.example.com/sites/123e4567-e89b-42d3-a456-426614174000'],
+      'unbalanced brace' => ['{123e4567-e89b-42d3-a456-426614174000'],
+    ];
+  }
+
+  /**
    * The update removes a stored site token and leaves the API key alone.
    */
   public function testUpdateRemovesSiteToken(): void {
