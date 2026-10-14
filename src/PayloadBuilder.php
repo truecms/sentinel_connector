@@ -17,7 +17,7 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '0.4.0';
+  public const CONNECTOR_VERSION = '0.5.0';
 
   public function __construct(
     protected ModuleExtensionList $moduleList,
