@@ -215,15 +215,20 @@ final class SettingsForm extends ConfigFormBase {
       ];
     }
 
-    $form['sync_now'] = [
+    $form = parent::buildForm($form, $form_state);
+
+    // Offered only once a save has stored everything a push needs, and placed
+    // to the right of "Save configuration".
+    $form['actions']['sync_now'] = [
       '#type' => 'link',
       '#title' => $this->t('Sync now'),
       '#url' => Url::fromRoute('sentinel_connector.sync_now'),
       '#attributes' => ['class' => ['button', 'button--primary']],
-      '#access' => $this->currentUser()->hasPermission('trigger sentinel sync'),
+      '#weight' => 10,
+      '#access' => $this->syncService->isConfigured() && $this->currentUser()->hasPermission('trigger sentinel sync'),
     ];
 
-    return parent::buildForm($form, $form_state);
+    return $form;
   }
 
   /**

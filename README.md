@@ -95,7 +95,7 @@ not encrypted.
 - **Cron** — automatic when enabled on the settings form. Pushes only when the inventory changed, at most once an hour; see [Push frequency](#push-frequency).
 - **Drush** — `drush sentinel_connector:sync` (alias `sc-sync`).
 - **Deployment** — `drush sentinel_connector:deploy` (alias `sc-deploy`) from the CI/CD pipeline; see [Notify Sentinel on deployment](#notify-sentinel-on-deployment).
-- **Admin button** — "Sync now" on the settings form (requires the *Trigger Sentinel sync* permission).
+- **Admin button** — "Sync now", next to "Save configuration" on the settings form (requires the *Trigger Sentinel sync* permission). It appears once the saved settings hold the API base URL, a valid Site UUID and an API key.
 
 ## Notify Sentinel on deployment
 

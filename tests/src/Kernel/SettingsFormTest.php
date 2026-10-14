@@ -7,6 +7,7 @@ use Drupal\Core\Site\Settings;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\ApiKeyResolver;
 use Drupal\sentinel_connector\Form\SettingsForm;
+use Drupal\Tests\user\Traits\UserCreationTrait;
 
 /**
  * Kernel tests for the credentials on the settings form.
@@ -14,6 +15,8 @@ use Drupal\sentinel_connector\Form\SettingsForm;
  * @group sentinel_connector
  */
 class SettingsFormTest extends KernelTestBase {
+
+  use UserCreationTrait;
 
   /**
    * A saved key that must never reach the browser.
@@ -235,6 +238,79 @@ class SettingsFormTest extends KernelTestBase {
     // A second run changes nothing.
     sentinel_connector_update_10002();
     $this->assertSame($before, $this->config('sentinel_connector.settings')->getRawData());
+  }
+
+  /**
+   * The sync button stays hidden until a save stores a full configuration.
+   */
+  public function testSyncNowAppearsAfterSuccessfulSave(): void {
+    $this->setUpSyncUser(['trigger sentinel sync']);
+    // A fresh install: nothing saved yet.
+    $this->config('sentinel_connector.settings')
+      ->set('api_base_url', '')
+      ->set('site_uuid', '')
+      ->save();
+    $this->assertFalse($this->buildSettingsForm()['actions']['sync_now']['#access']);
+
+    // A submission that fails validation saves nothing.
+    $form_state = (new FormState())->setValues([
+      'enabled' => FALSE,
+      'api_base_url' => 'https://sentinel.example.com',
+      'site_uuid' => 'not-a-uuid',
+      'site_url' => 'https://example.com',
+      'site_name' => 'Example',
+      'report_scope' => 'all',
+      'api_key_state' => 'sk_new_9876543210',
+    ]);
+    \Drupal::formBuilder()->submitForm(SettingsForm::class, $form_state);
+    $this->assertNotSame([], $form_state->getErrors());
+    $this->assertFalse($this->buildSettingsForm()['actions']['sync_now']['#access']);
+
+    // Saved without an API key: a push could not be sent yet.
+    $this->submitSettingsForm([
+      'api_base_url' => 'https://sentinel.example.com',
+      'site_uuid' => '11111111-1111-4111-8111-111111111111',
+    ]);
+    $this->assertFalse($this->buildSettingsForm()['actions']['sync_now']['#access']);
+
+    $this->submitSettingsForm(['api_key_state' => 'sk_new_9876543210']);
+    $form = $this->buildSettingsForm();
+    $this->assertArrayNotHasKey('sync_now', $form);
+    $this->assertTrue($form['actions']['sync_now']['#access']);
+
+    // Rendered in the actions, to the right of "Save configuration".
+    $built = \Drupal::formBuilder()->getForm(SettingsForm::class);
+    $html = (string) $this->container->get('renderer')->renderRoot($built);
+    $save = strpos($html, 'value="Save configuration"');
+    $sync = strpos($html, '>Sync now</a>');
+    $this->assertNotFalse($save);
+    $this->assertNotFalse($sync);
+    $this->assertGreaterThan($save, $sync);
+    $actions = substr($html, (int) strpos($html, 'data-drupal-selector="edit-actions"'));
+    $this->assertStringContainsString('>Sync now</a>', $actions);
+  }
+
+  /**
+   * A complete configuration does not show "Sync now" without the permission.
+   */
+  public function testSyncNowNeedsThePermission(): void {
+    $this->setUpSyncUser([]);
+    \Drupal::state()->set(ApiKeyResolver::STATE_KEY, self::SAVED_KEY);
+
+    $this->assertFalse($this->buildSettingsForm()['actions']['sync_now']['#access']);
+  }
+
+  /**
+   * Makes a user with the given permissions the current user.
+   *
+   * @param string[] $permissions
+   *   The permissions to grant.
+   */
+  protected function setUpSyncUser(array $permissions): void {
+    $this->installEntitySchema('user');
+    // User 1 bypasses permission checks, so it is created and not used.
+    $this->createUser();
+    $this->setCurrentUser($this->createUser($permissions));
   }
 
   /**

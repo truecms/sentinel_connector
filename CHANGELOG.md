@@ -47,6 +47,8 @@ All notable changes to this project are documented here. Versions follow
 
 ### Changed
 
+- "Sync now" sits next to "Save configuration" and is hidden until the saved
+  settings hold the API base URL, a valid Site UUID and an API key.
 - Sentinel's error responses have their own outcomes instead of `rejected`:
   `site_mismatch` and `validation_failed` (400), `signature_refused` (401),
   `not_found` (404),
