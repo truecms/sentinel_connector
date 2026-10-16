@@ -1,0 +1,9 @@
+parameters:
+  level: 6
+  paths:
+    - src
+    - tests
+    - sentinel_connector.module
+    - sentinel_connector.install
+  drupal:
+    drupal_root: web

@@ -1,0 +1,63 @@
+<?php
+
+/**
+ * @file
+ * Install, update and requirements hooks for Sentinel Connector.
+ */
+
+use Drupal\sentinel_connector\PushHealth;
+use Drupal\sentinel_connector\SyncService;
+
+/**
+ * Implements hook_requirements().
+ *
+ * Kept procedural so the same code runs on Drupal 10.3 and 11. The checks
+ * live in the push health service.
+ *
+ * @phpstan-return array<string, array<string, mixed>>
+ *   Runtime requirement entries.
+ */
+function sentinel_connector_requirements(string $phase): array {
+  if ($phase !== 'runtime') {
+    return [];
+  }
+  /** @var \Drupal\sentinel_connector\PushHealth $health */
+  $health = \Drupal::service(PushHealth::class);
+  return ['sentinel_connector' => $health->requirement()];
+}
+
+/**
+ * Remove the push interval setting and record the last accepted push.
+ */
+function sentinel_connector_update_10001(): string {
+  // Cron now sends at most one push an hour; Sentinel decides the rest.
+  $config = \Drupal::configFactory()->getEditable('sentinel_connector.settings');
+  if ($config->get('cron_interval') !== NULL) {
+    $config->clear('cron_interval')->save();
+  }
+
+  // The status report reads the last accepted push from its own state key.
+  $state = \Drupal::state();
+  $lastSuccess = (int) $state->get('sentinel_connector.last_sync_time', 0);
+  if ($lastSuccess > 0 && !$state->get(SyncService::STATE_LAST_ACCEPTED_TIME)) {
+    $state->set(SyncService::STATE_LAST_ACCEPTED_TIME, $lastSuccess);
+  }
+  /** @var \Drupal\sentinel_connector\SyncService $sync */
+  $sync = \Drupal::service(SyncService::class);
+  $sync->markConfigured();
+
+  return (string) t('Removed the Sentinel Connector push interval setting. Cron now sends at most one push an hour.');
+}
+
+/**
+ * Remove the unused site token setting.
+ */
+function sentinel_connector_update_10002(): string {
+  // Sentinel authenticates with the API key only; the key is left untouched.
+  $config = \Drupal::configFactory()->getEditable('sentinel_connector.settings');
+  if ($config->get('site_token') !== NULL) {
+    $config->clear('site_token')->save();
+  }
+
+  return (string) t('Removed the unused Sentinel Connector site token setting. The API key is unchanged.');
+}

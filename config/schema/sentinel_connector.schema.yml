@@ -1,0 +1,22 @@
+sentinel_connector.settings:
+  type: config_object
+  label: 'Sentinel Connector settings'
+  mapping:
+    api_base_url:
+      type: string
+      label: 'Sentinel API base URL'
+    site_uuid:
+      type: string
+      label: 'Site UUID'
+    site_url:
+      type: string
+      label: 'Site URL'
+    site_name:
+      type: string
+      label: 'Site name'
+    report_scope:
+      type: string
+      label: 'Report scope'
+    enabled:
+      type: boolean
+      label: 'Enable cron sync'

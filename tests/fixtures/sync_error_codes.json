@@ -1,0 +1,333 @@
+{
+  "source": {
+    "repository": "truecms/sentinel",
+    "branch": "feature/485-sync-error-codes",
+    "registry": "app/core/sync_errors.py",
+    "bodies": "tests/test_api/test_sync_error_contract.py",
+    "retry_after": "Seconds of the Retry-After header; null when the header is not sent. The server sends it on every 429 and 503, as a positive whole number of at most 86400.",
+    "examples": "Values the server builds per response are examples: subscription_inactive, push_limit_reached, the json_invalid list, invalid_modules and the skew window. The payload_invalid body is from a server test run."
+  },
+  "codes": {
+    "site_url_mismatch": {
+      "status": 400,
+      "retry_after": null,
+      "body": {
+        "error_code": "site_url_mismatch",
+        "message": "The site URL sent does not match the URL registered in Sentinel for this site. Check the site URL in Sentinel.",
+        "detail": "Site URL mismatch"
+      }
+    },
+    "site_uuid_mismatch": {
+      "status": 400,
+      "retry_after": null,
+      "body": {
+        "error_code": "site_uuid_mismatch",
+        "message": "The site UUID sent does not match the site registered in Sentinel. Check the site UUID in the connector settings.",
+        "detail": "Site UUID mismatch"
+      }
+    },
+    "module_validation_failed": {
+      "status": 400,
+      "retry_after": null,
+      "body": {
+        "error_code": "module_validation_failed",
+        "message": "Sentinel refused the data because one or more module names or versions are not valid. Nothing was stored.",
+        "detail": {
+          "error": "Module validation failed",
+          "message": "All module names and versions must be valid",
+          "invalid_modules": [
+            {
+              "module_name": "Capital_Name",
+              "version": "1.0.0",
+              "reason": "Invalid module name",
+              "result": "invalid"
+            }
+          ]
+        }
+      }
+    },
+    "module_not_on_drupal_org": {
+      "status": 400,
+      "retry_after": null,
+      "body": {
+        "error_code": "module_not_on_drupal_org",
+        "message": "Sentinel refused the data because one or more modules were not found on Drupal.org. Nothing was stored.",
+        "detail": {
+          "error": "Module validation failed",
+          "message": "All modules must exist on drupal.org",
+          "invalid_modules": [
+            {
+              "module_name": "not_on_drupal_org",
+              "version": "1.0.0",
+              "reason": "Module not found on drupal.org",
+              "result": "invalid"
+            }
+          ]
+        }
+      }
+    },
+    "body_unreadable": {
+      "status": 400,
+      "retry_after": null,
+      "body": {
+        "error_code": "body_unreadable",
+        "message": "Sentinel could not read the request body.",
+        "detail": "There was an error parsing the body"
+      }
+    },
+    "authentication_required": {
+      "status": 401,
+      "retry_after": null,
+      "body": {
+        "error_code": "authentication_required",
+        "message": "Sentinel could not authenticate this request. Send the site's API key.",
+        "detail": "Authentication required"
+      }
+    },
+    "api_key_invalid": {
+      "status": 401,
+      "retry_after": null,
+      "body": {
+        "error_code": "api_key_invalid",
+        "message": "Sentinel does not recognise this API key. Check the key in the connector settings, or issue a new one in Sentinel.",
+        "detail": "Invalid API key"
+      }
+    },
+    "api_key_inactive": {
+      "status": 401,
+      "retry_after": null,
+      "body": {
+        "error_code": "api_key_inactive",
+        "message": "This API key is expired, revoked or belongs to a site that is no longer active. Issue a new key in Sentinel.",
+        "detail": "API key expired or inactive"
+      }
+    },
+    "signature_missing": {
+      "status": 401,
+      "retry_after": null,
+      "body": {
+        "error_code": "signature_missing",
+        "message": "The request signature headers are missing or incomplete. Check the sync secret in the connector settings.",
+        "detail": {
+          "code": "signature_missing",
+          "message": "X-Sentinel-Signature and X-Sentinel-Timestamp headers are required."
+        }
+      }
+    },
+    "signature_invalid": {
+      "status": 401,
+      "retry_after": null,
+      "body": {
+        "error_code": "signature_invalid",
+        "message": "The request signature does not match. Check that the sync secret in the connector settings is the one issued by Sentinel.",
+        "detail": {
+          "code": "signature_invalid",
+          "message": "Signature does not match the request body."
+        }
+      }
+    },
+    "timestamp_skew": {
+      "status": 401,
+      "retry_after": null,
+      "body": {
+        "error_code": "timestamp_skew",
+        "message": "The request timestamp is outside the accepted window. Check the clock on the Drupal server.",
+        "detail": {
+          "code": "timestamp_skew",
+          "message": "Timestamp outside the accepted 300s window."
+        }
+      }
+    },
+    "replay_detected": {
+      "status": 401,
+      "retry_after": null,
+      "body": {
+        "error_code": "replay_detected",
+        "message": "Sentinel has already processed this exact signed request. Send a new one.",
+        "detail": {
+          "code": "replay_detected",
+          "message": "This signed payload has already been processed."
+        }
+      }
+    },
+    "subscription_inactive": {
+      "status": 402,
+      "retry_after": null,
+      "body": {
+        "error_code": "subscription_inactive",
+        "reason": "past_due",
+        "message": "Sentinel is not accepting data from this site because a payment for the organisation's subscription is overdue. An organisation admin can update the payment method under Settings, Billing.",
+        "detail": "Sentinel is not accepting data from this site because a payment for the organisation's subscription is overdue. An organisation admin can update the payment method under Settings, Billing."
+      }
+    },
+    "permission_denied": {
+      "status": 403,
+      "retry_after": null,
+      "body": {
+        "error_code": "permission_denied",
+        "message": "This API key or account is not allowed to send data for this site.",
+        "detail": "Missing permission: site:sync"
+      }
+    },
+    "site_mismatch": {
+      "status": 403,
+      "retry_after": null,
+      "body": {
+        "error_code": "site_mismatch",
+        "message": "This API key belongs to a different site. Use the key issued for this site.",
+        "detail": "API key does not belong to the requested site"
+      }
+    },
+    "site_unavailable": {
+      "status": 404,
+      "retry_after": null,
+      "body": {
+        "error_code": "site_unavailable",
+        "message": "Sentinel could not find an active site for this request. The site, its organisation or its client may have been removed or deactivated.",
+        "detail": "Site not found"
+      }
+    },
+    "catalog_conflict": {
+      "status": 409,
+      "retry_after": null,
+      "body": {
+        "error_code": "catalog_conflict",
+        "message": "Sentinel could not store this data because it conflicts with existing module records. Nothing was stored.",
+        "detail": "Inventory conflicts with existing catalog state"
+      }
+    },
+    "catalog_entry_unavailable": {
+      "status": 409,
+      "retry_after": null,
+      "body": {
+        "error_code": "catalog_entry_unavailable",
+        "message": "Sentinel could not store this data because a reported module is unavailable in its catalogue. Nothing was stored.",
+        "detail": "Reported catalog entry is unavailable"
+      }
+    },
+    "payload_invalid": {
+      "status": 422,
+      "retry_after": null,
+      "body": {
+        "error_code": "payload_invalid",
+        "message": "The data sent is not in the format Sentinel expects. Update the Sentinel Connector module if this continues.",
+        "detail": [
+          {
+            "loc": [
+              "body",
+              "modules",
+              0,
+              "machine_name"
+            ],
+            "msg": "String should match pattern '^[a-zA-Z0-9_]+$'",
+            "type": "string_pattern_mismatch"
+          }
+        ]
+      }
+    },
+    "json_invalid": {
+      "status": 422,
+      "retry_after": null,
+      "body": {
+        "error_code": "json_invalid",
+        "message": "The request body is not valid JSON.",
+        "detail": [
+          {
+            "loc": [
+              "body",
+              10
+            ],
+            "msg": "JSON decode error",
+            "type": "json_invalid"
+          }
+        ]
+      }
+    },
+    "push_limit_reached": {
+      "status": 429,
+      "retry_after": 51300,
+      "body": {
+        "error_code": "push_limit_reached",
+        "message": "This site can send data to Sentinel once every 24 hours on the Free plan. Next push accepted after 2026-10-10 03:15 UTC.",
+        "plan": "free",
+        "limit": 1,
+        "window_seconds": 86400,
+        "retry_after_seconds": 51300,
+        "next_allowed_at": "2026-10-10T03:15:00Z",
+        "detail": "This site can send data to Sentinel once every 24 hours on the Free plan. Next push accepted after 2026-10-10 03:15 UTC."
+      }
+    },
+    "site_rate_limited": {
+      "status": 429,
+      "retry_after": 60,
+      "body": {
+        "error_code": "site_rate_limited",
+        "message": "This site has sent too many requests to Sentinel. Try again later.",
+        "detail": "Rate limit exceeded. Please try again later."
+      }
+    },
+    "auth_rate_limited": {
+      "status": 429,
+      "retry_after": 60,
+      "body": {
+        "error_code": "auth_rate_limited",
+        "message": "Sentinel received too many authentication attempts. Try again later.",
+        "detail": "Too many authentication attempts. Please try again later."
+      }
+    },
+    "internal_error": {
+      "status": 500,
+      "retry_after": null,
+      "body": {
+        "error_code": "internal_error",
+        "message": "Sentinel hit an unexpected error and may not have stored this data. Check the site in Sentinel before sending it again.",
+        "detail": "Internal server error"
+      }
+    },
+    "rate_limiter_unavailable": {
+      "status": 503,
+      "retry_after": 30,
+      "body": {
+        "error_code": "rate_limiter_unavailable",
+        "message": "Sentinel cannot accept data from this site right now. Nothing was stored. Try again shortly.",
+        "detail": "Ingestion rate limiter unavailable"
+      }
+    },
+    "replay_protection_unavailable": {
+      "status": 503,
+      "retry_after": 30,
+      "body": {
+        "error_code": "replay_protection_unavailable",
+        "message": "Sentinel cannot accept data from this site right now. Nothing was stored. Try again shortly.",
+        "detail": "Sync replay protection is unavailable"
+      }
+    },
+    "queue_unavailable": {
+      "status": 503,
+      "retry_after": 30,
+      "body": {
+        "error_code": "queue_unavailable",
+        "message": "Sentinel could not queue this data for processing. Try again shortly.",
+        "detail": "Inventory queue is temporarily unavailable"
+      }
+    },
+    "inventory_busy": {
+      "status": 503,
+      "retry_after": 30,
+      "body": {
+        "error_code": "inventory_busy",
+        "message": "Sentinel cannot accept data from this site right now. Nothing was stored. Try again shortly.",
+        "detail": "Inventory is busy; retry the request"
+      }
+    },
+    "auth_rate_limiter_unavailable": {
+      "status": 503,
+      "retry_after": 30,
+      "body": {
+        "error_code": "auth_rate_limiter_unavailable",
+        "message": "Sentinel cannot accept data from this site right now. Nothing was stored. Try again shortly.",
+        "detail": "Authentication rate limiting unavailable"
+      }
+    }
+  }
+}

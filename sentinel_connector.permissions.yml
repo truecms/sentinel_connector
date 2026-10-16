@@ -1,0 +1,8 @@
+administer sentinel connector:
+  title: 'Administer Sentinel Connector'
+  description: 'Configure the Sentinel Connector module.'
+  restrict access: true
+trigger sentinel sync:
+  title: 'Trigger Sentinel sync'
+  description: 'Run an on-demand sync from the admin UI.'
+  restrict access: true
