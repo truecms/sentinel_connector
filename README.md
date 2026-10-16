@@ -1,21 +1,31 @@
 # Sentinel Connector
 
 A Drupal 10/11 module that reports a site's installed extensions and environment
-to the Sentinel monitoring platform.
+to the [Sentinel Connector](https://sentinelconnector.io/) monitoring platform.
 Sentinel computes update and security status; this module only collects an
 authoritative snapshot and submits it.
+
+## Website, accounts and documentation
+
+[SentinelConnector.io](https://sentinelconnector.io/) provides the monitoring
+service. A [Free account](https://sentinelconnector.io/register?plan=free) and a
+14-day trial are available. The Free plan monitors one Drupal website and
+accepts one data update a day. See [plans and pricing](https://sentinelconnector.io/pricing)
+for included features and applicable trial terms. The Drupal module remains
+free under its GPL license.
+
+- [User guide](https://sentinelconnector.io/help)
+- [Add and connect a Drupal website](https://sentinelconnector.io/help#help-sites-add-connect-and-inspect-drupal)
+- [Create and manage API keys](https://sentinelconnector.io/help#help-api-keys)
+- [Troubleshooting](https://sentinelconnector.io/help#help-when-something-does-not-work)
 
 ## Project and distribution
 
 The public module name is **Sentinel Connector** and the machine name is
-`sentinel_connector`. The [Drupal.org project page](https://www.drupal.org/project/sentinel_connector)
-is available. The first downloadable release is being prepared.
+`sentinel_connector`. Get releases from the
+[Drupal.org project page](https://www.drupal.org/project/sentinel_connector).
 
-Until the first release is published, install a source checkout in
-`web/modules/custom/sentinel_connector`, then enable **Sentinel Connector** on
-Drupal's Extend page.
-
-Once a Drupal.org release is available, install it from the Drupal project root:
+Install a published release from the Drupal project root:
 
 ```bash
 composer require drupal/sentinel_connector
