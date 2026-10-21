@@ -312,8 +312,9 @@ class SyncService {
   /**
    * A stable hash of everything in a payload that a deployment can change.
    *
-   * The IP address is left out: it differs between a web request and the
-   * command line, and between containers, without anything being deployed.
+   * The IP address and the PHP server API are left out: they differ between a
+   * web request and the command line, and the IP address between containers,
+   * without anything being deployed.
    * The API base URL is added: a push accepted by one Sentinel says nothing
    * about another.
    *
@@ -321,7 +322,7 @@ class SyncService {
    *   The payload sent to Sentinel.
    */
   protected function fingerprint(array $payload): string {
-    unset($payload['drupal_info']['ip_address']);
+    unset($payload['drupal_info']['ip_address'], $payload['platform']['php']['sapi']);
     $modules = [];
     foreach ($payload['modules'] ?? [] as $module) {
       ksort($module);

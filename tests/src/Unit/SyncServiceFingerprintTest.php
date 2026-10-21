@@ -135,13 +135,16 @@ class SyncServiceFingerprintTest extends TestCase {
       'php version' => [fn (self $t) => $t->payload['drupal_info']['php_version'] = '8.4.1'],
       'report scope' => [fn (self $t) => $t->payload['inventory_scope'] = 'contrib'],
       'connector version' => [fn (self $t) => $t->payload['connector_version'] = '9.9.9'],
+      'web server version' => [fn (self $t) => $t->payload['platform']['web_server']['version'] = '1.26.0'],
+      'database version' => [fn (self $t) => $t->payload['platform']['database']['version'] = '10.11.7-MariaDB'],
+      'os release' => [fn (self $t) => $t->payload['platform']['os']['release'] = '13'],
       'site name' => [fn (self $t) => $t->siteName = 'Renamed'],
       'api base url' => [fn (self $t) => $t->apiBaseUrl = 'https://sentinel.example.org'],
     ];
   }
 
   /**
-   * The IP address, list order and a trailing URL slash are not a change.
+   * The IP address, server API, list order and a trailing slash are no change.
    */
   public function testIpAddressAndOrderAreIgnored(): void {
     $this->responses = [SyncResult::success(200, 'ok')];
@@ -149,6 +152,8 @@ class SyncServiceFingerprintTest extends TestCase {
     $service->sync();
 
     $this->payload['drupal_info']['ip_address'] = '10.0.0.99';
+    // Drush runs on the CLI server API, the web on FPM.
+    $this->payload['platform']['php']['sapi'] = 'cli';
     $this->apiBaseUrl .= '/';
     $this->payload['modules'] = array_reverse($this->payload['modules']);
     $this->payload['modules'][0] = array_reverse($this->payload['modules'][0], TRUE);
@@ -246,6 +251,13 @@ class SyncServiceFingerprintTest extends TestCase {
       'full_sync' => TRUE,
       'inventory_scope' => 'all',
       'connector_version' => '0.3.0',
+      'schema_version' => 2,
+      'platform' => [
+        'php' => ['version' => '8.4.0', 'sapi' => 'fpm-fcgi'],
+        'web_server' => ['software' => 'nginx', 'version' => '1.24.0', 'raw' => 'nginx/1.24.0'],
+        'database' => ['driver' => 'mysql', 'product' => 'mariadb', 'version' => '10.11.6-MariaDB'],
+        'os' => ['family' => 'Linux', 'distribution' => 'debian', 'release' => '12'],
+      ],
     ];
   }
 

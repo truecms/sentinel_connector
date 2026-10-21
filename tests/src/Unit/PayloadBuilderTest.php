@@ -260,4 +260,23 @@ class PayloadBuilderTest extends TestCase {
     $this->assertNull($payload['modules'][0]['reported_project']);
   }
 
+  /**
+   * Schema version 2 carries the platform block, left out when empty.
+   *
+   * @covers ::build
+   */
+  public function testPlatformBlock(): void {
+    $list = $this->createMock(ModuleExtensionList::class);
+    $list->method('reset')->willReturnSelf();
+    $list->method('getList')->willReturn([]);
+
+    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4'))->build('all');
+    $this->assertSame(2, $payload['schema_version']);
+    $this->assertArrayNotHasKey('platform', $payload);
+
+    $platform = ['php' => ['version' => '8.3.0', 'sapi' => 'fpm-fcgi']];
+    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform))->build('all');
+    $this->assertSame($platform, $payload['platform']);
+  }
+
 }

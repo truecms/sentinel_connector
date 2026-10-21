@@ -6,7 +6,7 @@ use Drupal\Core\Extension\ModuleExtensionList;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
- * Creates a PayloadBuilder with runtime core/php/ip values injected.
+ * Creates a PayloadBuilder with runtime core/php/ip and platform values.
  */
 class PayloadBuilderFactory {
 
@@ -14,6 +14,7 @@ class PayloadBuilderFactory {
     protected ModuleExtensionList $moduleList,
     protected RequestStack $requestStack,
     protected string $appRoot,
+    protected ?PlatformCollector $platform = NULL,
   ) {}
 
   /**
@@ -29,7 +30,14 @@ class PayloadBuilderFactory {
       $resolved = gethostbyname($hostname);
       $ip = ($resolved !== '' && $resolved !== $hostname) ? $resolved : '127.0.0.1';
     }
-    return new PayloadBuilder($this->moduleList, \Drupal::VERSION, PHP_VERSION, $ip, ComposerProjectResolver::fromInstalledVersions($this->appRoot));
+    try {
+      $platform = $this->platform?->collect() ?? [];
+    }
+    catch (\Throwable) {
+      // Stack versions are optional: never fail a sync over them.
+      $platform = [];
+    }
+    return new PayloadBuilder($this->moduleList, \Drupal::VERSION, PHP_VERSION, $ip, ComposerProjectResolver::fromInstalledVersions($this->appRoot), $platform);
   }
 
 }
