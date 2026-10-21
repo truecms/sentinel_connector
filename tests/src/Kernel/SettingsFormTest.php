@@ -8,12 +8,14 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\ApiKeyResolver;
 use Drupal\sentinel_connector\Form\SettingsForm;
 use Drupal\Tests\user\Traits\UserCreationTrait;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
  * Kernel tests for the credentials on the settings form.
  *
  * @group sentinel_connector
  */
+#[RunTestsInSeparateProcesses]
 class SettingsFormTest extends KernelTestBase {
 
   use UserCreationTrait;
