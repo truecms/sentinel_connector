@@ -9,7 +9,21 @@ services:
 
   sentinel_connector.payload_builder_factory:
     class: Drupal\sentinel_connector\PayloadBuilderFactory
-    arguments: ['@extension.list.module', '@request_stack', '%app.root%']
+    arguments:
+      - '@extension.list.module'
+      - '@request_stack'
+      - '%app.root%'
+      - '@Drupal\sentinel_connector\PlatformCollector'
+
+  Drupal\sentinel_connector\PlatformCollector:
+    class: Drupal\sentinel_connector\PlatformCollector
+    arguments: ['@state', '@request_stack', '@database', '@datetime.time']
+
+  Drupal\sentinel_connector\EventSubscriber\WebServerSubscriber:
+    class: Drupal\sentinel_connector\EventSubscriber\WebServerSubscriber
+    arguments: ['@Drupal\sentinel_connector\PlatformCollector']
+    tags:
+      - { name: event_subscriber }
 
   Drupal\sentinel_connector\ApiKeyResolver:
     class: Drupal\sentinel_connector\ApiKeyResolver
