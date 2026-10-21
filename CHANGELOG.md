@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.1.0 - Unreleased
 
 ### Added
 
@@ -20,6 +20,22 @@ All notable changes to this project are documented here. Versions follow
   and `drush sentinel_connector:deploy`. The `php` and `os` parts do not,
   because they differ between the web and the command line; the daily resend
   reports them.
+
+## 1.0.0 - 2026-10-16
+
+### Added
+
+- Drupal.org GitLab CI for Drupal 10 and 11. Both PHPUnit jobs are required.
+- Production-only `settings.php` examples that block cron and manual API
+  reports on development and staging, including after a database copy.
+- A Kernel regression test for the environment overrides.
+- GPL license text and release archive exclusions for development files.
+
+### Changed
+
+- Use the `drupal/sentinel_connector` Composer package name for Drupal.org.
+- Support the PHPStan Drupal extension versions needed by both core versions.
+- Declare separate processes for Kernel tests on newer Drupal test runners.
 
 ## 0.5.0 - 2026-10-14
 

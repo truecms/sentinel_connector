@@ -17,6 +17,7 @@ use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
  * Kernel tests for SyncService using a mocked Guzzle HTTP client.
@@ -26,6 +27,7 @@ use GuzzleHttp\Psr7\Response;
  *
  * @group sentinel_connector
  */
+#[RunTestsInSeparateProcesses]
 class SyncServiceTest extends KernelTestBase {
 
   /**
@@ -47,6 +49,55 @@ class SyncServiceTest extends KernelTestBase {
       ->set('enabled', TRUE)
       ->save();
     \Drupal::state()->set('sentinel_connector.api_key', 'sk_test');
+  }
+
+  /**
+   * Runtime environment overrides block every push without changing storage.
+   */
+  public function testNonProductionOverridesPreventRequests(): void {
+    $name = 'sentinel_connector.settings';
+    $factory = $this->container->get('config.factory');
+    $stored = $factory->getEditable($name)->getRawData();
+    $originalOverride = $GLOBALS['config'][$name] ?? NULL;
+    $transactions = [];
+    $stack = HandlerStack::create(new MockHandler([new Response(200, [], '{}')]));
+    $stack->push(Middleware::history($transactions));
+    $this->container->set('http_client', new Client(['handler' => $stack]));
+    $sync = $this->container->get(SyncService::class);
+
+    try {
+      // Drupal reads settings.php $config values from this global array.
+      $GLOBALS['config'][$name] = [
+        'enabled' => FALSE,
+        'api_base_url' => '',
+        'site_uuid' => '',
+      ];
+      $factory->reset($name);
+      $this->assertFalse($sync->cronIsDue(\Drupal::time()->getRequestTime()));
+      $this->assertSame('unconfigured', $sync->sync(SyncService::TRIGGER_FORM)->status);
+      $this->assertSame('unconfigured', $sync->sync(SyncService::TRIGGER_DRUSH)->status);
+      $this->assertSame('unconfigured', $sync->syncIfChanged()->status);
+      $this->assertCount(0, $transactions);
+      $this->assertSame($stored, $factory->getEditable($name)->getRawData());
+      $this->assertSame('sk_test', \Drupal::state()->get(ApiKeyResolver::STATE_KEY));
+
+      // Production uses the stored connection values and enables cron.
+      $GLOBALS['config'][$name] = ['enabled' => TRUE];
+      $factory->reset($name);
+      $this->assertTrue($sync->sync(SyncService::TRIGGER_DRUSH)->isOk());
+      $this->assertCount(1, $transactions);
+      $this->assertSame('sentinel.example.com', $transactions[0]['request']->getUri()->getHost());
+      $this->assertSame($stored, $factory->getEditable($name)->getRawData());
+    }
+    finally {
+      if ($originalOverride === NULL) {
+        unset($GLOBALS['config'][$name]);
+      }
+      else {
+        $GLOBALS['config'][$name] = $originalOverride;
+      }
+      $factory->reset($name);
+    }
   }
 
   /**

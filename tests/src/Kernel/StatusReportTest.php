@@ -6,12 +6,14 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\PushHealth;
 use Drupal\sentinel_connector\PushLimitFormatter;
 use Drupal\sentinel_connector\SyncService;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
  * Kernel tests for the Sentinel Connector entry on the status report.
  *
  * @group sentinel_connector
  */
+#[RunTestsInSeparateProcesses]
 class StatusReportTest extends KernelTestBase {
 
   /**

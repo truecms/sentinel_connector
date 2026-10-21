@@ -11,6 +11,7 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response as HttpResponse;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Session\Session;
@@ -23,6 +24,7 @@ use Symfony\Component\HttpKernel\KernelEvents;
  *
  * @group sentinel_connector
  */
+#[RunTestsInSeparateProcesses]
 class PlatformCollectorTest extends KernelTestBase {
 
   /**

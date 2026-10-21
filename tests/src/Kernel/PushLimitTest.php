@@ -16,12 +16,14 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
 use Psr\Log\LoggerInterface;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
  * Kernel tests for Sentinel push-limit responses.
  *
  * @group sentinel_connector
  */
+#[RunTestsInSeparateProcesses]
 class PushLimitTest extends KernelTestBase {
 
   /**

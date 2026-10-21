@@ -1,21 +1,44 @@
 # Sentinel Connector
 
 A Drupal 10/11 module that reports a site's installed extensions and environment
-to the [Sentinel](https://github.com/truecms/sentinel) monitoring platform.
+to the [Sentinel Connector](https://sentinelconnector.io/) monitoring platform.
 Sentinel computes update and security status; this module only collects an
 authoritative snapshot and submits it.
 
+## Website, accounts and documentation
+
+[SentinelConnector.io](https://sentinelconnector.io/) provides the monitoring
+service. A [Free account](https://sentinelconnector.io/register?plan=free) and a
+14-day trial are available. The Free plan monitors one Drupal website and
+accepts one data update a day. See [plans and pricing](https://sentinelconnector.io/pricing)
+for included features and applicable trial terms. The Drupal module remains
+free under its GPL license.
+
+- [User guide](https://sentinelconnector.io/help)
+- [Add and connect a Drupal website](https://sentinelconnector.io/help#help-sites-add-connect-and-inspect-drupal)
+- [Create and manage API keys](https://sentinelconnector.io/help#help-api-keys)
+- [Troubleshooting](https://sentinelconnector.io/help#help-when-something-does-not-work)
+
 ## Project and distribution
 
-The public module name is **Sentinel Connector**. `SentinelConnector.io` is the
-primary registered domain; `SentinelConnector.com` is the companion domain.
+The public module name is **Sentinel Connector** and the machine name is
+`sentinel_connector`. Get releases from the
+[Drupal.org project page](https://www.drupal.org/project/sentinel_connector).
 
-The Drupal.org project page and public releases are pending. The
-[GitHub repository](https://github.com/truecms/sentinel_connector) is private.
-Collaborators with repository access can install a source checkout in their
-site's custom module directory, typically
-`web/modules/custom/sentinel_connector`, then enable **Sentinel Connector** on
-Drupal's Extend page. The machine name remains `sentinel_connector`.
+Install a published release from the Drupal project root:
+
+```bash
+composer require drupal/sentinel_connector
+drush en sentinel_connector
+```
+
+A Sentinel account, a registered site and its API key are required to send
+reports. The module does not include the Sentinel service. Review **What it
+sends** before you enable reporting.
+
+Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
+
+The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
 ## Upgrading
 
@@ -108,6 +131,52 @@ the Sentinel dashboard into **API key** on the settings form, or set it in one
 of the first two places. The form never shows a saved key; it shows where the
 active key comes from, and a blank field keeps the current key. Drupal state is
 not encrypted.
+
+### Send reports from production only
+
+When development, staging and production share configuration or database copies,
+only production must report to the registered Sentinel site. Add this block near
+the end of each environment's `settings.php`, after other settings includes:
+
+```php
+// APP_ENV is a server environment variable, not a Drupal standard variable.
+// Replace it with your hosting platform's trusted environment identifier.
+$is_production = getenv('APP_ENV') === 'production';
+
+$config['sentinel_connector.settings']['enabled'] = $is_production;
+if (!$is_production) {
+  $config['sentinel_connector.settings']['api_base_url'] = '';
+  $config['sentinel_connector.settings']['site_uuid'] = '';
+}
+```
+
+Set `APP_ENV=production` only on the production website, for both web requests
+and Drush/cron. Leave it unset or use another value on every other environment.
+Do not detect production from the request host name: requests can supply it,
+and Drush may not have it. If the variable is missing, reporting stays off.
+
+The `enabled` setting controls automatic cron reports only. The empty API URL
+and Site UUID also prevent **Sync now**, `sentinel_connector:sync` and
+`sentinel_connector:deploy --force` from sending a payload on other
+environments, even after a production database copy. A manual attempt there
+returns `unconfigured` (or an existing deferred plan-limit result) without an
+HTTP request. The status report can show the connector as not configured there.
+
+Keep the API key in production's private settings or secret environment only.
+Do not export it with configuration. The URL and Site UUID overrides above also
+block sending if a database copy includes an old key in Drupal state.
+
+These overrides do not change stored or exported configuration. The settings
+form can show the stored values; check effective values with Drush:
+
+```bash
+drush php:eval 'var_export(["enabled" => \Drupal::config("sentinel_connector.settings")->get("enabled"), "api_base_url" => \Drupal::config("sentinel_connector.settings")->get("api_base_url"), "site_uuid" => \Drupal::config("sentinel_connector.settings")->get("site_uuid")]);'
+```
+
+On each non-production environment, check for `enabled: false` and empty API
+URL and Site UUID before you enable cron or run deployment commands. Check the
+same values from the web runtime if its environment differs from Drush. Clear
+Drupal's cache after changing environment settings (`drush cr`).
 
 ## Triggering a sync
 
@@ -398,10 +467,24 @@ report an error between the end of its daily limit and the next cron run.
 
 ## Testing
 
+The Drupal.org GitLab pipeline is configured in `.gitlab-ci.yml` using the
+[Drupal Association templates](https://project.pages.drupalcode.org/gitlab_templates/).
+It runs the unit, payload contract and Kernel tests on Drupal 11 and Drupal 10,
+with PHP 8.3 for both. Both test jobs must pass. The templates provide a database
+for Kernel tests. No Sentinel account or API key is needed for these tests.
+The GitHub workflow also tests Drupal 10/PHP 8.3 and Drupal 11/PHP 8.4.
+
+To run the tests in a development Drupal checkout that contains this module and
+has the matching `drupal/core-dev` and `justinrainbow/json-schema` installed:
+
 ```bash
-composer install
-# Unit, contract, and Kernel tests run in CI against current Drupal 10.x/PHP 8.3 and Drupal 11/PHP 8.4.
+# Run from the Drupal web root; adjust the module path for a contrib install.
+../vendor/bin/phpunit -c core/phpunit.xml.dist modules/custom/sentinel_connector/tests/src/Unit
+SIMPLETEST_DB='sqlite://localhost/:memory:' ../vendor/bin/phpunit -c core/phpunit.xml.dist modules/custom/sentinel_connector/tests/src/Kernel
 ```
+
+The Kernel command needs the SQLite PHP extension. Installing this module's
+Composer dependencies alone does not install the Drupal test framework.
 
 Connection failures return an actionable transport error and record the last attempt when Drupal state storage is available. Other payload/configuration errors return an internal error; cron catches remaining failures and attempts to record and log them without exposing request secrets. Storage failures may prevent persistence and return a state error.
 Cron waits an hour after each attempt, including failures, and after each check that found no change.
