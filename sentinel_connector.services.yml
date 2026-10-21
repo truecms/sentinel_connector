@@ -17,7 +17,7 @@ services:
 
   Drupal\sentinel_connector\PlatformCollector:
     class: Drupal\sentinel_connector\PlatformCollector
-    arguments: ['@state', '@request_stack', '@database']
+    arguments: ['@state', '@request_stack', '@database', '@datetime.time']
 
   Drupal\sentinel_connector\EventSubscriber\WebServerSubscriber:
     class: Drupal\sentinel_connector\EventSubscriber\WebServerSubscriber

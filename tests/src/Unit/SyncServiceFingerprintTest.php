@@ -137,14 +137,13 @@ class SyncServiceFingerprintTest extends TestCase {
       'connector version' => [fn (self $t) => $t->payload['connector_version'] = '9.9.9'],
       'web server version' => [fn (self $t) => $t->payload['platform']['web_server']['version'] = '1.26.0'],
       'database version' => [fn (self $t) => $t->payload['platform']['database']['version'] = '10.11.7-MariaDB'],
-      'os release' => [fn (self $t) => $t->payload['platform']['os']['release'] = '13'],
       'site name' => [fn (self $t) => $t->siteName = 'Renamed'],
       'api base url' => [fn (self $t) => $t->apiBaseUrl = 'https://sentinel.example.org'],
     ];
   }
 
   /**
-   * The IP address, server API, list order and a trailing slash are no change.
+   * The IP address, PHP and OS parts, list order and a URL slash are no change.
    */
   public function testIpAddressAndOrderAreIgnored(): void {
     $this->responses = [SyncResult::success(200, 'ok')];
@@ -152,8 +151,9 @@ class SyncServiceFingerprintTest extends TestCase {
     $service->sync();
 
     $this->payload['drupal_info']['ip_address'] = '10.0.0.99';
-    // Drush runs on the CLI server API, the web on FPM.
-    $this->payload['platform']['php']['sapi'] = 'cli';
+    // Drush runs the command-line PHP, possibly in another container.
+    $this->payload['platform']['php'] = ['version' => '8.4.1', 'sapi' => 'cli'];
+    $this->payload['platform']['os']['release'] = '13';
     $this->apiBaseUrl .= '/';
     $this->payload['modules'] = array_reverse($this->payload['modules']);
     $this->payload['modules'][0] = array_reverse($this->payload['modules'][0], TRUE);

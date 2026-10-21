@@ -2,6 +2,7 @@
 
 namespace Drupal\sentinel_connector;
 
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\State\StateInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -18,9 +19,18 @@ class PlatformCollector {
   /**
    * State key: SERVER_SOFTWARE of the last web request that reported one.
    *
-   * Cron and Drush syncs have no web server, so they send this value.
+   * Cron and Drush syncs have no web server, so they send this value. Holds
+   * 'raw' (the value) and 'time' (when it was stored).
    */
   public const STATE_WEB_SERVER = 'sentinel_connector.web_server_software';
+
+  /**
+   * Seconds a stored web server value is kept before another may replace it.
+   *
+   * Web heads that report different values would otherwise write state on
+   * every request.
+   */
+  public const WEB_SERVER_MIN_AGE = 3600;
 
   /**
    * Files read for the OS distribution, first readable one wins.
@@ -55,6 +65,8 @@ class PlatformCollector {
    *   The current request, which has no web server on cron or Drush.
    * @param \Drupal\Core\Database\Connection $database
    *   The default database connection.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The time service.
    * @param string[] $osReleaseFiles
    *   The os-release files to read, first readable one wins.
    */
@@ -62,6 +74,7 @@ class PlatformCollector {
     protected StateInterface $state,
     protected RequestStack $requestStack,
     protected Connection $database,
+    protected TimeInterface $time,
     protected array $osReleaseFiles = self::OS_RELEASE_FILES,
   ) {}
 
@@ -101,19 +114,12 @@ class PlatformCollector {
    */
   public function webServer(): array {
     $raw = $this->rememberWebServer($this->requestStack->getCurrentRequest());
-    if ($raw === NULL) {
-      try {
-        $raw = $this->text($this->state->get(self::STATE_WEB_SERVER), self::RAW_LIMIT);
-      }
-      catch (\Throwable) {
-        $raw = NULL;
-      }
-    }
+    $raw ??= $this->storedWebServer()['raw'];
     if ($raw === NULL) {
       return [];
     }
     // "nginx/1.24.0", "Apache/2.4.57 (Debian)", "nginx", "Microsoft-IIS/10.0".
-    preg_match('#^([^/\s]+)(?:/(\S+))?#', $raw, $match);
+    preg_match('#^([A-Za-z][^/\s]*)(?:/(\S+))?#', $raw, $match);
     return $this->clean([
       'software' => $match[1] ?? NULL,
       'version' => $match[2] ?? NULL,
@@ -139,14 +145,35 @@ class PlatformCollector {
       return NULL;
     }
     try {
-      if ($this->state->get(self::STATE_WEB_SERVER) !== $raw) {
-        $this->state->set(self::STATE_WEB_SERVER, $raw);
+      $stored = $this->storedWebServer();
+      $now = $this->time->getCurrentTime();
+      if ($stored['raw'] !== $raw && $stored['time'] <= $now - self::WEB_SERVER_MIN_AGE) {
+        $this->state->set(self::STATE_WEB_SERVER, ['raw' => $raw, 'time' => $now]);
       }
     }
     catch (\Throwable) {
       // The value is still sent with this sync; only the cache is missing.
     }
     return $raw;
+  }
+
+  /**
+   * The stored web server value and when it was stored.
+   *
+   * @return array{raw: string|null, time: int}
+   *   The value, NULL when none is stored, and its time, 0 when unknown.
+   */
+  protected function storedWebServer(): array {
+    try {
+      $stored = $this->state->get(self::STATE_WEB_SERVER);
+    }
+    catch (\Throwable) {
+      $stored = NULL;
+    }
+    return [
+      'raw' => $this->text(is_array($stored) ? ($stored['raw'] ?? NULL) : NULL, self::RAW_LIMIT),
+      'time' => is_array($stored) && is_int($stored['time'] ?? NULL) ? $stored['time'] : 0,
+    ];
   }
 
   /**

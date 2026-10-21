@@ -11,7 +11,7 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * Remembers the web server software for syncs from cron and Drush.
  *
  * Runs after the response is sent, and writes state only when the value
- * changed.
+ * changed. Page cache hits are skipped: they would only repeat the value.
  */
 class WebServerSubscriber implements EventSubscriberInterface {
 
@@ -30,6 +30,9 @@ class WebServerSubscriber implements EventSubscriberInterface {
    * Stores the request's SERVER_SOFTWARE.
    */
   public function onTerminate(TerminateEvent $event): void {
+    if ($event->getResponse()->headers->get('X-Drupal-Cache') === 'HIT') {
+      return;
+    }
     try {
       $this->collector->rememberWebServer($event->getRequest());
     }

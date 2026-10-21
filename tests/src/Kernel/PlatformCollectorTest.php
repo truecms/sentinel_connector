@@ -56,6 +56,7 @@ class PlatformCollectorTest extends KernelTestBase {
       $this->container->get('state'),
       $this->container->get('request_stack'),
       $database ?? $this->container->get('database'),
+      $this->container->get('datetime.time'),
       $osReleaseFiles,
     );
   }
@@ -88,7 +89,47 @@ class PlatformCollectorTest extends KernelTestBase {
       'version' => '2.4.57',
       'raw' => 'Apache/2.4.57 (Debian)',
     ], $this->collector()->webServer());
-    $this->assertSame('Apache/2.4.57 (Debian)', $this->container->get('state')->get(PlatformCollector::STATE_WEB_SERVER));
+    $this->assertSame('Apache/2.4.57 (Debian)', $this->storedWebServer());
+  }
+
+  /**
+   * Values are cut to Sentinel's limits; invalid UTF-8 is left out.
+   */
+  public function testWebServerLimits(): void {
+    $this->pushRequest('nginx/' . str_repeat('1', 60) . ' ' . str_repeat('x', 300));
+    $webServer = $this->collector()->webServer();
+    $this->assertSame('nginx', $webServer['software']);
+    $this->assertSame(PlatformCollector::TEXT_LIMIT, strlen($webServer['version']));
+    $this->assertSame(PlatformCollector::RAW_LIMIT, strlen($webServer['raw']));
+
+    $this->container->get('state')->delete(PlatformCollector::STATE_WEB_SERVER);
+    $this->pushRequest("nginx/1.24.0\xff");
+    $this->assertSame([], $this->collector()->webServer());
+  }
+
+  /**
+   * A stored value is replaced at most once an hour.
+   */
+  public function testWebServerReplacedAtMostHourly(): void {
+    $state = $this->container->get('state');
+    $now = $this->container->get('datetime.time')->getCurrentTime();
+    $state->set(PlatformCollector::STATE_WEB_SERVER, ['raw' => 'nginx/1.24.0', 'time' => $now - 60]);
+    $this->collector()->rememberWebServer(Request::create('/', 'GET', [], [], [], ['SERVER_SOFTWARE' => 'nginx/1.26.0']));
+    $this->assertSame('nginx/1.24.0', $this->storedWebServer());
+
+    $state->set(PlatformCollector::STATE_WEB_SERVER, [
+      'raw' => 'nginx/1.24.0',
+      'time' => $now - PlatformCollector::WEB_SERVER_MIN_AGE,
+    ]);
+    $this->collector()->rememberWebServer(Request::create('/', 'GET', [], [], [], ['SERVER_SOFTWARE' => 'nginx/1.26.0']));
+    $this->assertSame('nginx/1.26.0', $this->storedWebServer());
+  }
+
+  /**
+   * The stored web server value.
+   */
+  protected function storedWebServer(): ?string {
+    return $this->container->get('state')->get(PlatformCollector::STATE_WEB_SERVER)['raw'] ?? NULL;
   }
 
   /**
@@ -103,7 +144,7 @@ class PlatformCollectorTest extends KernelTestBase {
    * Cron and Drush send the value of the last web request.
    */
   public function testWebServerFromState(): void {
-    $this->container->get('state')->set(PlatformCollector::STATE_WEB_SERVER, 'nginx/1.24.0');
+    $this->container->get('state')->set(PlatformCollector::STATE_WEB_SERVER, ['raw' => 'nginx/1.24.0', 'time' => 1]);
     $this->pushRequest(NULL);
     $this->assertSame([
       'software' => 'nginx',
@@ -120,7 +161,7 @@ class PlatformCollectorTest extends KernelTestBase {
     $this->assertSame([], $this->collector()->webServer());
     $this->pushRequest('  ');
     $this->assertSame([], $this->collector()->webServer());
-    $this->assertNull($this->container->get('state')->get(PlatformCollector::STATE_WEB_SERVER));
+    $this->assertNull($this->storedWebServer());
   }
 
   /**
@@ -130,12 +171,18 @@ class PlatformCollectorTest extends KernelTestBase {
     $request = Request::create('/', 'GET', [], [], [], ['SERVER_SOFTWARE' => 'nginx/1.26.2']);
     $event = new TerminateEvent($this->container->get('http_kernel'), $request, new Response());
     $this->container->get('event_dispatcher')->dispatch($event, KernelEvents::TERMINATE);
-    $this->assertSame('nginx/1.26.2', $this->container->get('state')->get(PlatformCollector::STATE_WEB_SERVER));
+    $this->assertSame('nginx/1.26.2', $this->storedWebServer());
 
     // A request without one, such as Drush, keeps the stored value.
     $subscriber = $this->container->get(WebServerSubscriber::class);
     $subscriber->onTerminate(new TerminateEvent($this->container->get('http_kernel'), Request::create('/'), new Response()));
-    $this->assertSame('nginx/1.26.2', $this->container->get('state')->get(PlatformCollector::STATE_WEB_SERVER));
+    $this->assertSame('nginx/1.26.2', $this->storedWebServer());
+
+    // A page cache hit does not touch state.
+    $this->container->get('state')->delete(PlatformCollector::STATE_WEB_SERVER);
+    $request = Request::create('/', 'GET', [], [], [], ['SERVER_SOFTWARE' => 'nginx/1.26.2']);
+    $subscriber->onTerminate(new TerminateEvent($this->container->get('http_kernel'), $request, new Response('', 200, ['X-Drupal-Cache' => 'HIT'])));
+    $this->assertNull($this->storedWebServer());
   }
 
   /**
@@ -145,7 +192,7 @@ class PlatformCollectorTest extends KernelTestBase {
     $database = $this->collector()->database();
     $connection = $this->container->get('database');
     $this->assertSame($connection->driver(), $database['driver']);
-    $this->assertSame(substr((string) $connection->version(), 0, PlatformCollector::TEXT_LIMIT), $database['version']);
+    $this->assertSame(mb_substr(trim((string) $connection->version()), 0, PlatformCollector::TEXT_LIMIT), $database['version']);
   }
 
   /**

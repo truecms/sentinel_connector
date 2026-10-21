@@ -13,11 +13,13 @@ All notable changes to this project are documented here. Versions follow
   Sentinel matches these against known vulnerabilities. A value the module
   cannot read is left out; it never fails a push.
 - The web server comes from `SERVER_SOFTWARE`. Cron and Drush have none, so
-  every web request stores it in state (`sentinel_connector.web_server_software`)
-  when it changed, and later pushes send the stored value.
-- A change in the stack versions counts as an inventory change for cron and
-  `drush sentinel_connector:deploy`. The PHP server API does not, because it
-  differs between the web and the command line.
+  web requests store it in state (`sentinel_connector.web_server_software`)
+  when it changed, at most once an hour, and later pushes send the stored
+  value. Page cache hits do not touch state.
+- A new web server or database version counts as an inventory change for cron
+  and `drush sentinel_connector:deploy`. The `php` and `os` parts do not,
+  because they differ between the web and the command line; the daily resend
+  reports them.
 
 ## 0.5.0 - 2026-10-14
 

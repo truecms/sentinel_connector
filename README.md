@@ -60,8 +60,11 @@ Sentinel matches against known vulnerabilities:
 
 Cron and Drush have no web server, so the module keeps the `SERVER_SOFTWARE`
 of the last web request in state (`sentinel_connector.web_server_software`)
-and sends that. With the version hidden (`server_tokens off`) only the
-software is sent. A value the module cannot read is left out and never fails
+and sends that. A stored value is replaced at most once an hour, so web heads
+that report different values do not write state on every request. With the
+version hidden (`server_tokens off`) `version` is left out. The `php` and `os`
+parts describe the process that sends the push: on cron or Drush that is the
+command-line PHP. A value the module cannot read is left out and never fails
 the sync; Sentinel shows it as unknown.
 
 ## Configuration
