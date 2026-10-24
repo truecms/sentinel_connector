@@ -3,6 +3,24 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.1.0 - Unreleased
+
+### Added
+
+- The sync payload is `schema_version: 2` and has a `platform` block with the
+  PHP version and server API, the web server, the database driver, product
+  and version, and the operating system family, distribution and release.
+  Sentinel matches these against known vulnerabilities. A value the module
+  cannot read is left out; it never fails a push.
+- The web server comes from `SERVER_SOFTWARE`. Cron and Drush have none, so
+  web requests store it in state (`sentinel_connector.web_server_software`)
+  when it changed, at most once an hour, and later pushes send the stored
+  value. Page cache hits do not touch state.
+- A new web server or database version counts as an inventory change for cron
+  and `drush sentinel_connector:deploy`. The `php` and `os` parts do not,
+  because they differ between the web and the command line; the daily resend
+  reports them.
+
 ## 1.0.0 - 2026-10-16
 
 ### Added

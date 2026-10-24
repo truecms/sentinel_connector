@@ -17,14 +17,36 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '1.0.0';
+  public const CONNECTOR_VERSION = '1.1.0';
 
+  /**
+   * Sync payload contract version. Version 2 adds the platform block.
+   */
+  public const SCHEMA_VERSION = 2;
+
+  /**
+   * Constructs a PayloadBuilder.
+   *
+   * @param \Drupal\Core\Extension\ModuleExtensionList $moduleList
+   *   The module extension list.
+   * @param string $coreVersion
+   *   The Drupal core version.
+   * @param string $phpVersion
+   *   The PHP version.
+   * @param string $ipAddress
+   *   The server IP address.
+   * @param \Drupal\sentinel_connector\ComposerProjectResolver|null $composerProjects
+   *   Resolves the Composer package of an extension without packaging data.
+   * @param array<string, array<string, string>> $platform
+   *   The platform block, without the parts that could not be read.
+   */
   public function __construct(
     protected ModuleExtensionList $moduleList,
     protected string $coreVersion,
     protected string $phpVersion,
     protected string $ipAddress,
     protected ?ComposerProjectResolver $composerProjects = NULL,
+    protected array $platform = [],
   ) {}
 
   /**
@@ -87,7 +109,7 @@ class PayloadBuilder {
       ];
     }
 
-    return [
+    $payload = [
       'drupal_info' => [
         'core_version' => $this->coreVersion,
         'php_version' => $this->phpVersion,
@@ -97,7 +119,13 @@ class PayloadBuilder {
       'full_sync' => TRUE,
       'inventory_scope' => $scope,
       'connector_version' => self::CONNECTOR_VERSION,
+      'schema_version' => self::SCHEMA_VERSION,
     ];
+    // PHP encodes an empty array as a list, which is not an object.
+    if ($this->platform !== []) {
+      $payload['platform'] = $this->platform;
+    }
+    return $payload;
   }
 
   /**

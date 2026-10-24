@@ -129,6 +129,98 @@
         "connector_version": {
             "type": "string",
             "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "platform": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "php": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "version": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 50
+                        },
+                        "sapi": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 50
+                        }
+                    }
+                },
+                "web_server": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "software": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 50
+                        },
+                        "version": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 50
+                        },
+                        "raw": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                        }
+                    }
+                },
+                "database": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "driver": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 50
+                        },
+                        "product": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 50
+                        },
+                        "version": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 50
+                        }
+                    }
+                },
+                "os": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "family": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 50
+                        },
+                        "distribution": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 50
+                        },
+                        "release": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 50
+                        }
+                    }
+                }
+            }
+        },
+        "schema_version": {
+            "type": "integer",
+            "enum": [
+                1,
+                2
+            ]
         }
     }
 }

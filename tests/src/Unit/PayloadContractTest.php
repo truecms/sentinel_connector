@@ -31,7 +31,13 @@ class PayloadContractTest extends TestCase {
     $list->method('reset')->willReturnSelf();
     $list->method('getList')->willReturn(['token' => $ext]);
 
-    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4'))->build('all');
+    $platform = [
+      'php' => ['version' => '8.3.12', 'sapi' => 'fpm-fcgi'],
+      'web_server' => ['software' => 'nginx', 'version' => '1.24.0', 'raw' => 'nginx/1.24.0'],
+      'database' => ['driver' => 'mysql', 'product' => 'mariadb', 'version' => '10.11.6-MariaDB'],
+      'os' => ['family' => 'Linux', 'distribution' => 'debian', 'release' => '12'],
+    ];
+    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform))->build('all');
     // Add the 'site' block the caller normally supplies.
     $payload['site'] = [
       'url' => 'https://example.com',
