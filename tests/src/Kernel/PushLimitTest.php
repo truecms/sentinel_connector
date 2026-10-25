@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector\Kernel;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Form\FormState;
 use Drupal\Core\Logger\RfcLoggerTrait;
 use Drupal\Core\Logger\RfcLogLevel;
@@ -24,6 +26,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  * @group sentinel_connector
  */
 #[RunTestsInSeparateProcesses]
+#[Group('sentinel_connector')]
 class PushLimitTest extends KernelTestBase {
 
   /**
@@ -88,10 +91,10 @@ class PushLimitTest extends KernelTestBase {
     $form = SettingsForm::create($this->container)->buildForm([], new FormState());
     $this->assertArrayNotHasKey('cron_interval', $form);
     $this->container->get('module_handler')->loadAll();
-    sentinel_connector_cron();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
     // Later runs inside the hour would fail on the empty mock queue.
-    sentinel_connector_cron();
-    sentinel_connector_cron();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
 
     $this->assertCount(1, $this->transactions);
     $state = \Drupal::state();
@@ -141,9 +144,9 @@ class PushLimitTest extends KernelTestBase {
     $this->mockResponses([$this->pushLimitResponse($next)]);
     $this->container->get('module_handler')->loadAll();
 
-    sentinel_connector_cron();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
     // The second run would fail on the empty mock queue if it sent a request.
-    sentinel_connector_cron();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
 
     $this->assertCount(1, $this->transactions);
     $state = \Drupal::state();
@@ -298,12 +301,12 @@ class PushLimitTest extends KernelTestBase {
     $state = \Drupal::state();
     $sync = \Drupal::service(SyncService::class);
 
-    sentinel_connector_cron();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
     $this->assertCount(1, $this->transactions);
 
     // An hour later nothing changed: the check is recorded, nothing is sent.
     $state->set('sentinel_connector.last_attempt_time', time() - 7200);
-    sentinel_connector_cron();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
     $this->assertCount(1, $this->transactions);
     $this->assertNotNull($sync->getLastUnchangedTime());
     // The check counts for the hourly floor, on cron's own clock: a run
@@ -316,13 +319,13 @@ class PushLimitTest extends KernelTestBase {
     // A changed inventory is pushed on the next due run.
     $state->set(SyncService::STATE_LAST_UNCHANGED_TIME, time() - 7200);
     $this->config('sentinel_connector.settings')->set('site_name', 'Renamed')->save();
-    sentinel_connector_cron();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
     $this->assertCount(2, $this->transactions);
 
     // Unchanged for a day: the inventory is sent again.
     $state->set('sentinel_connector.last_attempt_time', time() - 7200);
     $state->set(SyncService::STATE_LAST_ACCEPTED_TIME, time() - SyncService::FINGERPRINT_MAX_AGE);
-    sentinel_connector_cron();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
     $this->assertCount(3, $this->transactions);
 
     // A manual push is sent whether or not anything changed.
@@ -349,7 +352,7 @@ class PushLimitTest extends KernelTestBase {
     $state = \Drupal::state();
     $before = time();
 
-    sentinel_connector_cron();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
 
     $this->assertCount(1, $this->transactions);
     $this->assertSame('subscription_inactive', $state->get('sentinel_connector.last_result'));
@@ -367,7 +370,7 @@ class PushLimitTest extends KernelTestBase {
     $state->set('sentinel_connector.last_attempt_time', $before - 7200);
     $sync = \Drupal::service(SyncService::class);
     $this->assertFalse($sync->cronIsDue(time()));
-    sentinel_connector_cron();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
     $this->assertCount(1, $this->transactions);
     $this->assertTrue($sync->cronIsDue($hold));
 
@@ -402,6 +405,7 @@ class PushLimitTest extends KernelTestBase {
    *
    * @dataProvider subscriptionFallbacks
    */
+  #[DataProvider('subscriptionFallbacks')]
   public function testSubscriptionFallbackMessages(?string $reason, string $text, string $label): void {
     $body = ['error_code' => 'subscription_inactive'] + ($reason === NULL ? [] : ['reason' => $reason]);
     $this->mockResponses([new Response(402, [], json_encode($body))]);

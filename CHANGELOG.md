@@ -3,6 +3,22 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.2.0 - 2026-10-25
+
+### Changed
+
+- Support Drupal `^10.3 || ^11 || ^12`. Drupal 12 is tested against the
+  current beta release and requires PHP 8.5.
+- Use object-oriented cron and runtime requirement hooks on newer Drupal
+  versions, with backward-compatible entry points for Drupal 10.3.
+- Report status severity using the enum required by Drupal 12, while
+  retaining integer severity values on Drupal 10.
+- Discover the sync and deployment commands with current Drush versions,
+  while retaining Drush 12 support.
+- Preserve safe connection diagnostics with Guzzle 7 and Guzzle 8.
+- Run the unit, contract and Kernel tests on all three Drupal major versions,
+  with test metadata compatible with their PHPUnit versions.
+
 ## 1.1.0 - 2026-10-24
 
 ### Added

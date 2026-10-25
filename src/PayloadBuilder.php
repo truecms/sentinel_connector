@@ -17,7 +17,7 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '1.1.0';
+  public const CONNECTOR_VERSION = '1.2.0';
 
   /**
    * Sync payload contract version. Version 2 adds the platform block.

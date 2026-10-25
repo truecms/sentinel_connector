@@ -1,16 +1,20 @@
 <?php
 
-namespace Drupal\sentinel_connector\Commands;
+namespace Drupal\sentinel_connector\Drush\Commands;
 
 use Drupal\sentinel_connector\PushLimitFormatter;
 use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
+use Drush\Attributes as CLI;
+use Drush\Commands\AutowireTrait;
 use Drush\Commands\DrushCommands;
 
 /**
  * Drush commands for Sentinel Connector. CLI execution has full access.
  */
-class SentinelCommands extends DrushCommands {
+class SentinelDrushCommands extends DrushCommands {
+
+  use AutowireTrait;
 
   /**
    * Constructs the commands.
@@ -29,12 +33,9 @@ class SentinelCommands extends DrushCommands {
 
   /**
    * Run a Sentinel sync now.
-   *
-   * @command sentinel_connector:sync
-   * @aliases sc-sync
-   * @usage drush sentinel_connector:sync
-   *   Collect installed extensions and push them to Sentinel.
    */
+  #[CLI\Command(name: 'sentinel_connector:sync', aliases: ['sc-sync'])]
+  #[CLI\Usage(name: 'drush sentinel_connector:sync', description: 'Collect installed extensions and push them to Sentinel.')]
   public function sync(): void {
     $this->report($this->syncService->sync(SyncService::TRIGGER_DRUSH));
   }
@@ -49,16 +50,12 @@ class SentinelCommands extends DrushCommands {
    * @param array $options
    *   The command options.
    *
-   * @command sentinel_connector:deploy
-   * @aliases sc-deploy
-   * @option force Push even when nothing changed since the last accepted push.
-   * @usage drush sentinel_connector:deploy
-   *   Push the inventory to Sentinel if the deployment changed it.
-   * @usage drush sentinel_connector:deploy --force
-   *   Push the inventory to Sentinel whether or not it changed.
-   *
    * @phpstan-param array{force: bool} $options
    */
+  #[CLI\Command(name: 'sentinel_connector:deploy', aliases: ['sc-deploy'])]
+  #[CLI\Option(name: 'force', description: 'Push even when nothing changed since the last accepted push.')]
+  #[CLI\Usage(name: 'drush sentinel_connector:deploy', description: 'Push the inventory to Sentinel if the deployment changed it.')]
+  #[CLI\Usage(name: 'drush sentinel_connector:deploy --force', description: 'Push the inventory to Sentinel whether or not it changed.')]
   public function deploy(array $options = ['force' => FALSE]): void {
     if (!$this->syncService->isConfigured()) {
       // The same pipeline often runs on environments that do not report.
