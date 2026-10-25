@@ -219,6 +219,29 @@ class SyncServiceFingerprintTest extends TestCase {
   }
 
   /**
+   * A failed report that was sent is corrected once the comparison recovers.
+   *
+   * @param array<string, mixed> $failed
+   *   The drift block of the push sent while the comparison failed.
+   *
+   * @dataProvider transientDrift
+   */
+  public function testSentTransientDriftIsCorrected(array $failed): void {
+    $this->responses = [SyncResult::success(200, 'ok'), SyncResult::success(200, 'ok')];
+    $service = $this->service();
+    $service->sync();
+    $complete = $this->payload['config_drift'];
+
+    // A manual push, or the daily resend, goes out while comparing fails.
+    $this->payload['config_drift'] = $failed + $complete;
+    $service->sync();
+    $this->assertFalse($service->hasInventoryChanged());
+
+    $this->payload['config_drift'] = $complete;
+    $this->assertTrue($service->hasInventoryChanged());
+  }
+
+  /**
    * Drift blocks of a comparison that failed for a passing reason.
    *
    * @return array<string, array{array<string, mixed>}>
