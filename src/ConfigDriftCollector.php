@@ -197,15 +197,21 @@ class ConfigDriftCollector {
    * in production.
    */
   protected function collectionsReadable(string $directory): bool {
+    // Every directory counts, hidden ones too: core's storage looks for
+    // collections in each of them and fails on one it cannot read.
     $iterator = new \RecursiveIteratorIterator(
       new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
       \RecursiveIteratorIterator::SELF_FIRST,
       \RecursiveIteratorIterator::CATCH_GET_CHILD,
     );
     foreach ($iterator as $file) {
-      // Core's storage leaves out a file it cannot read, which would report
-      // the object as created in production, or not at all.
-      if (!$file->isReadable() || ($file->isDir() && !$file->isExecutable())) {
+      // Core's storage leaves out a YAML file it cannot read, which would
+      // report the object as created in production, or not at all. Other
+      // files are never read.
+      $unreadable = $file->isDir()
+        ? !$file->isReadable() || !$file->isExecutable()
+        : $file->getExtension() === 'yml' && !$file->isReadable();
+      if ($unreadable) {
         return FALSE;
       }
     }

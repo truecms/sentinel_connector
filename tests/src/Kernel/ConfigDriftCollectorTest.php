@@ -272,6 +272,46 @@ class ConfigDriftCollectorTest extends KernelTestBase {
   }
 
   /**
+   * An unreadable file that is not configuration is no failure.
+   */
+  public function testUnreadableOtherFileIsIgnored(): void {
+    $notes = $this->syncDirectory . '/README.txt';
+    file_put_contents($notes, 'Notes');
+    chmod($notes, 0000);
+    clearstatcache();
+    try {
+      if (is_readable($notes)) {
+        $this->markTestSkipped('The test runs as a user that reads any file.');
+      }
+      $drift = $this->collect();
+      $this->assertSame(['complete', NULL], [$drift['status'], $drift['reason']]);
+    }
+    finally {
+      chmod($notes, 0664);
+    }
+  }
+
+  /**
+   * An unreadable subdirectory, which core's storage walks, is unreadable.
+   */
+  public function testUnreadableSubdirectory(): void {
+    $hidden = $this->syncDirectory . '/.git';
+    mkdir($hidden);
+    chmod($hidden, 0000);
+    clearstatcache();
+    try {
+      if (is_readable($hidden)) {
+        $this->markTestSkipped('The test runs as a user that reads any directory.');
+      }
+      $drift = $this->collect();
+      $this->assertSame(['unavailable', 'sync_unreadable'], [$drift['status'], $drift['reason']]);
+    }
+    finally {
+      chmod($hidden, 0775);
+    }
+  }
+
+  /**
    * A sync directory that cannot be entered is not reported as an empty one.
    */
   public function testSyncDirectoryWithoutExecute(): void {
