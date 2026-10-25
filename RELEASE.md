@@ -34,7 +34,7 @@ contrib dependencies, even after resolving Composer's core constraints:
 
 - Config Split 2.0.2's `SplitImportExportSubscriber::getSubscribedEvents()`
   lacks the `array` return type required by Symfony 8.
-- Key 1.21.0's `KeyPluginManager` uses annotation-only discovery, removed in
+- Key 1.22.0's `KeyPluginManager` uses annotation-only discovery, removed in
   Drupal 12. Settings.php tokens remain an alternative, but do not skip the
   Key integration tests to claim the optional module is fully verified.
 
