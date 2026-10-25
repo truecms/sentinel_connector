@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\sentinel_connector\PayloadBuilder;
 use JsonSchema\Validator;
@@ -10,8 +12,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the built payload to Sentinel's DrupalSiteSync schema.
  *
+ * Fixtures use mocks as stubs and assert the returned payload or result.
+ *
  * @group sentinel_connector
  */
+#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[Group('sentinel_connector')]
 class PayloadContractTest extends TestCase {
 
   /**
@@ -63,6 +69,7 @@ class PayloadContractTest extends TestCase {
    *
    * @dataProvider validDrift
    */
+  #[DataProvider('validDrift')]
   public function testDriftBlocksMatchSchema(array $drift): void {
     $this->assertSame([], $this->errors($this->payload($drift)));
   }
@@ -94,6 +101,7 @@ class PayloadContractTest extends TestCase {
    *
    * @dataProvider invalidDrift
    */
+  #[DataProvider('invalidDrift')]
   public function testDriftSchemaRefusesExtraData(array $drift): void {
     $this->assertNotSame([], $this->errors($this->payload($drift)));
   }

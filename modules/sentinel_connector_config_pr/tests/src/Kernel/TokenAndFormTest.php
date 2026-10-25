@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector_config_pr\Kernel;
 
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Form\FormState;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\key\Entity\Key;
@@ -15,6 +16,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  * @group sentinel_connector
  */
 #[RunTestsInSeparateProcesses]
+#[Group('sentinel_connector')]
 class TokenAndFormTest extends KernelTestBase {
 
   /**

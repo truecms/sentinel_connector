@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector_config_pr\Kernel;
 
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Http\Message\RequestInterface;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector_config_pr\ConfigPrRunner;
@@ -22,6 +24,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  * @group sentinel_connector
  */
 #[RunTestsInSeparateProcesses]
+#[Group('sentinel_connector')]
 class HostHttpFixtureTest extends KernelTestBase {
 
   /**
@@ -90,6 +93,7 @@ class HostHttpFixtureTest extends KernelTestBase {
    *
    * @dataProvider hosts
    */
+  #[DataProvider('hosts')]
   public function testCreate(string $provider, string $baseUrl, string $host, string $prefix): void {
     $this->configure($provider, $baseUrl);
     $client = ReplayHttpClient::$current = ReplayHttpClient::fromFile(__DIR__ . "/../../fixtures/{$provider}_create.json", $prefix);
@@ -121,6 +125,7 @@ class HostHttpFixtureTest extends KernelTestBase {
    *
    * @dataProvider hosts
    */
+  #[DataProvider('hosts')]
   public function testUpdate(string $provider, string $baseUrl, string $host, string $prefix): void {
     $this->configure($provider, $baseUrl);
     $this->trackOpenPullRequest($provider);
@@ -142,6 +147,7 @@ class HostHttpFixtureTest extends KernelTestBase {
    *
    * @dataProvider hosts
    */
+  #[DataProvider('hosts')]
   public function testDelete(string $provider, string $baseUrl, string $host, string $prefix): void {
     $this->configure($provider, $baseUrl);
     $this->trackOpenPullRequest($provider);
@@ -167,6 +173,7 @@ class HostHttpFixtureTest extends KernelTestBase {
    *
    * @dataProvider hosts
    */
+  #[DataProvider('hosts')]
   public function testForeignBranchIsRefused(string $provider, string $baseUrl, string $host, string $prefix): void {
     $this->configure($provider, $baseUrl);
     $client = ReplayHttpClient::$current = ReplayHttpClient::fromFile(__DIR__ . "/../../fixtures/{$provider}_update.json", $prefix);

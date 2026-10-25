@@ -1,6 +1,6 @@
 # Sentinel Connector
 
-A Drupal 10/11 module that reports a site's installed extensions and environment
+A Drupal 10/11/12 module that reports a site's installed extensions and environment
 to the [Sentinel Connector](https://sentinelconnector.io/) monitoring platform.
 Sentinel computes update and security status; this module only collects an
 authoritative snapshot and submits it.
@@ -40,15 +40,35 @@ Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
-## Upgrading
+## Upgrading to 1.3.0
 
-After updating the module code:
+Release `1.3.0` introduces payload v3, configuration drift and the optional
+`sentinel_connector_config_pr` submodule. Release `1.2.0` already provides
+Drupal 12 compatibility and uses payload v2. Upgrade only after the receiving
+Sentinel environment accepts v3; preserve the site's API URL, UUID, key and
+production-only overrides. See [RELEASE.md](RELEASE.md) for release and canary
+gates. Availability on Drupal.org must be confirmed before running:
 
 ```bash
+composer require drupal/sentinel_connector:^1.3 --with-all-dependencies
 drush updb
-drush cr
-drush sentinel_connector:sync
 ```
+
+Update `10003` enables `report_config_drift`. Add `report_config_drift: true`
+to the existing `sentinel_connector.settings.yml` in the site's configuration
+repository and commit only that intended change. If using `drush cex`, export
+on a development copy and discard unrelated exported changes before deployment.
+Keep the deployed sync directory as the code baseline during drift verification;
+exporting all active production configuration there would hide existing drift.
+This preserves the setting on a later configuration import. Keep the optional submodule disabled
+unless that site's setup has been separately agreed. Run
+`drush sentinel_connector:deploy` last in the site's normal deployment, then
+verify a fresh accepted receiver-side payload contains `schema_version: 3` and
+`config_drift`, including its generation time and status.
+
+
+For a manual verification after deployment, run `drush cr` and
+`drush sentinel_connector:sync` (or use "Sync now").
 
 Release `0.3.0` has database updates: they remove the `cron_interval` and
 `site_token` settings. Sites that keep configuration in code must export
@@ -61,8 +81,20 @@ against Drupal.org; see [CHANGELOG.md](CHANGELOG.md).
 
 ## Requirements
 
-- Drupal `^10.3 || ^11`
-- PHP `>= 8.3`
+- Drupal `^10.3 || ^11 || ^12`
+- PHP `>= 8.3`, subject to the minimum PHP version required by Drupal core.
+  Drupal 12 requires PHP 8.5. Drupal 12 compatibility is tested against the
+  current prerelease; rerun the test matrix when updating core.
+
+Drush 12.5 or later is required to use the optional command-line commands.
+
+Drupal 12 sites using Config Split or the optional Key integration need compatible
+upstream versions. CI exercises their runtime paths with explicit, checksum-pinned upstream
+patches and a narrow Composer Lenient allow-list. This does not establish site
+installation/update compatibility: Config Split and Config Ignore also need
+upstream Drupal 12 module metadata. See
+[optional integration prerequisites](patches/drupal12/README.md); installing this
+module does not automatically patch those dependencies.
 
 ## What it sends
 
@@ -546,8 +578,11 @@ For GitLab, enable `config_pr_gitlab` instead and add its API client, which
 `config_pr` does not install:
 
 ```bash
-composer require m4tthumphrey/php-gitlab-api:^12.0 php-http/guzzle7-adapter http-interop/http-factory-guzzle
+composer require m4tthumphrey/php-gitlab-api:^12.0
 ```
+
+Drupal core supplies the PSR-18 HTTP client and PSR-17 factories. Do not add
+Guzzle 7-only adapters or factories to Drupal 12, which uses Guzzle 8/PSR-7 3.
 
 Set the repository on **Configuration > Web services > Sentinel configuration
 pull request** (`/admin/config/services/sentinel-connector/config-pr`): Git
@@ -621,10 +656,12 @@ many commits.
 
 The Drupal.org GitLab pipeline is configured in `.gitlab-ci.yml` using the
 [Drupal Association templates](https://project.pages.drupalcode.org/gitlab_templates/).
-It runs the unit, payload contract and Kernel tests on Drupal 11 and Drupal 10,
-with PHP 8.3 for both. Both test jobs must pass. The templates provide a database
+It runs the unit, payload contract and Kernel tests on Drupal 10, 11 and 12.
+Drupal 10 and 11 use PHP 8.3; Drupal 12 uses its required PHP version.
+All three Composer and test jobs must pass. The templates provide a database
 for Kernel tests. No Sentinel account or API key is needed for these tests.
-The GitHub workflow also tests Drupal 10/PHP 8.3 and Drupal 11/PHP 8.4.
+The GitHub workflow also tests Drupal 10/PHP 8.3, Drupal 11/PHP 8.4 and
+Drupal 12 beta/PHP 8.5.
 
 To run the tests in a development Drupal checkout that contains this module and
 has the matching `drupal/core-dev` and `justinrainbow/json-schema` installed:
@@ -637,6 +674,9 @@ SIMPLETEST_DB='sqlite://localhost/:memory:' ../vendor/bin/phpunit -c core/phpuni
 
 The Kernel command needs the SQLite PHP extension. Installing this module's
 Composer dependencies alone does not install the Drupal test framework.
+Drupal 12 release archives omit the core tests. Use a core source checkout
+at the exact installed revision; the GitHub workflow restores these files
+before running the tests.
 
 Connection failures return an actionable transport error and record the last attempt when Drupal state storage is available. Other payload/configuration errors return an internal error; cron catches remaining failures and attempts to record and log them without exposing request secrets. Storage failures may prevent persistence and return a state error.
 Cron waits an hour after each attempt, including failures, and after each check that found no change.

@@ -1,0 +1,20 @@
+{
+  "patches": {
+    "drupal/key": [
+      {
+        "description": "Drupal 12 attributes and compatibility: upstream #3632542 MR79 at d307ab5f81e65f3a2452417e9bc8dad40a852bea",
+        "url": "patches/drupal12/key-3632542-mr79.patch",
+        "sha256": "6226f9b571993f8a325c51a55fb95a65c33111257d941d2d3bfe902fdaf50397",
+        "depth": 1
+      }
+    ],
+    "drupal/config_split": [
+      {
+        "description": "Symfony 8 subscriber return type: one-line excerpt from upstream #3596578 MR62 at d217f1cf2cb446684bfa4a99818ad353d1566dff",
+        "url": "patches/drupal12/config-split-3596578-subscriber.patch",
+        "sha256": "b75dacb4d32453ca330c700377c60ea19091aa3cff57433a561b85cc0920b70b",
+        "depth": 1
+      }
+    ]
+  }
+}

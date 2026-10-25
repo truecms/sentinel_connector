@@ -5,6 +5,7 @@ namespace Drupal\sentinel_connector;
 use Drupal\Component\Datetime\TimeInterface;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\TransferException;
+use GuzzleHttp\TransferStats;
 
 /**
  * Sends a sync payload to the Sentinel backend.
@@ -129,6 +130,7 @@ class SentinelClient {
    */
   public function sync(string $baseUrl, string $siteUuid, string $apiKey, array $payload): SyncResult {
     $url = rtrim($baseUrl, '/') . '/api/v1/sites/' . $siteUuid . '/modules/sync';
+    $curlErrno = 0;
     try {
       $response = $this->httpClient->request('POST', $url, [
         'headers' => [
@@ -139,6 +141,13 @@ class SentinelClient {
         'json' => $payload,
         'timeout' => 30,
         'http_errors' => FALSE,
+        // Guzzle 8 exposes cURL errors through transfer stats, not exceptions.
+        'on_stats' => static function (TransferStats $stats) use (&$curlErrno): void {
+          $error = $stats->getHandlerErrorData();
+          if (is_int($error)) {
+            $curlErrno = $error;
+          }
+        },
       ]);
     }
     catch (TransferException $e) {
@@ -150,7 +159,7 @@ class SentinelClient {
       return SyncResult::failure('transport_error', NULL, $message, [
         'class' => get_class($e),
         'host' => $host,
-        'curl errno' => (int) ($context['errno'] ?? 0),
+        'curl errno' => (int) ($context['errno'] ?? $curlErrno),
       ]);
     }
 

@@ -2,6 +2,9 @@
 
 namespace Drupal\Tests\sentinel_connector\Kernel;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\PushHealth;
 use Drupal\sentinel_connector\PushLimitFormatter;
@@ -14,6 +17,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  * @group sentinel_connector
  */
 #[RunTestsInSeparateProcesses]
+#[Group('sentinel_connector')]
 class StatusReportTest extends KernelTestBase {
 
   /**
@@ -58,7 +62,27 @@ class StatusReportTest extends KernelTestBase {
     $this->assertSame([], sentinel_connector_requirements('update'));
     $this->assertSame(['sentinel_connector'], array_keys(sentinel_connector_requirements('runtime')));
     foreach (['INFO', 'OK', 'WARNING', 'ERROR'] as $name) {
-      $this->assertSame(constant('REQUIREMENT_' . $name), constant(PushHealth::class . '::SEVERITY_' . $name));
+      $severity = constant(PushHealth::class . '::SEVERITY_' . $name);
+      $actual = class_exists(RequirementSeverity::class)
+        ? RequirementSeverity::from($severity)->value
+        : constant('REQUIREMENT_' . $name);
+      $this->assertSame($actual, $severity);
+    }
+  }
+
+  /**
+   * Core can consume the severity returned by the dispatched runtime hook.
+   */
+  public function testRuntimeSeverityIsAcceptedByCore(): void {
+    $handler = $this->container->get('module_handler');
+    $hook = version_compare(\Drupal::VERSION, '11.2', '>=') ? 'runtime_requirements' : 'requirements';
+    $requirements = $handler->invoke('sentinel_connector', $hook, $hook === 'requirements' ? ['runtime'] : []);
+    $this->assertArrayHasKey('sentinel_connector', $requirements);
+    if (class_exists(RequirementSeverity::class)) {
+      $this->assertSame(RequirementSeverity::Error, RequirementSeverity::maxSeverityFromRequirements($requirements));
+    }
+    else {
+      $this->assertSame(PushHealth::SEVERITY_ERROR, $requirements['sentinel_connector']['severity']);
     }
   }
 
@@ -67,6 +91,7 @@ class StatusReportTest extends KernelTestBase {
    *
    * @dataProvider incompleteConfigurations
    */
+  #[DataProvider('incompleteConfigurations')]
   public function testIncompleteConfigurationIsAnError(string $missing): void {
     // A recent accepted push must not hide the missing configuration.
     $this->setState(['last_accepted_time' => $this->now - 60]);
@@ -249,6 +274,7 @@ class StatusReportTest extends KernelTestBase {
    *
    * @dataProvider subscriptionReasons
    */
+  #[DataProvider('subscriptionReasons')]
   public function testSubscriptionRefusalIsAnError(string $reason, string $label, string $text): void {
     // Even with a recent accepted push and a server message of its own.
     $this->setState([
@@ -293,7 +319,15 @@ class StatusReportTest extends KernelTestBase {
    *   The requirement entry.
    */
   private function entry(): array {
-    return sentinel_connector_requirements('runtime')['sentinel_connector'];
+    $handler = $this->container->get('module_handler');
+    $hook = version_compare(\Drupal::VERSION, '11.2', '>=') ? 'runtime_requirements' : 'requirements';
+    $requirements = $handler->invoke('sentinel_connector', $hook, $hook === 'requirements' ? ['runtime'] : []);
+    $entry = $requirements['sentinel_connector'];
+    if (class_exists(RequirementSeverity::class)) {
+      $this->assertInstanceOf(RequirementSeverity::class, $entry['severity']);
+      $entry['severity'] = $entry['severity']->value;
+    }
+    return $entry;
   }
 
   /**

@@ -5,25 +5,24 @@
  * Install, update and requirements hooks for Sentinel Connector.
  */
 
-use Drupal\sentinel_connector\PushHealth;
+use Drupal\Core\Hook\Attribute\LegacyRequirementsHook;
+use Drupal\sentinel_connector\Hook\SentinelHooks;
 use Drupal\sentinel_connector\SyncService;
 
 /**
  * Implements hook_requirements().
  *
- * Kept procedural so the same code runs on Drupal 10.3 and 11. The checks
- * live in the push health service.
+ * Supports Drupal versions before the runtime requirements hook.
  *
  * @phpstan-return array<string, array<string, mixed>>
  *   Runtime requirement entries.
  */
+#[LegacyRequirementsHook]
 function sentinel_connector_requirements(string $phase): array {
   if ($phase !== 'runtime') {
     return [];
   }
-  /** @var \Drupal\sentinel_connector\PushHealth $health */
-  $health = \Drupal::service(PushHealth::class);
-  return ['sentinel_connector' => $health->requirement()];
+  return (new SentinelHooks(\Drupal::getContainer()))->runtimeRequirements();
 }
 
 /**

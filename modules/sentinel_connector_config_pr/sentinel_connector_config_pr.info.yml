@@ -2,7 +2,7 @@ name: 'Sentinel Connector configuration pull request'
 type: module
 description: 'Opens a pull request (GitHub) or merge request (GitLab) with the configuration that changed on this site.'
 package: Monitoring
-core_version_requirement: ^10.3 || ^11
+core_version_requirement: ^10.3 || ^11 || ^12
 configure: sentinel_connector_config_pr.settings
 dependencies:
   - drupal:config

@@ -11,9 +11,10 @@ variables:
   _TARGET_PHP: '8.3'
   OPT_IN_TEST_CURRENT: '1'
   OPT_IN_TEST_PREVIOUS_MAJOR: '1'
-  OPT_IN_TEST_NEXT_MAJOR: '0'
+  OPT_IN_TEST_NEXT_MAJOR: '1'
   _AUTORUN_CURRENT: 'all'
   _AUTORUN_PREVIOUS_MAJOR: 'all'
+  _AUTORUN_NEXT_MAJOR: 'all'
   # Includes Unit (with payload contracts) and Kernel tests.
   _PHPUNIT_TESTGROUPS: '--all'
 
@@ -30,4 +31,32 @@ phpunit:
   allow_failure: false
 
 phpunit (previous major):
+  allow_failure: false
+
+# Drupal 12 support is a release gate, including its PHP minimum.
+composer (next major):
+  allow_failure: false
+  variables:
+    IGNORE_PROJECT_DRUPAL_CORE_VERSION: 0
+    # Test-only dependencies; keep the project itself strict.
+    _LENIENT_ALLOW_LIST: "config_ignore,config_split,key"
+    COMPOSER_PATCHES_PATCHES_FILE: "patches/drupal12/patches.json"
+
+phpunit (next major):
+  allow_failure: false
+
+# Run independently of Drupal/contrib dependency installation.
+release-consistency:
+  needs: []
+  image: php:8.3-cli
+  stage: test
+  script:
+    - |
+      if [ -n "${CI_COMMIT_TAG:-}" ]; then
+        php scripts/check-release.php "$CI_COMMIT_TAG"
+      else
+        php scripts/check-release.php
+      fi
+    - bash tests/release/check-release.sh
+    - php scripts/check-compatibility-patches.php
   allow_failure: false

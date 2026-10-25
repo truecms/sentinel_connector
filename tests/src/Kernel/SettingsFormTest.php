@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector\Kernel;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Form\FormState;
 use Drupal\Core\Site\Settings;
 use Drupal\KernelTests\KernelTestBase;
@@ -16,6 +18,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  * @group sentinel_connector
  */
 #[RunTestsInSeparateProcesses]
+#[Group('sentinel_connector')]
 class SettingsFormTest extends KernelTestBase {
 
   use UserCreationTrait;
@@ -80,6 +83,7 @@ class SettingsFormTest extends KernelTestBase {
    *
    * @dataProvider precedenceSources
    */
+  #[DataProvider('precedenceSources')]
   public function testStatusShowsTheActiveSource(string $source, string $expected): void {
     \Drupal::state()->set(ApiKeyResolver::STATE_KEY, self::SAVED_KEY);
     if ($source === 'settings') {
@@ -148,6 +152,7 @@ class SettingsFormTest extends KernelTestBase {
    *
    * @dataProvider acceptedSiteUuids
    */
+  #[DataProvider('acceptedSiteUuids')]
   public function testSiteUuidIsNormalised(string $entered): void {
     $this->submitSettingsForm(['site_uuid' => $entered]);
 
@@ -176,6 +181,7 @@ class SettingsFormTest extends KernelTestBase {
    *
    * @dataProvider rejectedSiteUuids
    */
+  #[DataProvider('rejectedSiteUuids')]
   public function testInvalidSiteUuidIsRejected(string $entered): void {
     $config = $this->config('sentinel_connector.settings');
     $form_state = (new FormState())->setValues([
