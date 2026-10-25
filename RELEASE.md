@@ -8,11 +8,12 @@ for this follow-on; the Drupal 12 fixes are already delivered.
 
 ## Integration and review
 
-- Merge the existing Drupal 12 integration PR
-  [#33](https://github.com/truecms/sentinel_connector/pull/33) into
-  `release/1297-config-drift`, preserving the published 1.2.0 changelog entry.
-  This correction is stacked on that PR while it remains open; retarget it
-  to the integration branch after #33 merges. It does not replace that work.
+- This correction is stacked on the existing Drupal 12 integration PR
+  [#33](https://github.com/truecms/sentinel_connector/pull/33). After its own
+  review and checks pass, merge correction PR #34 into #33's branch first.
+  Recheck #33's resulting head, then merge #33 into
+  `release/1297-config-drift`. Preserve the published 1.2.0 changelog entry.
+  PR #32 remains the promotion to `main`, held until receiver compatibility.
 - Resolve all final-head lint, unit, contract and Kernel checks on Drupal
   10, 11 and 12, including the optional submodule. Contrib dependency
   compatibility with Drupal 12 is a release gate; do not suppress failures.
@@ -27,20 +28,17 @@ for this follow-on; the Drupal 12 fixes are already delivered.
   released as 1.2.0. Obtain review on the final immutable head and follow normal
   protected-branch checks before merging the integration PR into `main`.
 
-## Current Drupal 12 upstream blockers
+## Drupal 12 integration prerequisites
 
-The full suites remain required and currently fail with unpatched stable
-contrib dependencies, even after resolving Composer's core constraints:
-
-- Config Split 2.0.2's `SplitImportExportSubscriber::getSubscribedEvents()`
-  lacks the `array` return type required by Symfony 8.
-- Key 1.22.0's `KeyPluginManager` uses annotation-only discovery, removed in
-  Drupal 12. Settings.php tokens remain an alternative, but do not skip the
-  Key integration tests to claim the optional module is fully verified.
-
-Resolve these through supported upstream releases or explicitly reviewed
-compatibility patches before publication. The lenient test scaffold reveals
-these runtime failures; it does not fix them or make the release ready.
+Unpatched Config Split 2.0.2 and Key 1.22.0 fail on Symfony 8's subscriber
+return type and Drupal 12's removal of annotation-only discovery respectively.
+The required Drupal 12 CI scaffold now uses the explicit, checksum-pinned
+upstream compatibility patches documented in
+[patches/drupal12/README.md](patches/drupal12/README.md), via Composer Patches 2.
+It runs the same full suites, without skips or suppressed failures. Drupal
+10/11 retain unpatched stable dependencies. A site's optional integration must
+use a compatible upstream release or an explicitly reviewed patch workflow;
+this module does not silently modify third-party runtime packages.
 
 ## Receiver first
 

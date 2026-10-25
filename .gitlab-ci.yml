@@ -40,6 +40,7 @@ composer (next major):
     IGNORE_PROJECT_DRUPAL_CORE_VERSION: 0
     # Test-only dependencies; keep the project itself strict.
     _LENIENT_ALLOW_LIST: "config_ignore,config_split,key"
+    COMPOSER_PATCHES_PATCHES_FILE: "patches/drupal12/patches.json"
 
 phpunit (next major):
   allow_failure: false
@@ -57,4 +58,5 @@ release-consistency:
         php scripts/check-release.php
       fi
     - bash tests/release/check-release.sh
+    - php scripts/check-compatibility-patches.php
   allow_failure: false
