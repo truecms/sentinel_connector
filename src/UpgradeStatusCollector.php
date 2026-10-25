@@ -271,7 +271,7 @@ class UpgradeStatusCollector {
    * Typed loosely: its API is not public and can change between releases.
    */
   protected function projectCollector(): ?object {
-    return $this->container->has(self::SERVICE) ? $this->container->get(self::SERVICE) : NULL;
+    return $this->container->get(self::SERVICE, ContainerInterface::NULL_ON_INVALID_REFERENCE);
   }
 
   /**

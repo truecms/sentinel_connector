@@ -282,8 +282,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
    * A missing service sends unavailable.
    */
   public function testServiceMissing(): void {
-    $container = $this->createMock(ContainerInterface::class);
+    $container = $this->createStub(ContainerInterface::class);
     $container->method('has')->willReturn(FALSE);
+    $container->method('get')->willReturn(NULL);
     $collector = new UpgradeStatusCollector(
       $container,
       $this->container->get('module_handler'),
