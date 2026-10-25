@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
@@ -22,8 +24,12 @@ use Psr\Log\LogLevel;
 /**
  * Tests that Sentinel's error codes decide the outcome of a push.
  *
+ * Fixtures use mocks as stubs and assert the returned payload or result.
+ *
  * @group sentinel_connector
  */
+#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[Group('sentinel_connector')]
 class SentinelErrorCodeTest extends TestCase {
 
   /**
@@ -107,6 +113,7 @@ class SentinelErrorCodeTest extends TestCase {
    *
    * @dataProvider serverCodes
    */
+  #[DataProvider('serverCodes')]
   public function testErrorCodeDecidesOutcome(string $errorCode): void {
     $row = self::fixture()[$errorCode];
     [$outcome, $level, $added] = self::EXPECTED[$errorCode];
@@ -202,6 +209,7 @@ class SentinelErrorCodeTest extends TestCase {
    *
    * @dataProvider holdingCodesOnOtherStatuses
    */
+  #[DataProvider('holdingCodesOnOtherStatuses')]
   public function testHoldingCodeOnOtherStatusWritesNoHold(string $errorCode, int $status, string $outcome): void {
     $body = self::fixture()[$errorCode]['body'];
 
@@ -312,6 +320,7 @@ class SentinelErrorCodeTest extends TestCase {
    *
    * @dataProvider unreadableBodies
    */
+  #[DataProvider('unreadableBodies')]
   public function testUnreadableBodyIsInvalidPayload(int $status, string $body, string $message): void {
     $result = $this->push(new Response($status, [], $body));
 
@@ -424,6 +433,7 @@ class SentinelErrorCodeTest extends TestCase {
    *
    * @dataProvider unsafeCodes
    */
+  #[DataProvider('unsafeCodes')]
   public function testUnsafeCodeIsIgnored(mixed $errorCode): void {
     $bodies = [
       ['error_code' => $errorCode, 'message' => 'New words.', 'detail' => 'Old words'],
@@ -647,6 +657,7 @@ class SentinelErrorCodeTest extends TestCase {
    *
    * @dataProvider punctuation
    */
+  #[DataProvider('punctuation')]
   public function testPunctuationOfAdditions(string $message, string $msg, string $expected): void {
     $body = ['error_code' => 'payload_invalid', 'message' => $message, 'detail' => [['loc' => ['body'], 'msg' => $msg]]];
     $this->assertSame($expected, $this->respond(422, (string) json_encode($body))->message);
@@ -782,6 +793,7 @@ class SentinelErrorCodeTest extends TestCase {
    *
    * @dataProvider timeZones
    */
+  #[DataProvider('timeZones')]
   public function testRetryAfterDateIgnoresDefaultTimeZone(string $zone): void {
     $default = date_default_timezone_get();
     date_default_timezone_set($zone);
@@ -844,6 +856,7 @@ class SentinelErrorCodeTest extends TestCase {
    *
    * @dataProvider retryAfterHeaders
    */
+  #[DataProvider('retryAfterHeaders')]
   public function testRetryAfterIsStrict(string $header, string $wait, ?int $seconds, ?int $time): void {
     $headers = $header !== '' ? ['Retry-After' => $header] : [];
     $send = fn (int $status, string $body): SyncResult => $this->client(new Response($status, $headers, $body))
@@ -932,6 +945,7 @@ class SentinelErrorCodeTest extends TestCase {
    *
    * @dataProvider successBodies
    */
+  #[DataProvider('successBodies')]
   public function testSuccessMessage(string $body, string $message): void {
     $result = $this->push(new Response(200, [], $body));
 

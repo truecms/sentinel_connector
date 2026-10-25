@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector\Kernel;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use GuzzleHttp\Middleware;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\Config\ConfigEvents;
@@ -28,6 +30,8 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  * @group sentinel_connector
  */
 #[RunTestsInSeparateProcesses]
+#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[Group('sentinel_connector')]
 class SyncServiceTest extends KernelTestBase {
 
   /**
@@ -49,6 +53,18 @@ class SyncServiceTest extends KernelTestBase {
       ->set('enabled', TRUE)
       ->save();
     \Drupal::state()->set('sentinel_connector.api_key', 'sk_test');
+  }
+
+  /**
+   * Modern hooks and the legacy wrapper must not both dispatch cron.
+   */
+  public function testCronDispatchesOnce(): void {
+    $sync = $this->createMock(SyncService::class);
+    $sync->expects($this->once())->method('markConfigured');
+    $sync->expects($this->once())->method('cronIsDue')->willReturn(TRUE);
+    $sync->expects($this->once())->method('syncIfChanged');
+    $this->container->set(SyncService::class, $sync);
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
   }
 
   /**
@@ -294,7 +310,7 @@ class SyncServiceTest extends KernelTestBase {
     $sync->method('cronIsDue')->willThrowException(new \TypeError('storage error'));
     $this->container->set(SyncService::class, $sync);
     $this->container->get('module_handler')->loadAll();
-    sentinel_connector_cron();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
     $this->assertSame('internal_error', \Drupal::state()->get('sentinel_connector.last_result'));
   }
 
@@ -303,6 +319,7 @@ class SyncServiceTest extends KernelTestBase {
    *
    * @dataProvider fixtureKeySources
    */
+  #[DataProvider('fixtureKeySources')]
   public function testFixtureRejectsKeyOverrides(string $source): void {
     $settings = Settings::getAll();
     $original = $this->config('sentinel_connector.settings')->getRawData();
@@ -350,6 +367,7 @@ class SyncServiceTest extends KernelTestBase {
    *
    * @dataProvider fixtureResponses
    */
+  #[DataProvider('fixtureResponses')]
   public function testFixtureRestoresState(int $httpCode): void {
     $original = $this->config('sentinel_connector.settings')->getRawData();
     $state = \Drupal::state();

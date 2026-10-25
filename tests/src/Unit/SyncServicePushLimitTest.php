@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
@@ -18,8 +20,12 @@ use Psr\Log\LogLevel;
 /**
  * Tests how the sync service stores and honours a push limit.
  *
+ * Fixtures use mocks as stubs and assert the returned payload or result.
+ *
  * @group sentinel_connector
  */
+#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[Group('sentinel_connector')]
 class SyncServicePushLimitTest extends TestCase {
 
   /**
@@ -172,6 +178,7 @@ class SyncServicePushLimitTest extends TestCase {
    *
    * @dataProvider nextAllowedTimes
    */
+  #[DataProvider('nextAllowedTimes')]
   public function testNextAllowedTimeResolution(?int $absoluteOffset, ?int $seconds, ?int $expectedOffset): void {
     $absolute = $absoluteOffset === NULL ? NULL : self::NOW + $absoluteOffset;
     $this->responses = [SyncResult::pushLimited('Limit.', $absolute, $seconds)];
@@ -256,6 +263,7 @@ class SyncServicePushLimitTest extends TestCase {
    *
    * @dataProvider frequentCronOutcomes
    */
+  #[DataProvider('frequentCronOutcomes')]
   public function testFrequentCronSendsOnePushAnHour(string $outcome, int $expectedPushes): void {
     $service = $this->service();
     $sent = [];
@@ -396,6 +404,7 @@ class SyncServicePushLimitTest extends TestCase {
    *
    * @dataProvider outcomes
    */
+  #[DataProvider('outcomes')]
   public function testEveryOutcomeIsLoggedOnce(SyncResult $response, string $trigger, string $level, string $details): void {
     $this->responses = [$response];
 

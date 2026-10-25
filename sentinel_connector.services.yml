@@ -1,4 +1,8 @@
 services:
+  Drupal\sentinel_connector\Hook\SentinelHooks:
+    class: Drupal\sentinel_connector\Hook\SentinelHooks
+    arguments: ['@service_container']
+
   logger.channel.sentinel_connector:
     parent: logger.channel_base
     arguments: ['sentinel_connector']

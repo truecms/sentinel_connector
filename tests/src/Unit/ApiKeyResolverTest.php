@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\sentinel_connector\ApiKeyResolver;
@@ -10,8 +11,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Tests key precedence without disclosing configured key values.
  *
+ * Fixtures use mocks as stubs and assert the returned payload or result.
+ *
  * @group sentinel_connector
  */
+#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[Group('sentinel_connector')]
 class ApiKeyResolverTest extends TestCase {
 
   /**
