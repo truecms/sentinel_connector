@@ -4,7 +4,6 @@ namespace Drupal\Tests\sentinel_connector\Kernel;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ExportStorageManager;
-use Drupal\Core\Config\StorageInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Lock\DatabaseLockBackend;
 use Drupal\Core\Lock\LockBackendInterface;
@@ -277,7 +276,7 @@ class ConfigDriftCollectorTest extends KernelTestBase {
     $this->assertTrue($other->acquire(ExportStorageManager::LOCK_NAME));
 
     $start = microtime(TRUE);
-    $drift = $this->collector(lock: $own)->collect();
+    $drift = $this->collector(exportManager: $this->exportManager($own), lock: $own)->collect();
     $this->assertLessThan(5, microtime(TRUE) - $start);
     $this->assertSame('unavailable', $drift['status']);
     $this->assertSame('error', $drift['reason']);
@@ -285,8 +284,15 @@ class ConfigDriftCollectorTest extends KernelTestBase {
     $other->release(ExportStorageManager::LOCK_NAME);
 
     // The lock is released after a comparison, for the next export.
-    $this->assertSame('complete', $this->collector(lock: $own)->collect()['status']);
+    $this->assertSame('complete', $this->collector(exportManager: $this->exportManager($own), lock: $own)->collect()['status']);
     $this->assertTrue($other->acquire(ExportStorageManager::LOCK_NAME));
+    $other->release(ExportStorageManager::LOCK_NAME);
+
+    // An export this request made and may still read keeps its lock.
+    $this->exportManager($own)->getStorage();
+    $drift = $this->collector(exportManager: $this->exportManager($own), lock: $own)->collect();
+    $this->assertSame('error', $drift['reason']);
+    $this->assertFalse($other->acquire(ExportStorageManager::LOCK_NAME));
   }
 
   /**
@@ -389,7 +395,6 @@ class ConfigDriftCollectorTest extends KernelTestBase {
   protected function collector(?TimeInterface $time = NULL, float $budget = ConfigDriftCollector::TIME_BUDGET, ?ModuleHandlerInterface $moduleHandler = NULL, mixed $exportManager = NULL, ?LockBackendInterface $lock = NULL): ConfigDriftCollector {
     return new ConfigDriftCollector(
       $exportManager ?? $this->exportManager(),
-      fn (): StorageInterface => $this->container->get('config.storage.sync'),
       $this->container->get('config.factory'),
       $moduleHandler ?? $this->container->get('module_handler'),
       Settings::getInstance(),
@@ -409,12 +414,12 @@ class ConfigDriftCollectorTest extends KernelTestBase {
   /**
    * Core's export storage manager, which the container keeps private.
    */
-  protected function exportManager(): ExportStorageManager {
+  protected function exportManager(?LockBackendInterface $lock = NULL): ExportStorageManager {
     return new ExportStorageManager(
       $this->container->get('config.storage'),
       $this->container->get('database'),
       $this->container->get('event_dispatcher'),
-      $this->container->get('lock'),
+      $lock ?? $this->container->get('lock'),
     );
   }
 

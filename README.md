@@ -136,7 +136,11 @@ in every collection, such as the `language.fr` translation overrides.
 - The drift list is part of the push fingerprint, so a change in drift is
   pushed by the next cron run or `drush sentinel_connector:deploy`. Run
   `drush sentinel_connector:deploy` as the last step of each production
-  deployment so drift clears promptly after `drush cim`.
+  deployment so drift clears promptly after `drush cim`. A change past the
+  first 200 objects counts only through `total`; the daily resend reports it.
+  A comparison that is cut short or fails (for example while `drush cex`
+  holds the export lock, which is never waited for) does not count as a
+  change on its own.
 
 Turn it off with **Report configuration drift** on the settings form
 (`report_config_drift: false`); the block is then sent as `unavailable` with

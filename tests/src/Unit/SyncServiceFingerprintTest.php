@@ -199,6 +199,56 @@ class SyncServiceFingerprintTest extends TestCase {
   }
 
   /**
+   * A comparison that failed or was cut short counts as the last report.
+   *
+   * @param array<string, mixed> $failed
+   *   The drift block of the later check.
+   *
+   * @dataProvider transientDrift
+   */
+  public function testTransientDriftKeepsLastReport(array $failed): void {
+    $this->responses = [SyncResult::success(200, 'ok')];
+    $service = $this->service();
+    $service->sync();
+
+    $this->payload['config_drift'] = $failed + $this->payload['config_drift'];
+    $this->assertFalse($service->hasInventoryChanged());
+
+    $this->payload['config_drift']['config_pr_enabled'] = TRUE;
+    $this->assertTrue($service->hasInventoryChanged());
+  }
+
+  /**
+   * Drift blocks of a comparison that failed for a passing reason.
+   *
+   * @return array<string, array{array<string, mixed>}>
+   *   Drift block parts keyed by case.
+   */
+  public static function transientDrift(): array {
+    return [
+      'busy lock or error' => [['status' => 'unavailable', 'reason' => 'error', 'total' => 0, 'objects' => []]],
+      'time budget' => [['status' => 'incomplete', 'reason' => 'time_budget', 'total' => 0, 'objects' => []]],
+    ];
+  }
+
+  /**
+   * A drift report that lasts, such as a missing sync directory, is a change.
+   */
+  public function testLastingDriftStatusCounts(): void {
+    $this->responses = [SyncResult::success(200, 'ok')];
+    $service = $this->service();
+    $service->sync();
+
+    $this->payload['config_drift'] = [
+      'status' => 'unavailable',
+      'reason' => 'sync_directory_missing',
+      'total' => 0,
+      'objects' => [],
+    ] + $this->payload['config_drift'];
+    $this->assertTrue($service->hasInventoryChanged());
+  }
+
+  /**
    * A fingerprint is trusted for a day after the push it belongs to.
    */
   public function testOldFingerprintCountsAsChanged(): void {

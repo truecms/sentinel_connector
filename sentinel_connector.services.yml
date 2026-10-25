@@ -20,7 +20,6 @@ services:
     class: Drupal\sentinel_connector\ConfigDriftCollector
     arguments:
       - '@config.storage.export.manager'
-      - !service_closure '@config.storage.sync'
       - '@config.factory'
       - '@module_handler'
       - '@settings'

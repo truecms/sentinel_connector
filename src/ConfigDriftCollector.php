@@ -3,8 +3,10 @@
 namespace Drupal\sentinel_connector;
 
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Component\Utility\Environment;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ExportStorageManager;
+use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Config\StorageManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
@@ -54,9 +56,6 @@ class ConfigDriftCollector {
    *
    * @param \Drupal\Core\Config\StorageManagerInterface $exportStorageManager
    *   Builds the export storage afresh on each call.
-   * @param \Closure(): \Drupal\Core\Config\StorageInterface $syncStorage
-   *   Returns the sync storage. A closure, because core throws while building
-   *   it when no sync directory is set.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory, for the reporting switch.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
@@ -72,7 +71,6 @@ class ConfigDriftCollector {
    */
   public function __construct(
     protected StorageManagerInterface $exportStorageManager,
-    protected \Closure $syncStorage,
     protected ConfigFactoryInterface $configFactory,
     protected ModuleHandlerInterface $moduleHandler,
     protected Settings $settings,
@@ -101,7 +99,7 @@ class ConfigDriftCollector {
       if (!@is_readable($directory) || !@is_executable($directory) || !$this->collectionsReadable($directory)) {
         return $this->unavailable(self::REASON_SYNC_UNREADABLE, $configPr);
       }
-      return $this->compare($configPr);
+      return $this->compare($directory, $configPr);
     }
     catch (\Throwable) {
       return $this->unavailable(self::REASON_ERROR, $configPr);
@@ -114,10 +112,12 @@ class ConfigDriftCollector {
    * @return array<string, mixed>
    *   A complete or incomplete drift block.
    */
-  protected function compare(bool $configPr): array {
+  protected function compare(string $directory, bool $configPr): array {
     $start = $this->time->getCurrentMicroTime();
     $expired = fn (): bool => $this->time->getCurrentMicroTime() - $start >= $this->timeBudget;
-    $sync = ($this->syncStorage)();
+    // The storage core's config.storage.sync service builds. That service
+    // throws while it is created when no sync directory is set.
+    $sync = new FileStorage($directory);
     // The sync storage is readable only when it lists without failing.
     try {
       $sync->listAll();
@@ -126,11 +126,16 @@ class ConfigDriftCollector {
       return $this->unavailable(self::REASON_SYNC_UNREADABLE, $configPr);
     }
     // Core's export waits up to 30 seconds for a concurrent export, such as
-    // `drush cex`. The lock is taken here without waiting, and released once
-    // the comparison is done instead of at the end of the request.
-    if (!$this->lock->acquire(ExportStorageManager::LOCK_NAME)) {
+    // `drush cex`. A held lock, also one this request took for an export it
+    // may still read, is not waited for and not taken over: the report is
+    // unavailable. Otherwise the lock is released once the comparison is
+    // done instead of at the end of the request.
+    if (!$this->lock->lockMayBeAvailable(ExportStorageManager::LOCK_NAME) || !$this->lock->acquire(ExportStorageManager::LOCK_NAME)) {
       return $this->unavailable(self::REASON_ERROR, $configPr);
     }
+    // The export and the first comparison step cannot be stopped part way.
+    // A web request's time limit must not end the push with a fatal error.
+    Environment::setTimeLimit(60);
     try {
       $comparer = new ConfigDriftStorageComparer($this->exportStorageManager->getStorage(), $sync);
       $done = $comparer->createChangelistWithin($expired);
