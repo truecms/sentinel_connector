@@ -371,7 +371,7 @@ class SyncServiceFingerprintTest extends TestCase {
       ],
       'full_sync' => TRUE,
       'inventory_scope' => 'all',
-      'connector_version' => '0.3.0',
+      'connector_version' => PayloadBuilder::CONNECTOR_VERSION,
       'schema_version' => 3,
       'config_drift' => [
         'status' => 'complete',

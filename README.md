@@ -52,13 +52,15 @@ gates. Availability on Drupal.org must be confirmed before running:
 ```bash
 composer require drupal/sentinel_connector:^1.3 --with-all-dependencies
 drush updb
-drush cex
 ```
 
-Update `10003` enables `report_config_drift`. Review the complete export diff
-and commit only the intended change in `sentinel_connector.settings.yml`;
-leave unrelated existing drift out of the release. This preserves the setting
-on a later configuration import. Keep the optional submodule disabled
+Update `10003` enables `report_config_drift`. Add `report_config_drift: true`
+to the existing `sentinel_connector.settings.yml` in the site's configuration
+repository and commit only that intended change. If using `drush cex`, export
+on a development copy and discard unrelated exported changes before deployment.
+Keep the deployed sync directory as the code baseline during drift verification;
+exporting all active production configuration there would hide existing drift.
+This preserves the setting on a later configuration import. Keep the optional submodule disabled
 unless that site's setup has been separately agreed. Run
 `drush sentinel_connector:deploy` last in the site's normal deployment, then
 verify a fresh accepted receiver-side payload contains `schema_version: 3` and

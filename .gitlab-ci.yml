@@ -46,6 +46,7 @@ phpunit (next major):
 
 # Run independently of Drupal/contrib dependency installation.
 release-consistency:
+  needs: []
   image: php:8.3-cli
   stage: test
   script:
