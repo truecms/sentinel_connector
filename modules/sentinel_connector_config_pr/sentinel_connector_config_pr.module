@@ -1,0 +1,29 @@
+<?php
+
+/**
+ * @file
+ * Opens a configuration pull request on GitHub or GitLab.
+ */
+
+use Drupal\sentinel_connector_config_pr\ConfigPrRunner;
+
+/**
+ * Implements hook_cron().
+ *
+ * Does nothing unless cron runs are on in this module's settings (off by
+ * default) and the Sentinel Connector's cron reporting is on, which the README
+ * keeps to production. Then runs once the interval has passed.
+ */
+function sentinel_connector_config_pr_cron(): void {
+  try {
+    \Drupal::service(ConfigPrRunner::class)->cron();
+  }
+  catch (\Throwable $error) {
+    try {
+      \Drupal::logger('sentinel_connector')->error('Configuration pull request cron failed with @class.', ['@class' => get_class($error)]);
+    }
+    catch (\Throwable) {
+      // Logging must not abort the remaining cron hooks.
+    }
+  }
+}

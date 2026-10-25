@@ -1,0 +1,43 @@
+sentinel_connector_config_pr.settings:
+  type: config_object
+  label: 'Sentinel Connector configuration pull request settings'
+  mapping:
+    provider:
+      type: string
+      label: 'Git host'
+    api_base_url:
+      type: string
+      label: 'API base URL for GitHub Enterprise or self-managed GitLab'
+    repo_owner:
+      type: string
+      label: 'Repository owner or GitLab namespace'
+    repo_name:
+      type: string
+      label: 'Repository name'
+    base_branch:
+      type: string
+      label: 'Base branch'
+    branch:
+      type: string
+      label: 'Export branch'
+    sync_path:
+      type: string
+      label: 'Repository path of the configuration sync directory'
+    pr_title:
+      type: string
+      label: 'Pull request title template'
+    committer_name:
+      type: string
+      label: 'Committer name'
+    committer_email:
+      type: string
+      label: 'Committer email'
+    token_key_id:
+      type: string
+      label: 'Key module key that holds the access token'
+    cron_enabled:
+      type: boolean
+      label: 'Run on cron'
+    interval:
+      type: integer
+      label: 'Minimum seconds between runs'

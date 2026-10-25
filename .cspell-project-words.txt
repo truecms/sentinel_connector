@@ -1,5 +1,6 @@
 acquia
 fixdate
+glpat
 normalise
 normalised
 organisation
@@ -8,6 +9,7 @@ recognise
 recognised
 synchronisations
 truecms
+tthumphrey
 unconfigured
 updb
 webform

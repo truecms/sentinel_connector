@@ -1,0 +1,12 @@
+[
+  {"method": "GET", "path": "/repos/acme/site", "body": {"id": 1296269, "full_name": "acme/site", "default_branch": "main", "private": true}},
+  {"method": "GET", "path": "/repos/acme/site/branches", "body": [{"name": "main", "commit": {"sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"}, "protected": true}]},
+  {"method": "GET", "path": "/repos/acme/site/branches/main", "body": {"name": "main", "commit": {"sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"}}},
+  {"method": "GET", "path": "/repos/acme/site/pulls", "query": {"state": "open", "head": "acme:sentinel/config-export", "base": "main"}, "body": []},
+  {"method": "GET", "path": "/repos/acme/site/branches/sentinel/config-export", "status": 404, "body": {"message": "Branch not found", "documentation_url": "https://docs.github.com/rest/branches/branches#get-a-branch", "status": "404"}},
+  {"method": "GET", "path": "/repos/acme/site/contents/config/sync/system.site.yml", "body": {"type": "file", "name": "system.site.yml", "path": "config/sync/system.site.yml", "sha": "3d21ec53a331a6f037a91c368710b99387d012c1", "size": 180}},
+  {"method": "HEAD", "path": "/repos/acme/site/contents/config/sync/system.site.yml", "status": 200},
+  {"method": "POST", "path": "/repos/acme/site/git/refs", "status": 201, "body": {"ref": "refs/heads/sentinel/config-export", "object": {"type": "commit", "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"}}},
+  {"method": "PUT", "path": "/repos/acme/site/contents/config/sync/system.site.yml", "body": {"content": {"name": "system.site.yml", "path": "config/sync/system.site.yml", "sha": "95b966ae1c166bd92f8ae7d1c313e738c731dfc3"}, "commit": {"sha": "7638417db6d59f3c431d3e1f261cc637155684cd"}}},
+  {"method": "POST", "path": "/repos/acme/site/pulls", "status": 201, "body": {"number": 7, "state": "open", "html_url": "https://github.example.com/acme/site/pull/7", "head": {"ref": "sentinel/config-export"}, "base": {"ref": "main"}}}
+]

@@ -1,0 +1,13 @@
+provider: github
+api_base_url: ''
+repo_owner: ''
+repo_name: ''
+base_branch: ''
+branch: sentinel/config-export
+sync_path: config/sync
+pr_title: 'Configuration export from {site}'
+committer_name: ''
+committer_email: ''
+token_key_id: ''
+cron_enabled: false
+interval: 86400

@@ -23,12 +23,14 @@ jobs:
           composer config --no-plugins allow-plugins.phpstan/extension-installer true
           composer require --dev drupal/core-dev:^10.3 -W --no-interaction
           composer require --dev drupal/coder:^8.3 dealerdirect/phpcodesniffer-composer-installer mglaman/phpstan-drupal:^1.2 phpstan/extension-installer:^1.3 drush/drush:^12.5 -W --no-interaction
+          # The configuration pull request submodule and its Git host clients.
+          composer require --dev drupal/config_pr:^3.0 drupal/key:^1.18 m4tthumphrey/php-gitlab-api:^12.0 php-http/guzzle7-adapter:^1.0 http-interop/http-factory-guzzle:^1.2 -W --no-interaction
           mkdir -p web/modules/custom/sentinel_connector
           rsync -a --exclude web --exclude .git "$GITHUB_WORKSPACE"/ web/modules/custom/sentinel_connector/
       - name: PHPCS
-        run: cd web && vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,install web/modules/custom/sentinel_connector/src web/modules/custom/sentinel_connector/sentinel_connector.module web/modules/custom/sentinel_connector/sentinel_connector.install web/modules/custom/sentinel_connector/tests
+        run: cd web && vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,install web/modules/custom/sentinel_connector/src web/modules/custom/sentinel_connector/sentinel_connector.module web/modules/custom/sentinel_connector/sentinel_connector.install web/modules/custom/sentinel_connector/tests web/modules/custom/sentinel_connector/modules
       - name: PHPStan
-        run: cd web && vendor/bin/phpstan analyse -c web/modules/custom/sentinel_connector/phpstan.neon.dist web/modules/custom/sentinel_connector/src web/modules/custom/sentinel_connector/tests web/modules/custom/sentinel_connector/sentinel_connector.module web/modules/custom/sentinel_connector/sentinel_connector.install --level=6 --memory-limit=512M
+        run: cd web && vendor/bin/phpstan analyse -c web/modules/custom/sentinel_connector/phpstan.neon.dist web/modules/custom/sentinel_connector/src web/modules/custom/sentinel_connector/tests web/modules/custom/sentinel_connector/sentinel_connector.module web/modules/custom/sentinel_connector/sentinel_connector.install web/modules/custom/sentinel_connector/modules --level=6 --memory-limit=1G
 
   test:
     runs-on: ubuntu-latest
@@ -55,6 +57,8 @@ jobs:
           # composer picks a release compatible with core-dev's own constraint.
           # -W lets composer resolve the lock that create-project --no-install left.
           composer require --dev drupal/core-dev:${{ matrix.drupal }} justinrainbow/json-schema -W --no-interaction
+          # The configuration pull request submodule and its Git host clients.
+          composer require --dev drupal/config_pr:^3.0 drupal/key:^1.18 m4tthumphrey/php-gitlab-api:^12.0 php-http/guzzle7-adapter:^1.0 http-interop/http-factory-guzzle:^1.2 -W --no-interaction
           mkdir -p web/modules/custom/sentinel_connector
           rsync -a --exclude web --exclude .git "$GITHUB_WORKSPACE"/ web/modules/custom/sentinel_connector/
       - name: PHPUnit (Unit + contract)
@@ -62,6 +66,8 @@ jobs:
           cd web/web
           ../vendor/bin/phpunit -c core/phpunit.xml.dist \
             modules/custom/sentinel_connector/tests/src/Unit
+          ../vendor/bin/phpunit -c core/phpunit.xml.dist \
+            modules/custom/sentinel_connector/modules/sentinel_connector_config_pr/tests/src/Unit
       - name: PHPUnit (Kernel)
         env:
           SIMPLETEST_DB: 'sqlite://localhost/:memory:'
@@ -71,3 +77,5 @@ jobs:
           cd web/web
           ../vendor/bin/phpunit -c core/phpunit.xml.dist \
             modules/custom/sentinel_connector/tests/src/Kernel
+          ../vendor/bin/phpunit -c core/phpunit.xml.dist \
+            modules/custom/sentinel_connector/modules/sentinel_connector_config_pr/tests/src/Kernel
