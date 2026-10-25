@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector\Kernel;
 
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Database\Connection;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\EventSubscriber\WebServerSubscriber;
@@ -25,6 +26,7 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * @group sentinel_connector
  */
 #[RunTestsInSeparateProcesses]
+#[Group('sentinel_connector')]
 class PlatformCollectorTest extends KernelTestBase {
 
   /**

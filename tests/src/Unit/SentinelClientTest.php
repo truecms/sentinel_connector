@@ -2,9 +2,12 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\sentinel_connector\SentinelClient;
 use GuzzleHttp\Client;
+use GuzzleHttp\TransferStats;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -15,8 +18,12 @@ use PHPUnit\Framework\TestCase;
 /**
  * Tests response typing and safe transport diagnostics.
  *
+ * Fixtures use mocks as stubs and assert the returned payload or result.
+ *
  * @group sentinel_connector
  */
+#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[Group('sentinel_connector')]
 class SentinelClientTest extends TestCase {
 
   /**
@@ -122,6 +129,7 @@ class SentinelClientTest extends TestCase {
    *
    * @dataProvider malformedPushLimits
    */
+  #[DataProvider('malformedPushLimits')]
   public function testMalformedPushLimitFallsBackToRetryAfter(array $headers, ?int $seconds, ?int $nextAllowedAt): void {
     $body = [
       'error_code' => 'push_limit_reached',
@@ -172,6 +180,7 @@ class SentinelClientTest extends TestCase {
    *
    * @dataProvider otherRateLimitBodies
    */
+  #[DataProvider('otherRateLimitBodies')]
   public function testOtherRateLimitsKeepExistingHandling(string $body): void {
     $result = $this->client(new Response(429, ['Retry-After' => '60'], $body))
       ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
@@ -216,6 +225,7 @@ class SentinelClientTest extends TestCase {
    *
    * @dataProvider subscriptionReasons
    */
+  #[DataProvider('subscriptionReasons')]
   public function testSubscriptionInactiveIsRecognised(string $reason): void {
     $body = [
       'error_code' => 'subscription_inactive',
@@ -259,6 +269,7 @@ class SentinelClientTest extends TestCase {
    *
    * @dataProvider incompleteSubscriptionBodies
    */
+  #[DataProvider('incompleteSubscriptionBodies')]
   public function testIncompleteSubscriptionBody(array $fields, ?string $reason, string $message): void {
     $result = $this->client(new Response(402, [], json_encode(['error_code' => 'subscription_inactive'] + $fields)))
       ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
@@ -293,6 +304,7 @@ class SentinelClientTest extends TestCase {
    *
    * @dataProvider otherPaymentRequiredBodies
    */
+  #[DataProvider('otherPaymentRequiredBodies')]
   public function testOtherPaymentRequiredKeepsExistingHandling(string $body, string $status): void {
     $result = $this->client(new Response(402, [], $body))
       ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
@@ -347,17 +359,55 @@ class SentinelClientTest extends TestCase {
    * Transport diagnostics are kept on the result without secrets or URLs.
    */
   public function testTransportDiagnosticsAreSafe(): void {
-    $exception = new ConnectException('https://user:SECRET@sentinel.example.com/path?token=SECRET', new Request('POST', 'https://sentinel.example.com'), NULL, ['errno' => 7]);
+    $exception = new ContextConnectException('https://user:SECRET@sentinel.example.com/path?token=SECRET', new Request('POST', 'https://sentinel.example.com'));
     $http = new Client(['handler' => HandlerStack::create(new MockHandler([$exception]))]);
     $result = (new SentinelClient($http))->sync('https://user:SECRET@sentinel.example.com?token=SECRET', 'uuid', 'SECRET', []);
     $this->assertSame('transport_error', $result->status);
     $this->assertNull($result->httpCode);
     $this->assertStringNotContainsString('SECRET', $result->message);
     $this->assertSame([
-      'class' => ConnectException::class,
+      'class' => ContextConnectException::class,
       'host' => 'sentinel.example.com',
       'curl errno' => 7,
     ], $result->diagnostics);
+  }
+
+  /**
+   * Transfer stats retain numeric cURL errors without leaking handler details.
+   *
+   * @dataProvider handlerErrors
+   */
+  #[DataProvider('handlerErrors')]
+  public function testTransportStatsAreSafe(mixed $handlerError, int $expected): void {
+    $http = new Client(['handler' => HandlerStack::create(new MockHandler([
+      static function ($request, array $options) use ($handlerError): ConnectException {
+        $options['on_stats'](new TransferStats($request, NULL, 0.0, $handlerError));
+        return new ConnectException('SECRET connection detail', $request);
+      },
+    ]))]);
+    $result = (new SentinelClient($http))->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertSame('transport_error', $result->status);
+    $this->assertSame([
+      'class' => ConnectException::class,
+      'host' => 'sentinel.example.com',
+      'curl errno' => $expected,
+    ], $result->diagnostics);
+    $this->assertStringNotContainsString('SECRET', $result->message);
+  }
+
+  /**
+   * Transfer handlers may provide numeric errors or opaque diagnostic data.
+   *
+   * @return array<string, array{mixed, int}>
+   *   Handler error data and the safe diagnostic code.
+   */
+  public static function handlerErrors(): array {
+    return [
+      'curl error' => [7, 7],
+      'no error data' => [NULL, 0],
+      'text is private' => ['SECRET', 0],
+      'context is private' => [['url' => 'https://SECRET'], 0],
+    ];
   }
 
   /**
@@ -365,6 +415,7 @@ class SentinelClientTest extends TestCase {
    *
    * @dataProvider refusals
    */
+  #[DataProvider('refusals')]
   public function testRefusalsAreMapped(int $code, string $body, string $status, string $message): void {
     $result = $this->client(new Response($code, [], $body))
       ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);

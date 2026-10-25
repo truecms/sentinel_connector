@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Extension\Extension;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\sentinel_connector\ComposerProjectResolver;
@@ -9,9 +10,19 @@ use Drupal\sentinel_connector\PayloadBuilder;
 use PHPUnit\Framework\TestCase;
 
 /**
+ * Tests the inventory payload.
+ *
+ * Fixtures use mocks as stubs and assert the returned payload or result.
+ *
  * @coversDefaultClass \Drupal\sentinel_connector\PayloadBuilder
+ * @covers \Drupal\sentinel_connector\PayloadBuilder::build
+ * @covers \Drupal\sentinel_connector\PayloadBuilder::parents
  * @group sentinel_connector
  */
+#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[\PHPUnit\Framework\Attributes\CoversMethod(PayloadBuilder::class, 'build')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(PayloadBuilder::class, 'parents')]
+#[Group('sentinel_connector')]
 class PayloadBuilderTest extends TestCase {
 
   /**
@@ -63,7 +74,7 @@ class PayloadBuilderTest extends TestCase {
   }
 
   /**
-   * @covers ::build
+   * Tests classifies and maps modules.
    */
   public function testClassifiesAndMapsModules(): void {
     $extensions = [
@@ -112,7 +123,7 @@ class PayloadBuilderTest extends TestCase {
   }
 
   /**
-   * @covers ::build
+   * Tests scope filtering.
    */
   public function testScopeFiltering(): void {
     $extensions = [
@@ -133,9 +144,6 @@ class PayloadBuilderTest extends TestCase {
 
   /**
    * Sub-modules are folded into the module whose directory contains them.
-   *
-   * @covers ::build
-   * @covers ::parents
    */
   public function testSubmodulesAreExcluded(): void {
     $profile = $this->getMockBuilder(TestExtension::class)
@@ -180,8 +188,6 @@ class PayloadBuilderTest extends TestCase {
 
   /**
    * Project identity follows packaging metadata, never extension names.
-   *
-   * @covers ::build
    */
   public function testUnknownMetadata(): void {
     $extensions = [
@@ -202,8 +208,6 @@ class PayloadBuilderTest extends TestCase {
 
   /**
    * Composer metadata identifies contrib modules that lack a 'project' key.
-   *
-   * @covers ::build
    */
   public function testComposerMetadataResolvesMissingProject(): void {
     $extensions = [
@@ -246,8 +250,6 @@ class PayloadBuilderTest extends TestCase {
 
   /**
    * Without Composer metadata the builder falls back to info.yml only.
-   *
-   * @covers ::build
    */
   public function testWorksWithoutResolver(): void {
     $list = $this->createMock(ModuleExtensionList::class);
@@ -262,8 +264,6 @@ class PayloadBuilderTest extends TestCase {
 
   /**
    * Schema version 2 carries the platform block, left out when empty.
-   *
-   * @covers ::build
    */
   public function testPlatformBlock(): void {
     $list = $this->createMock(ModuleExtensionList::class);

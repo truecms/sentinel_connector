@@ -6,8 +6,17 @@ parameters:
     - sentinel_connector.module
     - sentinel_connector.install
   ignoreErrors:
-    # Drupal 11 requires this attribute; PHPUnit 9 on Drupal 10 has no class.
-    # PHP 8 ignores uninstantiated attributes, so both runtimes remain valid.
-    - message: '#^Attribute class PHPUnit\\Framework\\Attributes\\RunTestsInSeparateProcesses does not exist\.$#'
-      path: tests/src/Kernel/*Test.php
+    # PHPUnit 9 ignores attributes; newer versions use them instead of annotations.
+    - message: '#^Attribute class PHPUnit\\Framework\\Attributes\\(RunTestsInSeparateProcesses|Group|DataProvider|CoversMethod|AllowMockObjectsWithoutExpectations) does not exist\.$#'
+      path: tests/src/*/*Test.php
+      reportUnmatched: false
+    # Drupal 10 runs the procedural wrappers and ignores newer hook attributes.
+    - message: '#^Attribute class Drupal\\Core\\Hook\\Attribute\\LegacyHook does not exist\.$#'
+      path: sentinel_connector.module
+      reportUnmatched: false
+    - message: '#^Attribute class Drupal\\Core\\Hook\\Attribute\\LegacyRequirementsHook does not exist\.$#'
+      path: sentinel_connector.install
+      reportUnmatched: false
+    - message: '#^Attribute class Drupal\\Core\\Hook\\Attribute\\Hook does not exist\.$#'
+      path: src/Hook/SentinelHooks.php
       reportUnmatched: false
