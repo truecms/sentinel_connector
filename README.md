@@ -40,15 +40,31 @@ Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
-## Upgrading
+## Upgrading to 1.3.0
 
-After updating the module code:
+Release `1.3.0` introduces payload v3, configuration drift and the optional
+`sentinel_connector_config_pr` submodule. Release `1.2.0` already provides
+Drupal 12 compatibility and uses payload v2. Upgrade only after the receiving
+Sentinel environment accepts v3; preserve the site's API URL, UUID, key and
+production-only overrides. See [RELEASE.md](RELEASE.md) for release and canary
+gates. Availability on Drupal.org must be confirmed before running:
 
 ```bash
+composer require drupal/sentinel_connector:^1.3 --with-all-dependencies
 drush updb
-drush cr
-drush sentinel_connector:sync
+drush cex
 ```
+
+Update `10003` enables `report_config_drift`; commit the exported setting so a
+later configuration import preserves it. Keep the optional submodule disabled
+unless that site's setup has been separately agreed. Run
+`drush sentinel_connector:deploy` last in the site's normal deployment, then
+verify a fresh accepted receiver-side payload contains `schema_version: 3` and
+`config_drift`, including its generation time and status.
+
+
+For a manual verification after deployment, run `drush cr` and
+`drush sentinel_connector:sync` (or use "Sync now").
 
 Release `0.3.0` has database updates: they remove the `cron_interval` and
 `site_token` settings. Sites that keep configuration in code must export
@@ -550,8 +566,11 @@ For GitLab, enable `config_pr_gitlab` instead and add its API client, which
 `config_pr` does not install:
 
 ```bash
-composer require m4tthumphrey/php-gitlab-api:^12.0 php-http/guzzle7-adapter http-interop/http-factory-guzzle
+composer require m4tthumphrey/php-gitlab-api:^12.0
 ```
+
+Drupal core supplies the PSR-18 HTTP client and PSR-17 factories. Do not add
+Guzzle 7-only adapters or factories to Drupal 12, which uses Guzzle 8/PSR-7 3.
 
 Set the repository on **Configuration > Web services > Sentinel configuration
 pull request** (`/admin/config/services/sentinel-connector/config-pr`): Git

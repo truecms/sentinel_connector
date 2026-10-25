@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 1.2.0 - Unreleased
+## 1.3.0 - Unreleased
 
 ### Added
 
@@ -29,6 +29,16 @@ All notable changes to this project are documented here. Versions follow
   merges. Its open pull request is added to the drift block as
   `export_pull_request`.
 
+### Requires
+
+- A Sentinel server that accepts payload `schema_version: 3`, deployed before
+  upgrading clients. See [RELEASE.md](RELEASE.md) for the staged rollout.
+- Release 1.2.0 already shipped Drupal 12 compatibility with payload v2.
+  This follow-on release adds configuration drift and the optional configuration
+  pull request submodule; it must not replace the published 1.2.0 tag.
+
+## 1.2.0 - 2026-10-25
+
 ### Changed
 
 - Support Drupal `^10.3 || ^11 || ^12`. Drupal 12 is tested against the
@@ -42,10 +52,6 @@ All notable changes to this project are documented here. Versions follow
 - Preserve safe connection diagnostics with Guzzle 7 and Guzzle 8.
 - Run the unit, contract and Kernel tests on all three Drupal major versions,
   with test metadata compatible with their PHPUnit versions.
-
-### Requires
-
-- A Sentinel server that accepts payload `schema_version: 3`.
 
 ## 1.1.0 - 2026-10-24
 

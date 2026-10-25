@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector\Kernel;
 
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ExportStorageManager;
 use Drupal\Core\Extension\ModuleHandlerInterface;
@@ -25,6 +26,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  * @group sentinel_connector
  */
 #[RunTestsInSeparateProcesses]
+#[Group('sentinel_connector')]
 class ConfigDriftCollectorTest extends KernelTestBase {
 
   /**

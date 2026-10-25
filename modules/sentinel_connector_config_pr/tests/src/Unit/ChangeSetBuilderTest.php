@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector_config_pr\Unit;
 
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Config\MemoryStorage;
 use Drupal\Core\Config\StorageInterface;
 use Drupal\Core\Config\StorageManagerInterface;
@@ -14,6 +15,8 @@ use Drupal\Tests\UnitTestCase;
  *
  * @group sentinel_connector
  */
+#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[Group('sentinel_connector')]
 class ChangeSetBuilderTest extends UnitTestCase {
 
   /**

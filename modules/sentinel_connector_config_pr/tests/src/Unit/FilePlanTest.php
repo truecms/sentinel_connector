@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector_config_pr\Unit;
 
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\sentinel_connector_config_pr\FilePlan;
 use Drupal\Tests\UnitTestCase;
 
@@ -10,6 +11,7 @@ use Drupal\Tests\UnitTestCase;
  *
  * @group sentinel_connector
  */
+#[Group('sentinel_connector')]
 class FilePlanTest extends UnitTestCase {
 
   /**
