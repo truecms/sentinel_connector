@@ -190,7 +190,7 @@ class ConfigDriftCollector {
   }
 
   /**
-   * Whether the sync directory and its collection directories can be listed.
+   * Whether the sync directory, its collections and their files can be read.
    *
    * Core's file storage lists an unreadable directory as empty, and finds no
    * file in one it cannot enter. Either would report every object as created
@@ -203,7 +203,9 @@ class ConfigDriftCollector {
       \RecursiveIteratorIterator::CATCH_GET_CHILD,
     );
     foreach ($iterator as $file) {
-      if ($file->isDir() && (!$file->isReadable() || !$file->isExecutable())) {
+      // Core's storage leaves out a file it cannot read, which would report
+      // the object as created in production, or not at all.
+      if (!$file->isReadable() || ($file->isDir() && !$file->isExecutable())) {
         return FALSE;
       }
     }

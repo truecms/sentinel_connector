@@ -252,6 +252,26 @@ class ConfigDriftCollectorTest extends KernelTestBase {
   }
 
   /**
+   * An unreadable configuration file is not reported as missing from code.
+   */
+  public function testUnreadableSyncFile(): void {
+    $file = $this->syncDirectory . '/system.site.yml';
+    chmod($file, 0000);
+    clearstatcache();
+    try {
+      if (is_readable($file)) {
+        $this->markTestSkipped('The test runs as a user that reads any file.');
+      }
+      $drift = $this->collect();
+      $this->assertSame('unavailable', $drift['status']);
+      $this->assertSame('sync_unreadable', $drift['reason']);
+    }
+    finally {
+      chmod($file, 0664);
+    }
+  }
+
+  /**
    * A sync directory that cannot be entered is not reported as an empty one.
    */
   public function testSyncDirectoryWithoutExecute(): void {
