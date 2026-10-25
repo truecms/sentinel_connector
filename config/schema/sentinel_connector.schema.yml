@@ -23,3 +23,6 @@ sentinel_connector.settings:
     report_config_drift:
       type: boolean
       label: 'Report configuration drift'
+    report_upgrade_status:
+      type: boolean
+      label: 'Report Upgrade Status readiness'

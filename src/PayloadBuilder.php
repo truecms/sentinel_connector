@@ -17,14 +17,15 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '1.3.0';
+  public const CONNECTOR_VERSION = '1.4.0';
 
   /**
    * Sync payload contract version.
    *
-   * Version 2 adds the platform block, version 3 the config_drift block.
+   * Version 2 adds the platform block, version 3 the config_drift block,
+   * version 4 the upgrade_status block.
    */
-  public const SCHEMA_VERSION = 3;
+  public const SCHEMA_VERSION = 4;
 
   /**
    * Constructs a PayloadBuilder.
@@ -44,6 +45,9 @@ class PayloadBuilder {
    * @param \Closure|null $configDrift
    *   Returns the config_drift block, or NULL to leave it out. Called on the
    *   first build only: the comparison exports the whole configuration.
+   * @param \Closure|null $upgradeStatus
+   *   Returns the upgrade_status block, or NULL to leave it out. Called on
+   *   the first build only, so a failed read logs one warning.
    */
   public function __construct(
     protected ModuleExtensionList $moduleList,
@@ -53,6 +57,7 @@ class PayloadBuilder {
     protected ?ComposerProjectResolver $composerProjects = NULL,
     protected array $platform = [],
     protected ?\Closure $configDrift = NULL,
+    protected ?\Closure $upgradeStatus = NULL,
   ) {}
 
   /**
@@ -61,6 +66,13 @@ class PayloadBuilder {
    * @var array<string, mixed>|null|false
    */
   protected array|null|false $drift = FALSE;
+
+  /**
+   * The upgrade_status block of the first build, FALSE before it.
+   *
+   * @var array<string, mixed>|null|false
+   */
+  protected array|null|false $readiness = FALSE;
 
   /**
    * Build the modules array for the given scope.
@@ -143,6 +155,12 @@ class PayloadBuilder {
     }
     if ($this->drift !== NULL) {
       $payload['config_drift'] = $this->drift;
+    }
+    if ($this->readiness === FALSE) {
+      $this->readiness = $this->upgradeStatus ? ($this->upgradeStatus)() : NULL;
+    }
+    if ($this->readiness !== NULL) {
+      $payload['upgrade_status'] = $this->readiness;
     }
     return $payload;
   }

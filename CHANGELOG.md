@@ -3,6 +3,34 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.4.0 - Unreleased
+
+### Added
+
+- The sync payload is `schema_version: 4` and has an optional
+  `upgrade_status` block with the Drupal upgrade readiness Upgrade Status
+  stored: a status (`ready`, `not_ready`, `incomplete`, `not_scanned`,
+  `unavailable`), the count of projects at each next step, the custom
+  projects that need code changes and the newest and oldest scan dates.
+  Counts only: no project names, paths or messages. Sent only while
+  Upgrade Status is enabled; a failed read sends `unavailable` with a reason
+  and never fails the push.
+- The block is part of the push fingerprint, except its `generated_at`, so a
+  new scan result is pushed by the next cron run.
+- `drush sentinel_connector:upgrade-status` scans custom projects with
+  Upgrade Status, then syncs. Opt-in; it never runs on cron.
+- An Integrations section on the settings form with Upgrade Status and
+  Config PR rows, and **Report Upgrade Status readiness to Sentinel**
+  (`report_upgrade_status`), on by default and overridable with
+  `$settings['sentinel_connector.report_upgrade_status']`. Update `10004`
+  turns it on for existing sites; export configuration afterwards
+  (`drush cex`).
+
+### Requires
+
+- A Sentinel server that accepts payload `schema_version: 4`, deployed before
+  upgrading clients.
+
 ## 1.3.0 - Unreleased
 
 ### Added

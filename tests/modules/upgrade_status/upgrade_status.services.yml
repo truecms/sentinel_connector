@@ -1,0 +1,4 @@
+services:
+  upgrade_status.project_collector:
+    class: Drupal\upgrade_status\ProjectCollector
+    arguments: ['@state']
