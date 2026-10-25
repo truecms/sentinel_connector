@@ -89,8 +89,10 @@ against Drupal.org; see [CHANGELOG.md](CHANGELOG.md).
 Drush 12.5 or later is required to use the optional command-line commands.
 
 Drupal 12 sites using Config Split or the optional Key integration need compatible
-upstream versions. The tested fallback uses explicit, checksum-pinned upstream
-patches through the site's normal Composer Patches 2 workflow. See
+upstream versions. CI exercises their runtime paths with explicit, checksum-pinned upstream
+patches and a narrow Composer Lenient allow-list. This does not establish site
+installation/update compatibility: Config Split and Config Ignore also need
+upstream Drupal 12 module metadata. See
 [optional integration prerequisites](patches/drupal12/README.md); installing this
 module does not automatically patch those dependencies.
 

@@ -36,9 +36,13 @@ The required Drupal 12 CI scaffold now uses the explicit, checksum-pinned
 upstream compatibility patches documented in
 [patches/drupal12/README.md](patches/drupal12/README.md), via Composer Patches 2.
 It runs the same full suites, without skips or suppressed failures. Drupal
-10/11 retain unpatched stable dependencies. A site's optional integration must
-use a compatible upstream release or an explicitly reviewed patch workflow;
-this module does not silently modify third-party runtime packages.
+10/11 retain unpatched stable dependencies. Kernel coverage verifies runtime behaviour, not Drupal's installation/update
+compatibility checks. Config Split and Config Ignore also need upstream module
+metadata admitting Drupal 12 before those site workflows are supported. Use
+compatible upstream releases or a separately reviewed, complete upstream
+compatibility change through the site's normal workflow; these runtime patches
+alone are insufficient. This module does not silently modify third-party
+runtime packages.
 
 ## Receiver first
 

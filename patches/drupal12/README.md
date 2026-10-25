@@ -35,25 +35,47 @@ CI pins the two dependency versions, applies these patches only in its Drupal
 Config Ignore, Config Split and Key remain on the narrowly scoped Composer
 Lenient allow-list until their package constraints admit Drupal 12.
 
-For a Drupal 12 site using either optional integration, prefer a supported
-upstream release containing the fix. Otherwise explicitly review the relevant
-patch in the site's existing supported patch workflow before enabling it:
+## Site installation and updates are a separate gate
 
-1. Use Composer Patches 2 in the site's root project. It must be available
-   during the production build, including builds using `--no-dev`.
-2. Copy the needed patch and its expanded definition from this directory into
-   the site's patch tree. Merge the definition into its existing patch file;
-   preserve other patches and adjust only the local URL. Keep the checksum and
-   depth. Do not replace an existing patch configuration automatically.
-3. Use `extra.composer-patches.patches-file` (the Composer Patches 2 namespace),
-   then `composer patches-relock` and `composer patches-repatch`. Commit the
-   root Composer lock and patch lock through the site's normal workflow.
-4. Verify the actual installed code, not just the patch lock. In this source
-   checkout, `php scripts/check-compatibility-patches.php /path/to/test-project`
-   verifies checksums, locks and installed signatures. Run the integration
-   tests and normal site checks before deployment.
+These patches establish CI runtime coverage only. They are not a complete
+Drupal 12 site installation or upgrade recipe. Kernel tests enable modules
+without the normal installer compatibility check. The Config Split excerpt
+and unpatched Config Ignore still have module `core_version_requirement`
+metadata excluding Drupal 12. Composer Lenient only relaxes Composer metadata;
+it does not change Drupal's module install/update requirements. Therefore
+Config Split 2.0.2 and Config Ignore 3.4 cannot pass those Drupal 12 checks with
+this CI recipe alone. Key's complete upstream patch includes its module
+metadata change.
 
-Do not patch customer sites as an inference from this CI setup. Remove the
-patch and lenient exception only after updating to an upstream version that
-contains the fix and rerunning the complete matrix. A new version that makes
-the patch unnecessary should fail application until that deliberate update.
+A Drupal 12 site using these optional modules needs compatible upstream
+releases, or a separately reviewed complete upstream compatibility change
+covering runtime code and install/update metadata through its normal workflow.
+Do not bypass Drupal's installer requirements or treat a successful Kernel run
+as proof that site updates work. The connector's own Drupal 12 support remains
+covered by the matrix; no optional integration is required to use it.
+
+If a site explicitly adopts an upstream patch through an established workflow:
+
+1. Scope Composer Lenient, where still necessary, only to the incompatible
+   Composer constraints of the packages actually used by that site. The CI
+   allow-list is `drupal/config_ignore`, `drupal/config_split`, `drupal/key`.
+   An upstream patch does not itself change repository Composer metadata.
+2. Use Composer Patches 2 in the site's root project, available during the
+   production build including `--no-dev` builds. Merge relevant definitions
+   into the existing patch configuration; preserve unrelated patches, hashes
+   and depth, adjusting local URLs as needed. Do not replace a site's patch
+   configuration or adopt these runtime excerpts automatically.
+3. Use `extra.composer-patches.patches-file` (the version 2 namespace), then
+   `composer patches-relock` and `composer patches-repatch`. Commit both locks
+   through the normal site workflow. Verify the actual installed code, module
+   metadata, install/update paths and site tests before deployment.
+
+`php scripts/check-compatibility-patches.php /path/to/test-project` is a CI
+scaffold verifier only: it expects both pinned integrations under
+`web/modules/contrib/`. It does not support arbitrary site layouts or partial
+patch adoption, and is not shipped as a site administration command.
+
+Do not patch customer sites as an inference from this CI setup. Remove patches
+and lenient exceptions only after updating to upstream versions containing the
+fixes and rerunning the complete matrix. A new version making a patch
+unnecessary should fail application until that deliberate update.
