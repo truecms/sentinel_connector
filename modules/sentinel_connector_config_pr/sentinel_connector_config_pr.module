@@ -6,6 +6,7 @@
  */
 
 use Drupal\sentinel_connector_config_pr\ConfigPrRunner;
+use Drupal\sentinel_connector_config_pr\PullRequestTracker;
 
 /**
  * Implements hook_cron().
@@ -25,5 +26,20 @@ function sentinel_connector_config_pr_cron(): void {
     catch (\Throwable) {
       // Logging must not abort the remaining cron hooks.
     }
+  }
+}
+
+/**
+ * Implements hook_sentinel_connector_config_drift_alter().
+ *
+ * Adds the open configuration pull request to the drift report. It is read
+ * from State only, so building the report never calls the Git host.
+ *
+ * @phpstan-param array<string, mixed> $drift
+ */
+function sentinel_connector_config_pr_sentinel_connector_config_drift_alter(array &$drift): void {
+  $pull = \Drupal::service(PullRequestTracker::class)->openPullRequest();
+  if ($pull !== NULL && preg_match('#^https?://#', $pull['url'])) {
+    $drift['export_pull_request'] = $pull;
   }
 }

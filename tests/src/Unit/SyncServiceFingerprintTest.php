@@ -137,13 +137,24 @@ class SyncServiceFingerprintTest extends TestCase {
       'connector version' => [fn (self $t) => $t->payload['connector_version'] = '9.9.9'],
       'web server version' => [fn (self $t) => $t->payload['platform']['web_server']['version'] = '1.26.0'],
       'database version' => [fn (self $t) => $t->payload['platform']['database']['version'] = '10.11.7-MariaDB'],
+      'drift object added' => [
+        fn (self $t) => $t->payload['config_drift']['objects'][] = [
+          'name' => 'views.view.content',
+          'collection' => '',
+          'change' => 'create',
+        ],
+      ],
+      'drift cleared' => [fn (self $t) => $t->payload['config_drift']['objects'] = []],
+      'drift change type' => [fn (self $t) => $t->payload['config_drift']['objects'][0]['change'] = 'delete'],
+      'drift status' => [fn (self $t) => $t->payload['config_drift']['status'] = 'unavailable'],
+      'config_pr enabled' => [fn (self $t) => $t->payload['config_drift']['config_pr_enabled'] = TRUE],
       'site name' => [fn (self $t) => $t->siteName = 'Renamed'],
       'api base url' => [fn (self $t) => $t->apiBaseUrl = 'https://sentinel.example.org'],
     ];
   }
 
   /**
-   * The IP address, PHP and OS parts, list order and a URL slash are no change.
+   * The IP address, PHP, OS, drift time, list order and URL slash: no change.
    */
   public function testIpAddressAndOrderAreIgnored(): void {
     $this->responses = [SyncResult::success(200, 'ok')];
@@ -154,11 +165,110 @@ class SyncServiceFingerprintTest extends TestCase {
     // Drush runs the command-line PHP, possibly in another container.
     $this->payload['platform']['php'] = ['version' => '8.4.1', 'sapi' => 'cli'];
     $this->payload['platform']['os']['release'] = '13';
+    $this->payload['config_drift']['generated_at'] = '2026-11-03T00:00:00Z';
     $this->apiBaseUrl .= '/';
     $this->payload['modules'] = array_reverse($this->payload['modules']);
     $this->payload['modules'][0] = array_reverse($this->payload['modules'][0], TRUE);
 
     $this->assertFalse($service->hasInventoryChanged());
+  }
+
+  /**
+   * A report cut short counts by its status, not by what it covered.
+   */
+  public function testIncompleteDriftIsStable(): void {
+    $this->payload['config_drift'] = [
+      'status' => 'incomplete',
+      'reason' => 'time_budget',
+    ] + $this->payload['config_drift'];
+    $this->responses = [SyncResult::success(200, 'ok')];
+    $service = $this->service();
+    $service->sync();
+
+    $this->payload['config_drift']['objects'][] = [
+      'name' => 'views.view.content',
+      'collection' => '',
+      'change' => 'create',
+    ];
+    $this->payload['config_drift']['total'] = 2;
+    $this->assertFalse($service->hasInventoryChanged());
+
+    $this->payload['config_drift']['status'] = 'complete';
+    $this->payload['config_drift']['reason'] = NULL;
+    $this->assertTrue($service->hasInventoryChanged());
+  }
+
+  /**
+   * A comparison that failed or was cut short counts as the last report.
+   *
+   * @param array<string, mixed> $failed
+   *   The drift block of the later check.
+   *
+   * @dataProvider transientDrift
+   */
+  public function testTransientDriftKeepsLastReport(array $failed): void {
+    $this->responses = [SyncResult::success(200, 'ok')];
+    $service = $this->service();
+    $service->sync();
+
+    $this->payload['config_drift'] = $failed + $this->payload['config_drift'];
+    $this->assertFalse($service->hasInventoryChanged());
+
+    $this->payload['config_drift']['config_pr_enabled'] = TRUE;
+    $this->assertTrue($service->hasInventoryChanged());
+  }
+
+  /**
+   * A failed report that was sent is corrected once the comparison recovers.
+   *
+   * @param array<string, mixed> $failed
+   *   The drift block of the push sent while the comparison failed.
+   *
+   * @dataProvider transientDrift
+   */
+  public function testSentTransientDriftIsCorrected(array $failed): void {
+    $this->responses = [SyncResult::success(200, 'ok'), SyncResult::success(200, 'ok')];
+    $service = $this->service();
+    $service->sync();
+    $complete = $this->payload['config_drift'];
+
+    // A manual push, or the daily resend, goes out while comparing fails.
+    $this->payload['config_drift'] = $failed + $complete;
+    $service->sync();
+    $this->assertFalse($service->hasInventoryChanged());
+
+    $this->payload['config_drift'] = $complete;
+    $this->assertTrue($service->hasInventoryChanged());
+  }
+
+  /**
+   * Drift blocks of a comparison that failed for a passing reason.
+   *
+   * @return array<string, array{array<string, mixed>}>
+   *   Drift block parts keyed by case.
+   */
+  public static function transientDrift(): array {
+    return [
+      'busy lock or error' => [['status' => 'unavailable', 'reason' => 'error', 'total' => 0, 'objects' => []]],
+      'time budget' => [['status' => 'incomplete', 'reason' => 'time_budget', 'total' => 0, 'objects' => []]],
+    ];
+  }
+
+  /**
+   * A drift report that lasts, such as a missing sync directory, is a change.
+   */
+  public function testLastingDriftStatusCounts(): void {
+    $this->responses = [SyncResult::success(200, 'ok')];
+    $service = $this->service();
+    $service->sync();
+
+    $this->payload['config_drift'] = [
+      'status' => 'unavailable',
+      'reason' => 'sync_directory_missing',
+      'total' => 0,
+      'objects' => [],
+    ] + $this->payload['config_drift'];
+    $this->assertTrue($service->hasInventoryChanged());
   }
 
   /**
@@ -251,7 +361,16 @@ class SyncServiceFingerprintTest extends TestCase {
       'full_sync' => TRUE,
       'inventory_scope' => 'all',
       'connector_version' => '0.3.0',
-      'schema_version' => 2,
+      'schema_version' => 3,
+      'config_drift' => [
+        'status' => 'complete',
+        'reason' => NULL,
+        'generated_at' => '2026-11-02T03:04:05Z',
+        'total' => 1,
+        'config_pr_enabled' => FALSE,
+        'truncated' => FALSE,
+        'objects' => [['name' => 'system.site', 'collection' => '', 'change' => 'update']],
+      ],
       'platform' => [
         'php' => ['version' => '8.4.0', 'sapi' => 'fpm-fcgi'],
         'web_server' => ['software' => 'nginx', 'version' => '1.24.0', 'raw' => 'nginx/1.24.0'],
