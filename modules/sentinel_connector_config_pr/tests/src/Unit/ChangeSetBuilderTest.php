@@ -15,7 +15,6 @@ use Drupal\Tests\UnitTestCase;
  *
  * @group sentinel_connector
  */
-#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
 #[Group('sentinel_connector')]
 class ChangeSetBuilderTest extends UnitTestCase {
 
@@ -84,7 +83,7 @@ class ChangeSetBuilderTest extends UnitTestCase {
    * A builder whose export storage manager returns the given storage.
    */
   protected function builder(StorageInterface $export, StorageInterface $sync): ChangeSetBuilder {
-    $manager = $this->createMock(StorageManagerInterface::class);
+    $manager = $this->createStub(StorageManagerInterface::class);
     $manager->method('getStorage')->willReturn($export);
     return new ChangeSetBuilder($manager, $sync);
   }

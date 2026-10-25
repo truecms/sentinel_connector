@@ -106,7 +106,9 @@ customers from the older bulk-upgrade checklist.
 For each approved canary only, use its supported deployment workflow:
 
 1. Require `drupal/sentinel_connector:^1.3`, run `drush updb`, export and commit
-   `report_config_drift: true`, deploy, then run
+   `report_config_drift: true` after reviewing the whole export diff and staging
+   only the intended `sentinel_connector.settings.yml` change. Leave unrelated
+   drift out of the release. Deploy, then run
    `drush sentinel_connector:deploy` last. Retain production-only overrides,
    API URL, site UUID and API key.
 2. Check a fresh receiver-stored payload for that site and request time:

@@ -40,12 +40,18 @@ refuse 'The proposed release tag must match CONNECTOR_VERSION.' 9.9.9
 replace "$fixture/CHANGELOG.md" "## $version - " '## 9.9.9 - '
 refuse 'The first changelog release must match CONNECTOR_VERSION.'
 cp "$root/CHANGELOG.md" "$fixture/CHANGELOG.md"
+php -r '$p = $argv[1]; file_put_contents($p, "## 9.9.9 - TBD\n" . file_get_contents($p));' "$fixture/CHANGELOG.md"
+refuse 'The first changelog release must match CONNECTOR_VERSION.'
+cp "$root/CHANGELOG.md" "$fixture/CHANGELOG.md"
 replace "$fixture/src/PayloadBuilder.php" "CONNECTOR_VERSION = '$version'" "CONNECTOR_VERSION = '1.2.0'"
 replace "$fixture/CHANGELOG.md" "## $version - " '## 1.2.0 - '
 replace "$fixture/README.md" "## Upgrading to $version" '## Upgrading to 1.2.0'
 refuse 'Payload v3 requires connector 1.3.0 or later; preserve published 1.2.0.'
 cp "$root/src/PayloadBuilder.php" "$fixture/src/PayloadBuilder.php"
 cp "$root/CHANGELOG.md" "$fixture/CHANGELOG.md"
+cp "$root/README.md" "$fixture/README.md"
+replace "$fixture/README.md" "## Upgrading to $version" '## Upgrading'
+refuse 'README upgrade instructions must identify the current release.'
 cp "$root/README.md" "$fixture/README.md"
 replace "$fixture/src/PayloadBuilder.php" 'SCHEMA_VERSION = 3' 'SCHEMA_VERSION = 4'
 refuse 'The payload contract fixture must match SCHEMA_VERSION.'

@@ -14,7 +14,7 @@ use Drupal\sentinel_connector_config_pr\PullRequestTracker;
  * @group sentinel_connector_config_pr
  */
 #[RunTestsInSeparateProcesses]
-#[Group('sentinel_connector')]
+#[Group('sentinel_connector_config_pr')]
 class DriftReportTest extends KernelTestBase {
 
   /**

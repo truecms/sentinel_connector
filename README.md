@@ -55,8 +55,10 @@ drush updb
 drush cex
 ```
 
-Update `10003` enables `report_config_drift`; commit the exported setting so a
-later configuration import preserves it. Keep the optional submodule disabled
+Update `10003` enables `report_config_drift`. Review the complete export diff
+and commit only the intended change in `sentinel_connector.settings.yml`;
+leave unrelated existing drift out of the release. This preserves the setting
+on a later configuration import. Keep the optional submodule disabled
 unless that site's setup has been separately agreed. Run
 `drush sentinel_connector:deploy` last in the site's normal deployment, then
 verify a fresh accepted receiver-side payload contains `schema_version: 3` and

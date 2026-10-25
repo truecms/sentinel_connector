@@ -3,6 +3,7 @@ name: Test
 on:
   push:
     branches: [main]
+    tags: ['*.*.*']
   pull_request:
 
 jobs:
@@ -16,7 +17,11 @@ jobs:
           tools: composer:v2
       - name: Release consistency
         run: |
-          php scripts/check-release.php
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            php scripts/check-release.php "$GITHUB_REF_NAME"
+          else
+            php scripts/check-release.php
+          fi
           bash tests/release/check-release.sh
       - name: Install Drupal core-dev scaffold
         run: |
@@ -43,9 +48,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { drupal: '^10.3', php: '8.3' }
-          - { drupal: '^11', php: '8.4' }
-          - { drupal: '^12@beta', php: '8.5' }
+          - { drupal: '^10.3', php: '8.3', lenient: false }
+          - { drupal: '^11', php: '8.4', lenient: false }
+          - { drupal: '^12@beta', php: '8.5', lenient: true }
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -66,7 +71,7 @@ jobs:
           # Test-only Drupal 12 compatibility: these upstream constraints stop at
           # Drupal 11. Keep this allow-list confined to this disposable scaffold.
           # See Drupal.org's "Using the Lenient Composer Plugin" testing guide.
-          if [[ '${{ matrix.drupal }}' == '^12@beta' ]]; then
+          if [[ '${{ matrix.lenient }}' == 'true' ]]; then
             composer config --no-plugins allow-plugins.mglaman/composer-drupal-lenient true
             composer require --dev mglaman/composer-drupal-lenient:^2 --no-interaction
             composer config --merge --json extra.drupal-lenient.allowed-list '["drupal/config_ignore", "drupal/config_split", "drupal/key"]'

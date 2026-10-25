@@ -15,7 +15,8 @@ $schema = json_decode(file_get_contents($root . '/tests/fixtures/drupal_sync.sch
 $errors = [];
 preg_match("/CONNECTOR_VERSION = '([0-9]+\\.[0-9]+\\.[0-9]+)'/", $source, $versionMatch);
 preg_match('/SCHEMA_VERSION = ([0-9]+)/', $source, $schemaMatch);
-preg_match('/^## ([0-9]+\\.[0-9]+\\.[0-9]+) - (Unreleased|[0-9]{4}-[0-9]{2}-[0-9]{2})$/m', $changelog, $heading);
+preg_match('/^## ([^\r\n]+)\r?$/m', $changelog, $firstHeading);
+preg_match('/^([0-9]+\\.[0-9]+\\.[0-9]+) - (Unreleased|[0-9]{4}-[0-9]{2}-[0-9]{2})$/D', $firstHeading[1] ?? '', $heading);
 $version = $versionMatch[1] ?? '';
 $payloadVersion = (int) ($schemaMatch[1] ?? 0);
 if (!$version || ($heading[1] ?? '') !== $version) {

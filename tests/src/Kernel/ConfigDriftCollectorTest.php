@@ -25,7 +25,6 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  *
  * @group sentinel_connector
  */
-#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
 #[RunTestsInSeparateProcesses]
 #[Group('sentinel_connector')]
 class ConfigDriftCollectorTest extends KernelTestBase {
@@ -198,7 +197,7 @@ class ConfigDriftCollectorTest extends KernelTestBase {
     // collection takes five checks after the start, so the budget runs out
     // before the language collection.
     $clock = 0.0;
-    $time = $this->createMock(TimeInterface::class);
+    $time = $this->createStub(TimeInterface::class);
     $time->method('getCurrentMicroTime')->willReturnCallback(function () use (&$clock): float {
       return $clock++;
     });
@@ -362,7 +361,7 @@ class ConfigDriftCollectorTest extends KernelTestBase {
    * A failing comparison is reported as an error, and never thrown.
    */
   public function testCollectorError(): void {
-    $manager = $this->createMock('Drupal\Core\Config\StorageManagerInterface');
+    $manager = $this->createStub('Drupal\Core\Config\StorageManagerInterface');
     $manager->method('getStorage')->willThrowException(new \RuntimeException('Lock not acquired.'));
 
     $drift = $this->collector(exportManager: $manager)->collect();
@@ -389,7 +388,7 @@ class ConfigDriftCollectorTest extends KernelTestBase {
   public function testConfigPrFlag(): void {
     $this->assertFalse($this->collect()['config_pr_enabled']);
 
-    $handler = $this->createMock(ModuleHandlerInterface::class);
+    $handler = $this->createStub(ModuleHandlerInterface::class);
     $handler->method('moduleExists')->willReturnCallback(fn (string $module): bool => $module === 'config_pr');
     $this->assertTrue($this->collector(moduleHandler: $handler)->collect()['config_pr_enabled']);
 
