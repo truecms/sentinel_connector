@@ -180,6 +180,22 @@ class HostHttpFixtureTest extends KernelTestBase {
   }
 
   /**
+   * A host URL set in settings.php reaches config_pr as well.
+   */
+  public function testSettingsPhpHostUrl(): void {
+    $this->configure('github', '');
+    $GLOBALS['config']['sentinel_connector_config_pr.settings']['api_base_url'] = 'https://github.example.com';
+    $this->container->get('config.factory')->reset();
+    $client = ReplayHttpClient::$current = ReplayHttpClient::fromFile(__DIR__ . '/../../fixtures/github_create.json', '/api/v3');
+
+    $result = $this->container->get(ConfigPrRunner::class)->run(FALSE, TRUE);
+
+    unset($GLOBALS['config']['sentinel_connector_config_pr.settings']);
+    $this->assertSame('created', $result->status, $result->message . "\n" . $this->logger->text());
+    $this->assertRequests($client, 'github.example.com');
+  }
+
+  /**
    * Every request went to the expected host with the token; no log has it.
    */
   protected function assertRequests(ReplayHttpClient $client, string $host): void {
