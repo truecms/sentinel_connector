@@ -207,10 +207,10 @@ class ConfigDriftCollector {
     foreach ($iterator as $file) {
       // Core's storage leaves out a YAML file it cannot read, which would
       // report the object as created in production, or not at all. Other
-      // files are never read.
+      // files, hidden ones included, are never read.
       $unreadable = $file->isDir()
         ? !$file->isReadable() || !$file->isExecutable()
-        : $file->getExtension() === 'yml' && !$file->isReadable();
+        : $file->getExtension() === 'yml' && !str_starts_with($file->getFilename(), '.') && !$file->isReadable();
       if ($unreadable) {
         return FALSE;
       }
