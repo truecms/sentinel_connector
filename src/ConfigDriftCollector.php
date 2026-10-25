@@ -135,7 +135,8 @@ class ConfigDriftCollector {
     }
     // The export and the first comparison step cannot be stopped part way.
     // A web request's time limit must not end the push with a fatal error.
-    Environment::setTimeLimit(60);
+    // The limit is only raised: cron sets a longer one for the other hooks.
+    Environment::setTimeLimit(max(60, (int) ini_get('max_execution_time')));
     try {
       $comparer = new ConfigDriftStorageComparer($this->exportStorageManager->getStorage(), $sync);
       $done = $comparer->createChangelistWithin($expired);

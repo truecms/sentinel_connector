@@ -119,19 +119,17 @@ class SyncService {
   protected ?string $pendingFingerprint = NULL;
 
   /**
-   * State key: the drift report counted in the last accepted fingerprint.
+   * State key: hash of the drift report in the last accepted fingerprint.
    *
-   * Names and change types only. A report that failed for a passing reason
-   * counts as this one, so it does not push twice.
+   * A report that failed for a passing reason counts as this one, so it does
+   * not push twice. A hash, because state is cached for every request.
    */
   public const STATE_LAST_DRIFT = 'sentinel_connector.last_drift';
 
   /**
-   * The drift report counted in the fingerprint of the push in progress.
-   *
-   * @var array<string, mixed>|null
+   * Hash of the drift report in the fingerprint of the push in progress.
    */
-  protected ?array $pendingDrift = NULL;
+  protected ?string $pendingDrift = NULL;
 
   /**
    * Constructs the sync service.
@@ -302,7 +300,7 @@ class SyncService {
 
     $payload = $this->buildPayload();
     $this->pendingFingerprint = $this->fingerprint($payload);
-    $this->pendingDrift = $this->driftPart($payload);
+    $this->pendingDrift = $this->driftPart($payload)['report'] ?? NULL;
 
     $result = $this->client->sync($baseUrl, $uuid, $apiKey, $payload);
     return $result;
@@ -368,25 +366,25 @@ class SyncService {
    * @param array<string, mixed> $payload
    *   The payload sent to Sentinel.
    *
-   * @return array<string, mixed>|null
-   *   The drift report to fingerprint, or NULL when the payload has none.
+   * @return array{report: string, config_pr_enabled: bool}|null
+   *   A hash of the report and the config_pr flag, which is known even when
+   *   the comparison failed; NULL when the payload has no drift report.
    */
   protected function driftPart(array $payload): ?array {
     $drift = $payload['config_drift'] ?? NULL;
     if (!is_array($drift)) {
       return NULL;
     }
-    unset($drift['generated_at']);
+    $configPr = (bool) ($drift['config_pr_enabled'] ?? FALSE);
     $transient = ($drift['status'] ?? NULL) === 'incomplete' || ($drift['reason'] ?? NULL) === 'error';
-    if ($transient) {
-      $last = $this->state->get(self::STATE_LAST_DRIFT);
-      $last = is_array($last) ? $last : array_intersect_key($drift, array_flip(['status', 'reason']));
-      // Whether config_pr is enabled is known even when the comparison failed.
-      $last['config_pr_enabled'] = $drift['config_pr_enabled'] ?? FALSE;
-      $drift = $last;
+    $last = $transient ? $this->state->get(self::STATE_LAST_DRIFT) : NULL;
+    if (!is_string($last) || $last === '') {
+      $report = $transient ? array_intersect_key($drift, array_flip(['status', 'reason'])) : $drift;
+      unset($report['generated_at'], $report['config_pr_enabled']);
+      ksort($report);
+      $last = hash('sha256', json_encode($report, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
     }
-    ksort($drift);
-    return $drift;
+    return ['report' => $last, 'config_pr_enabled' => $configPr];
   }
 
   /**
