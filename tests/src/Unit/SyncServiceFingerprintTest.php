@@ -214,6 +214,7 @@ class SyncServiceFingerprintTest extends TestCase {
    *
    * @dataProvider transientDrift
    */
+  #[DataProvider('transientDrift')]
   public function testTransientDriftKeepsLastReport(array $failed): void {
     $this->responses = [SyncResult::success(200, 'ok')];
     $service = $this->service();
@@ -234,6 +235,7 @@ class SyncServiceFingerprintTest extends TestCase {
    *
    * @dataProvider transientDrift
    */
+  #[DataProvider('transientDrift')]
   public function testSentTransientDriftIsCorrected(array $failed): void {
     $this->responses = [SyncResult::success(200, 'ok'), SyncResult::success(200, 'ok')];
     $service = $this->service();
@@ -369,7 +371,7 @@ class SyncServiceFingerprintTest extends TestCase {
       ],
       'full_sync' => TRUE,
       'inventory_scope' => 'all',
-      'connector_version' => '0.3.0',
+      'connector_version' => PayloadBuilder::CONNECTOR_VERSION,
       'schema_version' => 3,
       'config_drift' => [
         'status' => 'complete',

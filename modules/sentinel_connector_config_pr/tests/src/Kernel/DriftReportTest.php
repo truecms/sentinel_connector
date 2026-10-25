@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector_config_pr\Kernel;
 
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\ConfigDriftCollector;
 use Drupal\sentinel_connector_config_pr\PullRequestTracker;
@@ -11,6 +13,8 @@ use Drupal\sentinel_connector_config_pr\PullRequestTracker;
  *
  * @group sentinel_connector_config_pr
  */
+#[RunTestsInSeparateProcesses]
+#[Group('sentinel_connector_config_pr')]
 class DriftReportTest extends KernelTestBase {
 
   /**

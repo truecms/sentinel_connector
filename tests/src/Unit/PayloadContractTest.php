@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\sentinel_connector\PayloadBuilder;
@@ -68,6 +69,7 @@ class PayloadContractTest extends TestCase {
    *
    * @dataProvider validDrift
    */
+  #[DataProvider('validDrift')]
   public function testDriftBlocksMatchSchema(array $drift): void {
     $this->assertSame([], $this->errors($this->payload($drift)));
   }
@@ -99,6 +101,7 @@ class PayloadContractTest extends TestCase {
    *
    * @dataProvider invalidDrift
    */
+  #[DataProvider('invalidDrift')]
   public function testDriftSchemaRefusesExtraData(array $drift): void {
     $this->assertNotSame([], $this->errors($this->payload($drift)));
   }

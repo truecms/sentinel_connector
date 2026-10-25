@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector_config_pr\Kernel;
 
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector_config_pr\ConfigPrRunner;
 use Drupal\sentinel_connector_config_pr\Host\HostFactory;
@@ -17,6 +18,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  * @group sentinel_connector
  */
 #[RunTestsInSeparateProcesses]
+#[Group('sentinel_connector')]
 class ConfigPrRunnerTest extends KernelTestBase {
 
   /**
