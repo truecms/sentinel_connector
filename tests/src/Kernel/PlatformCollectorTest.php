@@ -203,7 +203,7 @@ class PlatformCollectorTest extends KernelTestBase {
    * MariaDB is recognised from the version string.
    */
   public function testDatabaseMariaDb(): void {
-    $connection = $this->createMock(Connection::class);
+    $connection = $this->createStub(Connection::class);
     $connection->method('driver')->willReturn('mysql');
     $connection->method('version')->willReturn('10.11.6-MariaDB-1:10.11.6+maria~deb12');
     $this->assertSame([
@@ -212,7 +212,7 @@ class PlatformCollectorTest extends KernelTestBase {
       'version' => '10.11.6-MariaDB-1:10.11.6+maria~deb12',
     ], $this->collector([], $connection)->database());
 
-    $connection = $this->createMock(Connection::class);
+    $connection = $this->createStub(Connection::class);
     $connection->method('driver')->willReturn('pgsql');
     $connection->method('version')->willReturn('16.4');
     $this->assertSame([
@@ -226,12 +226,12 @@ class PlatformCollectorTest extends KernelTestBase {
    * A database that cannot answer is left out instead of failing.
    */
   public function testDatabaseMissing(): void {
-    $connection = $this->createMock(Connection::class);
+    $connection = $this->createStub(Connection::class);
     $connection->method('driver')->willThrowException(new \RuntimeException('gone'));
     $connection->method('version')->willThrowException(new \RuntimeException('gone'));
     $this->assertSame([], $this->collector([], $connection)->database());
 
-    $connection = $this->createMock(Connection::class);
+    $connection = $this->createStub(Connection::class);
     $connection->method('driver')->willReturn('mysql');
     $connection->method('version')->willThrowException(new \RuntimeException('gone'));
     $this->assertSame(['driver' => 'mysql', 'product' => 'mysql'], $this->collector([], $connection)->database());
@@ -260,7 +260,7 @@ class PlatformCollectorTest extends KernelTestBase {
    * Parts that cannot be read are left out of the block.
    */
   public function testCollectLeavesOutUnknownParts(): void {
-    $connection = $this->createMock(Connection::class);
+    $connection = $this->createStub(Connection::class);
     $connection->method('driver')->willThrowException(new \RuntimeException('gone'));
     $connection->method('version')->willThrowException(new \RuntimeException('gone'));
     $this->pushRequest(NULL);
