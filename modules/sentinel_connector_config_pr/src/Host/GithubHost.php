@@ -84,6 +84,22 @@ class GithubHost extends ConfigPrHost {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function closedPullRequestHead(int $number): ?string {
+    try {
+      $pull = $this->client()->pullRequest()->show($this->owner, $this->name, $number);
+    }
+    catch (\Throwable $error) {
+      if (static::isNotFound($error)) {
+        return NULL;
+      }
+      throw $error;
+    }
+    return ($pull['state'] ?? 'open') !== 'open' && isset($pull['head']['sha']) ? (string) $pull['head']['sha'] : NULL;
+  }
+
+  /**
    * The controller's authenticated client.
    */
   protected function client(): Client {

@@ -174,7 +174,7 @@ class HostHttpFixtureTest extends KernelTestBase {
     $result = $this->container->get(ConfigPrRunner::class)->run(FALSE, TRUE);
 
     $this->assertSame('failed', $result->status);
-    $this->assertStringContainsString('was not created by this module', $this->logger->text());
+    $this->assertStringContainsString('not opened by this module', $this->logger->text());
     $methods = array_map(static fn ($request): string => $request->getMethod(), $client->requests);
     $this->assertSame([], array_diff($methods, ['GET', 'HEAD']));
   }

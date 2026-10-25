@@ -196,6 +196,22 @@ class ConfigPrRunnerTest extends KernelTestBase {
   }
 
   /**
+   * A branch updated before its pull request was merged starts again.
+   */
+  public function testBranchUpdatedBeforeMergeStartsAgain(): void {
+    $this->config('system.site')->set('slogan', 'Drifted')->save();
+    $this->assertSame('created', $this->runner()->run(FALSE, TRUE)->status);
+    // "Update branch" moves the head, then the pull request is merged there.
+    $this->host->branches['sentinel/config-export']['merged-from-main.txt'] = "x\n";
+    $this->host->pulls[1]['open'] = FALSE;
+    $this->host->pulls[1]['head'] = (string) $this->host->branchHead('sentinel/config-export');
+
+    $this->assertSame('created', $this->runner()->run(FALSE, TRUE)->status);
+    $this->assertContains('deleteBranch', $this->host->calls);
+    $this->assertCount(2, $this->host->pulls);
+  }
+
+  /**
    * An open pull request this module did not open is not taken over.
    */
   public function testForeignPullRequestIsRefused(): void {

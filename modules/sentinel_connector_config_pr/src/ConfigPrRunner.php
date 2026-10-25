@@ -200,10 +200,21 @@ class ConfigPrRunner {
       // commit this module left it at in this repository, is ever written to
       // or deleted.
       $identity = $this->branchIdentity($branch);
-      $owned = ($pull !== NULL && $pull['url'] === ($this->tracker->get()['url'] ?? NULL))
-        || ($pull === NULL && $this->tracker->ownsBranch($identity, $head));
-      if (($head !== NULL || $pull !== NULL) && !$owned) {
-        throw new HostException('The export branch exists but was not created by this module. Choose another export branch.');
+      $known = $this->tracker->get();
+      $owned = $pull !== NULL
+        ? $pull['url'] === ($known['url'] ?? NULL)
+        : $this->tracker->ownsBranch($identity, $head);
+      if (!$owned && $pull === NULL && $head !== NULL && $known !== NULL && $this->tracker->ownsBranch($identity, $this->tracker->ownedHead())) {
+        // "Update branch", a rebase or a reviewer's push moved the branch
+        // before its pull request was merged or closed. The branch is still
+        // this module's if it is where that pull request ended.
+        $owned = $host->closedPullRequestHead($known['number']) === $head;
+      }
+      if ($pull !== NULL && !$owned) {
+        throw new HostException('An open pull request from the export branch was not opened by this module. Choose another export branch.');
+      }
+      if ($head !== NULL && !$owned) {
+        throw new HostException('The export branch was not created by this module, or changed after its pull request closed. Delete the branch or choose another export branch.');
       }
       if ($pull !== NULL && $pull['base'] !== $base) {
         throw new HostException('The open pull request from the export branch targets another base branch. Close it, or set that base branch.');

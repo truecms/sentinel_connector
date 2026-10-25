@@ -163,6 +163,14 @@ class PullRequestTracker {
   }
 
   /**
+   * The head commit this module last left the export branch at, or NULL.
+   */
+  public function ownedHead(): ?string {
+    $owned = $this->state->get(self::STATE_BRANCH);
+    return is_array($owned) && is_string($owned['head'] ?? NULL) ? $owned['head'] : NULL;
+  }
+
+  /**
    * Forgets the export branch, after this module deleted it.
    */
   public function clearOwnedBranch(): void {

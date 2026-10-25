@@ -87,6 +87,22 @@ class GitlabHost extends ConfigPrHost {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function closedPullRequestHead(int $number): ?string {
+    try {
+      $request = $this->client()->mergeRequests()->show($this->controller->getRepoId(), $number);
+    }
+    catch (\Throwable $error) {
+      if (static::isNotFound($error)) {
+        return NULL;
+      }
+      throw $error;
+    }
+    return in_array($request['state'] ?? '', ['merged', 'closed'], TRUE) && isset($request['sha']) ? (string) $request['sha'] : NULL;
+  }
+
+  /**
    * The controller's authenticated client.
    */
   protected function client(): Client {

@@ -59,6 +59,15 @@ interface HostInterface {
   public function findOpenPullRequest(string $branch): ?array;
 
   /**
+   * The last head commit of a pull request that is no longer open.
+   *
+   * @return string|null
+   *   The head commit of a merged or closed pull request, or NULL when it is
+   *   still open or cannot be found.
+   */
+  public function closedPullRequestHead(int $number): ?string;
+
+  /**
    * Opens a pull request.
    *
    * @return array{url: string, number: int}

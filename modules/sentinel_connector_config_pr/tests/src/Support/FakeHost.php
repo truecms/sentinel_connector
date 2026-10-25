@@ -21,7 +21,7 @@ class FakeHost implements HostInterface {
   /**
    * Pull requests by number.
    *
-   * @var array<int, array{branch: string, base: string, url: string, open: bool, title: string}>
+   * @var array<int, array{branch: string, base: string, url: string, open: bool, title: string, head?: string}>
    */
   public array $pulls = [];
 
@@ -131,6 +131,15 @@ class FakeHost implements HostInterface {
       }
     }
     return NULL;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function closedPullRequestHead(int $number): ?string {
+    $this->call(__FUNCTION__);
+    $pull = $this->pulls[$number] ?? NULL;
+    return $pull && !$pull['open'] ? ($pull['head'] ?? NULL) : NULL;
   }
 
   /**
