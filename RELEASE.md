@@ -27,6 +27,21 @@ for this follow-on; the Drupal 12 fixes are already delivered.
   released as 1.2.0. Obtain review on the final immutable head and follow normal
   protected-branch checks before merging the integration PR into `main`.
 
+## Current Drupal 12 upstream blockers
+
+The full suites remain required and currently fail with unpatched stable
+contrib dependencies, even after resolving Composer's core constraints:
+
+- Config Split 2.0.2's `SplitImportExportSubscriber::getSubscribedEvents()`
+  lacks the `array` return type required by Symfony 8.
+- Key 1.21.0's `KeyPluginManager` uses annotation-only discovery, removed in
+  Drupal 12. Settings.php tokens remain an alternative, but do not skip the
+  Key integration tests to claim the optional module is fully verified.
+
+Resolve these through supported upstream releases or explicitly reviewed
+compatibility patches before publication. The lenient test scaffold reveals
+these runtime failures; it does not fix them or make the release ready.
+
 ## Receiver first
 
 The authoritative server plan is

@@ -25,6 +25,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  *
  * @group sentinel_connector
  */
+#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
 #[RunTestsInSeparateProcesses]
 #[Group('sentinel_connector')]
 class ConfigDriftCollectorTest extends KernelTestBase {
