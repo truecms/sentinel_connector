@@ -25,8 +25,10 @@ class HttpDiscoveryTest extends TestCase {
     $this->assertInstanceOf(Client::class, Psr18ClientDiscovery::find());
     $this->assertInstanceOf(HttpFactory::class, Psr17FactoryDiscovery::findRequestFactory());
     $this->assertInstanceOf(HttpFactory::class, Psr17FactoryDiscovery::findStreamFactory());
-    // Construct through normal discovery without making a request.
-    $this->assertInstanceOf(GitlabClient::class, new GitlabClient());
+    // Construct through normal discovery without making a request; the
+    // constructor throws when no HTTP client or factory can be found.
+    new GitlabClient();
+    $this->addToAssertionCount(1);
   }
 
 }
