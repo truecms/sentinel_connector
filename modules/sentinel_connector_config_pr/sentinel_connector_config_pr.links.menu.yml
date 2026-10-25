@@ -1,0 +1,5 @@
+sentinel_connector_config_pr.settings:
+  title: 'Sentinel configuration pull request'
+  description: 'Open a pull request with the configuration that changed on this site.'
+  route_name: sentinel_connector_config_pr.settings
+  parent: system.admin_config_services

@@ -4,3 +4,4 @@ site_url: ''
 site_name: ''
 report_scope: all
 enabled: false
+report_config_drift: true

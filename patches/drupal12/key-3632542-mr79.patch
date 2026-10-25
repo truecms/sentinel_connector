@@ -1,0 +1,1790 @@
+diff --git a/.deprecation-ignore.txt b/.deprecation-ignore.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..9c5ee98d0bee39c23c853a62e4abaa99358273c9
+--- /dev/null
++++ b/.deprecation-ignore.txt
+@@ -0,0 +1,8 @@
++# This file contains patterns to be ignored while testing for use of
++# deprecated code. GitLab CI appends core's .deprecation-ignore.txt to it.
++# See https://www.drupal.org/node/3285162 for more details.
++
++# Return type deprecations in key's own classes. Adding native return types to
++# these extendable classes would break downstream subclasses, so they wait for
++# a new major version of key.
++%Method "[^"]+::[^"]+\(\)" might add "[^"]+" as a native return type declaration in the future\. Do the same in (?:implementation|child class) "Drupal\\key(?:_test)?\\[^"]+" now to avoid errors or add an explicit @return annotation to suppress this message%
+diff --git a/.gitlab-ci.yml b/.gitlab-ci.yml
+index bcaf7e67ed21315f7028f7d1ed3b6a940c9646ce..3f8968f43711401312f2a0365f4c38b8688a20e0 100644
+--- a/.gitlab-ci.yml
++++ b/.gitlab-ci.yml
+@@ -40,3 +40,13 @@ variables:
+   OPT_IN_TEST_NEXT_MINOR: 1
+   OPT_IN_TEST_NEXT_MAJOR: 1
+   OPT_IN_TEST_MAX_PHP: 1
++  # From core 11.5, use the project's deprecation ignore file; CI appends
++  # core's .deprecation-ignore.txt to it.
++  DRUPAL_DEPRECATION_FILTER_CONFIG: '{"projectIgnoreFile":"$CI_PROJECT_DIR/.deprecation-ignore.txt"}'
++
++# The templates run the previous major on its minimum PHP (8.1), whose Debian
++# bullseye images can no longer install packages. Run it on PHP 8.3 instead;
++# the phpstan and phpunit previous-major jobs inherit this.
++composer (previous major):
++  variables:
++    PHP_VERSION: '8.3'
+diff --git a/key.info.yml b/key.info.yml
+index a82890efa5a73bc546a73cd3b5d20eb5aee91a3c..67dd3dbfbcc8ae1ea39fa22c7062ba67708a69f1 100644
+--- a/key.info.yml
++++ b/key.info.yml
+@@ -1,6 +1,6 @@
+ name: Key
+ type: module
+ description: Provides the ability to manage site-wide keys.
+-core_version_requirement: '^9.1 || ^10 || ^11'
++core_version_requirement: ^10.3 || ^11 || ^12
+ package: Security
+ configure: entity.key.collection
+diff --git a/key.install b/key.install
+index f61a25d6c1b254f3c0d8c93599267ae50ce419af..64324afdf141d961cce11bebfcdc745b6af8b2d8 100644
+--- a/key.install
++++ b/key.install
+@@ -5,6 +5,8 @@
+  * Install, update and uninstall functions for the Key module.
+  */
+ 
++use Drupal\Component\Utility\DeprecationHelper;
++
+ /**
+  * Set default value for stripping trailing line breaks.
+  */
+@@ -26,7 +28,7 @@ function key_update_8001() {
+         // Set Strip Line Breaks to FALSE and save the configuration.
+         $settings['strip_line_breaks'] = FALSE;
+         $key->set('key_provider_settings', $settings);
+-        $key->save(TRUE);
++        DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.4.0', fn() => $key->save(), fn() => $key->save(TRUE));
+ 
+         $updated = TRUE;
+       }
+@@ -72,7 +74,7 @@ function key_update_8002() {
+     }
+ 
+     $override->set('config_prefix', $config_prefix);
+-    $override->save(TRUE);
++    DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.4.0', fn() => $override->save(), fn() => $override->save(TRUE));
+   }
+ 
+   if ($updated) {
+diff --git a/phpstan-baseline.neon b/phpstan-baseline.neon
+new file mode 100644
+index 0000000000000000000000000000000000000000..52ea8535870eaf6f489ced74c923394c9e1311d8
+--- /dev/null
++++ b/phpstan-baseline.neon
+@@ -0,0 +1,159 @@
++parameters:
++	ignoreErrors:
++		-
++			message: "#^Attribute class Drupal\\\\Core\\\\Entity\\\\Attribute\\\\ConfigEntityType does not exist\\.$#"
++			count: 1
++			path: src/Entity/Key.php
++
++		-
++			message: "#^Attribute class Drupal\\\\Core\\\\Entity\\\\Attribute\\\\ConfigEntityType does not exist\\.$#"
++			count: 1
++			path: src/Entity/KeyConfigOverride.php
++
++		-
++			message: '#^Call to deprecated function drupal_static\(\)\:#'
++			identifier: function.deprecated
++			count: 1
++			path: src/Entity/Key.php
++
++		-
++			message: '#^Direct injection of entity storage via \$storage is not recommended\. Inject Drupal\\Core\\Entity\\EntityTypeManagerInterface and call getStorage\(\) at the call\-site instead\.$#'
++			identifier: drupal.entityStorageDirectInjection
++			count: 1
++			path: src/Controller/KeyConfigOverrideListBuilder.php
++
++		-
++			message: '#^Direct injection of entity storage via \$storage is not recommended\. Inject Drupal\\Core\\Entity\\EntityTypeManagerInterface and call getStorage\(\) at the call\-site instead\.$#'
++			identifier: drupal.entityStorageDirectInjection
++			count: 1
++			path: src/Controller/KeyListBuilder.php
++
++		-
++			message: '#^Storing entity storage as a class property is not recommended\. Call Drupal\\Core\\Entity\\EntityTypeManagerInterface\:\:getStorage\(\) at the call\-site instead\.$#'
++			identifier: drupal.entityStoragePropertyAssignment
++			count: 1
++			path: src/Form/KeyConfigOverrideAddForm.php
++
++		-
++			message: '#^Direct injection of entity storage via \$storage is not recommended\. Inject Drupal\\Core\\Entity\\EntityTypeManagerInterface and call getStorage\(\) at the call\-site instead\.$#'
++			identifier: drupal.entityStorageDirectInjection
++			count: 1
++			path: src/Form/KeyFormBase.php
++
++		-
++			message: '#^Storing entity storage as a class property is not recommended\. Call Drupal\\Core\\Entity\\EntityTypeManagerInterface\:\:getStorage\(\) at the call\-site instead\.$#'
++			identifier: drupal.entityStoragePropertyAssignment
++			count: 1
++			path: src/Form/KeyFormBase.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\Group does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyAdminTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\RunTestsInSeparateProcesses does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyAdminTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\Group does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyDrushCommandsTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\RunTestsInSeparateProcesses does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyDrushCommandsTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\Group does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyInputTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\RunTestsInSeparateProcesses does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyInputTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\Group does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyNonAdminAccessTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\RunTestsInSeparateProcesses does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyNonAdminAccessTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\Group does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyOverrideAdminTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\RunTestsInSeparateProcesses does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyOverrideAdminTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\Group does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyRepositoryServiceTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\RunTestsInSeparateProcesses does not exist\\.$#"
++			count: 1
++			path: tests/src/Functional/KeyRepositoryServiceTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\Group does not exist\\.$#"
++			count: 1
++			path: tests/src/Kernel/KeyDeprecationTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\IgnoreDeprecations does not exist\\.$#"
++			count: 1
++			path: tests/src/Kernel/KeyDeprecationTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\RunTestsInSeparateProcesses does not exist\\.$#"
++			count: 1
++			path: tests/src/Kernel/KeyDeprecationTest.php
++
++		-
++			message: "#^Call to an undefined method Drupal\\\\Tests\\\\key\\\\Kernel\\\\KeyDeprecationTest\\:\\:expectUserDeprecationMessage\\(\\)\\.$#"
++			count: 3
++			path: tests/src/Kernel/KeyDeprecationTest.php
++
++		-
++			message: '#^Call to an undefined method Drupal\\Tests\\key\\Kernel\\KeyDeprecationTest\:\:expectDeprecation\(\)\.$#'
++			identifier: method.notFound
++			count: 3
++			path: tests/src/Kernel/KeyDeprecationTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\Group does not exist\\.$#"
++			count: 1
++			path: tests/src/Kernel/KeyMultiValueTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\RunTestsInSeparateProcesses does not exist\\.$#"
++			count: 1
++			path: tests/src/Kernel/KeyMultiValueTest.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\Group does not exist\\.$#"
++			count: 1
++			path: tests/src/Unit/Entity/KeyEntityTest.php
++
++		-
++			message: '#^Storing entity storage as a class property is not recommended\. Call Drupal\\Core\\Entity\\EntityTypeManagerInterface\:\:getStorage\(\) at the call\-site instead\.$#'
++			identifier: drupal.entityStoragePropertyAssignment
++			count: 1
++			path: tests/src/Unit/KeyTestBase.php
++
++		-
++			message: "#^Attribute class PHPUnit\\\\Framework\\\\Attributes\\\\Group does not exist\\.$#"
++			count: 1
++			path: tests/src/Unit/Plugin/KeyProvider/StateKeyProviderTest.php
+diff --git a/src/Attribute/KeyInput.php b/src/Attribute/KeyInput.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..b8eb8de7e8d06f7d63ec473ae420d8ada407d1bd
+--- /dev/null
++++ b/src/Attribute/KeyInput.php
+@@ -0,0 +1,40 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Drupal\key\Attribute;
++
++use Drupal\Component\Plugin\Attribute\Plugin;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++
++/**
++ * Defines a key input attribute object.
++ *
++ * Plugins of this type are discovered in the Plugin\KeyInput namespace.
++ *
++ * @see \Drupal\key\Annotation\KeyInput
++ * @see \Drupal\key\Plugin\KeyInputInterface
++ */
++#[\Attribute(\Attribute::TARGET_CLASS)]
++final class KeyInput extends Plugin {
++
++  /**
++   * Constructs a KeyInput attribute.
++   *
++   * @param string $id
++   *   The plugin ID of the key input.
++   * @param \Drupal\Core\StringTranslation\TranslatableMarkup|null $label
++   *   The human-readable name of the key input.
++   * @param \Drupal\Core\StringTranslation\TranslatableMarkup|null $description
++   *   (optional) The description of the key input.
++   * @param class-string|null $deriver
++   *   (optional) The deriver class.
++   */
++  public function __construct(
++    public readonly string $id,
++    public readonly ?TranslatableMarkup $label = NULL,
++    public readonly ?TranslatableMarkup $description = NULL,
++    public readonly ?string $deriver = NULL,
++  ) {}
++
++}
+diff --git a/src/Attribute/KeyProvider.php b/src/Attribute/KeyProvider.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..e811116db87cc5fb7b8741a67b92567f2e785a16
+--- /dev/null
++++ b/src/Attribute/KeyProvider.php
+@@ -0,0 +1,52 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Drupal\key\Attribute;
++
++use Drupal\Component\Plugin\Attribute\Plugin;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++
++/**
++ * Defines a key provider attribute object.
++ *
++ * Plugins of this type are discovered in the Plugin\KeyProvider namespace.
++ *
++ * Unlike the annotation, this attribute has no deprecated 'storage_method'
++ * property: use 'tags' instead.
++ *
++ * @see \Drupal\key\Annotation\KeyProvider
++ * @see \Drupal\key\Plugin\KeyProviderInterface
++ */
++#[\Attribute(\Attribute::TARGET_CLASS)]
++final class KeyProvider extends Plugin {
++
++  /**
++   * Constructs a KeyProvider attribute.
++   *
++   * @param string $id
++   *   The plugin ID of the key provider.
++   * @param \Drupal\Core\StringTranslation\TranslatableMarkup|null $label
++   *   The human-readable name of the key provider.
++   * @param \Drupal\Core\StringTranslation\TranslatableMarkup|null $description
++   *   (optional) The description of the key provider.
++   * @param string[] $tags
++   *   (optional) The key provider tags, used for classification and filtering.
++   * @param array $key_value
++   *   (optional) Whether this provider accepts and requires a key value.
++   * @param class-string|null $deriver
++   *   (optional) The deriver class.
++   */
++  public function __construct(
++    public readonly string $id,
++    public readonly ?TranslatableMarkup $label = NULL,
++    public readonly ?TranslatableMarkup $description = NULL,
++    public readonly array $tags = [],
++    public readonly array $key_value = [
++      'accepted' => FALSE,
++      'required' => FALSE,
++    ],
++    public readonly ?string $deriver = NULL,
++  ) {}
++
++}
+diff --git a/src/Attribute/KeyType.php b/src/Attribute/KeyType.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..9641322fc8b37e7570a359fa41814b086be76674
+--- /dev/null
++++ b/src/Attribute/KeyType.php
+@@ -0,0 +1,68 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Drupal\key\Attribute;
++
++use Drupal\Component\Plugin\Attribute\Plugin;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++
++/**
++ * Defines a key type attribute object.
++ *
++ * Plugins of this type are discovered in the Plugin\KeyType namespace.
++ *
++ * @see \Drupal\key\Annotation\KeyType
++ * @see \Drupal\key\Plugin\KeyTypeInterface
++ */
++#[\Attribute(\Attribute::TARGET_CLASS)]
++final class KeyType extends Plugin {
++
++  /**
++   * Constructs a KeyType attribute.
++   *
++   * @param string $id
++   *   The plugin ID of the key type.
++   * @param \Drupal\Core\StringTranslation\TranslatableMarkup|null $label
++   *   The human-readable name of the key type.
++   * @param \Drupal\Core\StringTranslation\TranslatableMarkup|null $description
++   *   (optional) The description of the key type.
++   * @param string $group
++   *   (optional) The group to which this key type belongs, such as
++   *   "authentication" or "encryption". Defaults to "none".
++   * @param array $key_value
++   *   (optional) The settings to use when a key value can be submitted, such
++   *   as the key input plugin to use. Defaults to the text_field plugin.
++   * @param array $multivalue
++   *   (optional) Whether the key type supports multiple values and, if so,
++   *   its fields, keyed by field name. A field is defined either as its label:
++   *   @code
++   *   'username' => new TranslatableMarkup('User name'),
++   *   @endcode
++   *   or as an array with a label and whether the field is required:
++   *   @code
++   *   'password' => [
++   *     'label' => new TranslatableMarkup('Password'),
++   *     'required' => FALSE,
++   *   ],
++   *   @endcode
++   *   Fields are required unless they say otherwise.
++   * @param class-string|null $deriver
++   *   (optional) The deriver class.
++   */
++  public function __construct(
++    public readonly string $id,
++    public readonly ?TranslatableMarkup $label = NULL,
++    public readonly ?TranslatableMarkup $description = NULL,
++    public readonly string $group = 'none',
++    public readonly array $key_value = [
++      'plugin' => 'text_field',
++    ],
++    public readonly array $multivalue = [
++      'enabled' => FALSE,
++      'fields' => [],
++    ],
++    public readonly ?string $deriver = NULL,
++  ) {}
++
++}
+diff --git a/src/Controller/KeyListBuilder.php b/src/Controller/KeyListBuilder.php
+index b96a6043a2c186a646727fbc1c8d35e6eb7cd2ed..b57505e1609c6a48af4d738bdb5fe023c99d2473 100644
+--- a/src/Controller/KeyListBuilder.php
++++ b/src/Controller/KeyListBuilder.php
+@@ -2,6 +2,7 @@
+ 
+ namespace Drupal\key\Controller;
+ 
++use Drupal\Core\Cache\CacheableMetadata;
+ use Drupal\Core\Config\Entity\ConfigEntityListBuilder;
+ use Drupal\Core\Entity\EntityStorageInterface;
+ use Drupal\Core\Entity\EntityTypeInterface;
+@@ -94,11 +95,11 @@ class KeyListBuilder extends ConfigEntityListBuilder {
+   /**
+    * {@inheritdoc}
+    */
+-  public function getOperations(EntityInterface $entity) {
++  public function getOperations(EntityInterface $entity, ?CacheableMetadata $cacheability = NULL) {
+     /** @var \Drupal\key\Entity\Key $key */
+     $key = $entity;
+ 
+-    $operations = parent::getOperations($key);
++    $operations = parent::getOperations($key, $cacheability);
+ 
+     $key_collection = Url::fromRoute('entity.key.collection')->toString();
+     $operations['add_override'] = [
+diff --git a/src/Entity/Key.php b/src/Entity/Key.php
+index 14ed347f7d76e21af0211c494066a2be7d261536..138c65d7aa57c58ba4c8c67b85ae241734d72713 100644
+--- a/src/Entity/Key.php
++++ b/src/Entity/Key.php
+@@ -4,10 +4,15 @@ namespace Drupal\key\Entity;
+ 
+ use Drupal\Core\Config\Action\Attribute\ActionMethod;
+ use Drupal\Core\Config\Entity\ConfigEntityBase;
++use Drupal\Core\Entity\Attribute\ConfigEntityType;
+ use Drupal\Core\Entity\EntityStorageInterface;
+ use Drupal\Core\Entity\EntityWithPluginCollectionInterface;
+ use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Controller\KeyListBuilder;
+ use Drupal\key\Exception\KeyValueNotSetException;
++use Drupal\key\Form\KeyAddForm;
++use Drupal\key\Form\KeyDeleteForm;
++use Drupal\key\Form\KeyEditForm;
+ use Drupal\key\KeyInterface;
+ use Drupal\key\Plugin\KeyPluginCollection;
+ use Drupal\key\Plugin\KeyProviderSettableValueInterface;
+@@ -15,6 +20,12 @@ use Drupal\key\Plugin\KeyProviderSettableValueInterface;
+ /**
+  * Defines the Key entity.
+  *
++ * The annotation is kept for Drupal 10, which has no ConfigEntityType
++ * attribute. Keep both definitions in sync.
++ *
++ * @todo Remove the annotation when the minimum supported core version is
++ *   Drupal 11.0 or later.
++ *
+  * @ConfigEntityType(
+  *   id = "key",
+  *   label = @Translation("Key"),
+@@ -52,6 +63,41 @@ use Drupal\key\Plugin\KeyProviderSettableValueInterface;
+  *   }
+  * )
+  */
++#[ConfigEntityType(
++  id: 'key',
++  label: new TranslatableMarkup('Key'),
++  config_prefix: 'key',
++  entity_keys: [
++    'id' => 'id',
++    'label' => 'label',
++  ],
++  handlers: [
++    'list_builder' => KeyListBuilder::class,
++    'form' => [
++      'add' => KeyAddForm::class,
++      'edit' => KeyEditForm::class,
++      'delete' => KeyDeleteForm::class,
++    ],
++  ],
++  links: [
++    'add-form' => '/admin/config/system/keys/add',
++    'edit-form' => '/admin/config/system/keys/manage/{key}',
++    'delete-form' => '/admin/config/system/keys/manage/{key}/delete',
++    'collection' => '/admin/config/system/keys',
++  ],
++  admin_permission: 'administer keys',
++  config_export: [
++    'id',
++    'label',
++    'description',
++    'key_type',
++    'key_type_settings',
++    'key_provider',
++    'key_provider_settings',
++    'key_input',
++    'key_input_settings',
++  ],
++)]
+ class Key extends ConfigEntityBase implements KeyInterface, EntityWithPluginCollectionInterface {
+ 
+   /**
+@@ -261,6 +307,25 @@ class Key extends ConfigEntityBase implements KeyInterface, EntityWithPluginColl
+    */
+   public function getKeyValue($reset = FALSE) {
+     $key_id = $this->id();
++
++    // @todo Remove the drupal_static() fallback when the minimum supported
++    //   core version provides the cache.memory service (Drupal 11.4).
++    if (\Drupal::hasService('cache.memory')) {
++      $memory_cache = \Drupal::cache('memory');
++      $cid = 'key:key_value:' . $key_id;
++
++      // If the key value has not already been retrieved during this page
++      // request or if the memory cache needs to be reset for this key,
++      // retrieve the value using the key provider.
++      $cached = $reset ? FALSE : $memory_cache->get($cid);
++      if ($cached && isset($cached->data)) {
++        return $cached->data;
++      }
++      $key_value = $this->getKeyProvider()->getKeyValue($this);
++      $memory_cache->set($cid, $key_value);
++      return $key_value;
++    }
++
+     $key_values = &drupal_static(__FUNCTION__);
+ 
+     // If the key value has not already been retrieved during this page
+@@ -341,11 +406,13 @@ class Key extends ConfigEntityBase implements KeyInterface, EntityWithPluginColl
+     // Allow the key provider to perform post-save actions.
+     $this->getKeyProvider()->postSave($this, $storage, $update);
+ 
+-    // If an original key exists.
+-    if (isset($this->original)) {
+-      /** @var \Drupal\key\Entity\Key $original */
+-      $original = $this->original;
++    // @todo Remove the fallback to the original property when the minimum
++    //   supported core version is Drupal 11.2 or later.
++    /** @var \Drupal\key\Entity\Key|null $original */
++    $original = method_exists($this, 'getOriginal') ? $this->getOriginal() : ($this->original ?? NULL);
+ 
++    // If an original key exists.
++    if ($original) {
+       // If the original key's provider allows setting a key value and
+       // the plugin ID is different from the one that was just saved with
+       // the entity.
+diff --git a/src/Entity/KeyConfigOverride.php b/src/Entity/KeyConfigOverride.php
+index 716161ef8fc7d055b4fe909ad15705fd481ba3d7..72873bfa4adaee54a9077ec99a60e73a896d135d 100644
+--- a/src/Entity/KeyConfigOverride.php
++++ b/src/Entity/KeyConfigOverride.php
+@@ -3,11 +3,22 @@
+ namespace Drupal\key\Entity;
+ 
+ use Drupal\Core\Config\Entity\ConfigEntityBase;
++use Drupal\Core\Entity\Attribute\ConfigEntityType;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Controller\KeyConfigOverrideListBuilder;
++use Drupal\key\Form\KeyConfigOverrideAddForm;
++use Drupal\key\Form\KeyConfigOverrideDeleteForm;
+ use Drupal\key\KeyConfigOverrideInterface;
+ 
+ /**
+  * Defines the KeyConfigOverride entity.
+  *
++ * The annotation is kept for Drupal 10, which has no ConfigEntityType
++ * attribute. Keep both definitions in sync.
++ *
++ * @todo Remove the annotation when the minimum supported core version is
++ *   Drupal 11.0 or later.
++ *
+  * @ConfigEntityType(
+  *   id = "key_config_override",
+  *   label = @Translation("Key Configuration Override"),
+@@ -41,6 +52,37 @@ use Drupal\key\KeyConfigOverrideInterface;
+  *   }
+  * )
+  */
++#[ConfigEntityType(
++  id: 'key_config_override',
++  label: new TranslatableMarkup('Key Configuration Override'),
++  config_prefix: 'config_override',
++  entity_keys: [
++    'id' => 'id',
++    'label' => 'label',
++  ],
++  handlers: [
++    'list_builder' => KeyConfigOverrideListBuilder::class,
++    'form' => [
++      'add' => KeyConfigOverrideAddForm::class,
++      'delete' => KeyConfigOverrideDeleteForm::class,
++    ],
++  ],
++  links: [
++    'add-form' => '/admin/config/development/configuration/key-overrides/add',
++    'delete-form' => '/admin/config/development/configuration/key-overrides/manage/{key_config_override}/delete',
++    'collection' => '/admin/config/development/configuration/key-overrides',
++  ],
++  admin_permission: 'administer key configuration overrides',
++  config_export: [
++    'id',
++    'label',
++    'config_type',
++    'config_prefix',
++    'config_name',
++    'config_item',
++    'key_id',
++  ],
++)]
+ class KeyConfigOverride extends ConfigEntityBase implements KeyConfigOverrideInterface {
+ 
+   /**
+diff --git a/src/Plugin/KeyInput/GenerateKeyInput.php b/src/Plugin/KeyInput/GenerateKeyInput.php
+index 5260d87eced0fdf1abc59ea0c2ba407f41cfed3e..3bcfcdca4bffd00138a20ec6b026e687ba8361ec 100644
+--- a/src/Plugin/KeyInput/GenerateKeyInput.php
++++ b/src/Plugin/KeyInput/GenerateKeyInput.php
+@@ -3,17 +3,18 @@
+ namespace Drupal\key\Plugin\KeyInput;
+ 
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyInput;
+ use Drupal\key\Plugin\KeyInputBase;
+ 
+ /**
+  * Defines a key input that generates a key value.
+- *
+- * @KeyInput(
+- *   id = "generate",
+- *   label = @Translation("Generate"),
+- *   description = @Translation("A key input that generates a key value.")
+- * )
+  */
++#[KeyInput(
++  id: 'generate',
++  label: new TranslatableMarkup('Generate'),
++  description: new TranslatableMarkup('A key input that generates a key value.'),
++)]
+ class GenerateKeyInput extends KeyInputBase {
+ 
+   /**
+diff --git a/src/Plugin/KeyInput/NoneKeyInput.php b/src/Plugin/KeyInput/NoneKeyInput.php
+index 24028e05f5dbe0dcd03433e8d88592af28f9cd46..459d726b03cccda9d766480930d894c80c5c05a9 100644
+--- a/src/Plugin/KeyInput/NoneKeyInput.php
++++ b/src/Plugin/KeyInput/NoneKeyInput.php
+@@ -3,17 +3,18 @@
+ namespace Drupal\key\Plugin\KeyInput;
+ 
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyInput;
+ use Drupal\key\Plugin\KeyInputBase;
+ 
+ /**
+  * Defines a key input for providers that don't accept a value.
+- *
+- * @KeyInput(
+- *   id = "none",
+- *   label = @Translation("None"),
+- *   description = @Translation("A key input for providers that don't accept a value.")
+- * )
+  */
++#[KeyInput(
++  id: 'none',
++  label: new TranslatableMarkup('None'),
++  description: new TranslatableMarkup("A key input for providers that don't accept a value."),
++)]
+ class NoneKeyInput extends KeyInputBase {
+ 
+   /**
+diff --git a/src/Plugin/KeyInput/TextFieldKeyInput.php b/src/Plugin/KeyInput/TextFieldKeyInput.php
+index 36652df2632cecbb6aeb21e6dde252cb5697cd45..53c98f75c04f70454062f11c79e7b6d7397c9718 100644
+--- a/src/Plugin/KeyInput/TextFieldKeyInput.php
++++ b/src/Plugin/KeyInput/TextFieldKeyInput.php
+@@ -3,17 +3,18 @@
+ namespace Drupal\key\Plugin\KeyInput;
+ 
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyInput;
+ use Drupal\key\Plugin\KeyInputBase;
+ 
+ /**
+  * Defines a key input that provides a simple text field.
+- *
+- * @KeyInput(
+- *   id = "text_field",
+- *   label = @Translation("Text field"),
+- *   description = @Translation("A simple text field.")
+- * )
+  */
++#[KeyInput(
++  id: 'text_field',
++  label: new TranslatableMarkup('Text field'),
++  description: new TranslatableMarkup('A simple text field.'),
++)]
+ class TextFieldKeyInput extends KeyInputBase {
+ 
+   /**
+diff --git a/src/Plugin/KeyInput/TextareaFieldKeyInput.php b/src/Plugin/KeyInput/TextareaFieldKeyInput.php
+index d8af7bfe63ed9ebe864ad50c7e93fe189842ae57..69a743385c9a3b1d758b19b4637f6e7d31d39d20 100644
+--- a/src/Plugin/KeyInput/TextareaFieldKeyInput.php
++++ b/src/Plugin/KeyInput/TextareaFieldKeyInput.php
+@@ -3,16 +3,17 @@
+ namespace Drupal\key\Plugin\KeyInput;
+ 
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyInput;
+ 
+ /**
+  * Defines a key input that provides a simple text field.
+- *
+- * @KeyInput(
+- *   id = "textarea_field",
+- *   label = @Translation("Textarea field"),
+- *   description = @Translation("A simple textarea field.")
+- * )
+  */
++#[KeyInput(
++  id: 'textarea_field',
++  label: new TranslatableMarkup('Textarea field'),
++  description: new TranslatableMarkup('A simple textarea field.'),
++)]
+ class TextareaFieldKeyInput extends TextFieldKeyInput {
+ 
+   /**
+diff --git a/src/Plugin/KeyPluginManager.php b/src/Plugin/KeyPluginManager.php
+index 21e9a41c0bf695e796e8e52b714b956180ba60f1..15b22e296eb5f07abf1aa74c070a8924d0d76843 100644
+--- a/src/Plugin/KeyPluginManager.php
++++ b/src/Plugin/KeyPluginManager.php
+@@ -32,6 +32,11 @@ class KeyPluginManager extends DefaultPluginManager {
+    *   The module handler.
+    */
+   public function __construct($type, \Traversable $namespaces, CacheBackendInterface $cache_backend, ModuleHandlerInterface $module_handler) {
++    $type_attributes = [
++      'key_type' => 'Drupal\key\Attribute\KeyType',
++      'key_provider' => 'Drupal\key\Attribute\KeyProvider',
++      'key_input' => 'Drupal\key\Attribute\KeyInput',
++    ];
+     $type_annotations = [
+       'key_type' => 'Drupal\key\Annotation\KeyType',
+       'key_provider' => 'Drupal\key\Annotation\KeyProvider',
+@@ -46,7 +51,7 @@ class KeyPluginManager extends DefaultPluginManager {
+     $this->pluginType = $type;
+     $this->subdir = 'Plugin/' . str_replace(' ', '', ucwords(str_replace('_', ' ', $type)));
+ 
+-    parent::__construct($this->subdir, $namespaces, $module_handler, $plugin_interfaces[$type], $type_annotations[$type]);
++    parent::__construct($this->subdir, $namespaces, $module_handler, $plugin_interfaces[$type], $type_attributes[$type], $type_annotations[$type]);
+     $this->alterInfo($type . '_info');
+     $this->setCacheBackend($cache_backend, $type, ['key_plugins']);
+   }
+diff --git a/src/Plugin/KeyProvider/ConfigKeyProvider.php b/src/Plugin/KeyProvider/ConfigKeyProvider.php
+index 982238ceb1b21ea569fedcdcd55d5a90d6e6e9e6..bb14e05f598717265d116cebc3461826b20b9295 100644
+--- a/src/Plugin/KeyProvider/ConfigKeyProvider.php
++++ b/src/Plugin/KeyProvider/ConfigKeyProvider.php
+@@ -3,28 +3,29 @@
+ namespace Drupal\key\Plugin\KeyProvider;
+ 
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyProvider;
+ use Drupal\key\Exception\KeyValueNotSetException;
+-use Drupal\key\Plugin\KeyProviderBase;
++use Drupal\key\KeyInterface;
+ use Drupal\key\Plugin\KeyPluginFormInterface;
++use Drupal\key\Plugin\KeyProviderBase;
+ use Drupal\key\Plugin\KeyProviderSettableValueInterface;
+-use Drupal\key\KeyInterface;
+ 
+ /**
+  * Adds a key provider that allows a key to be stored in configuration.
+- *
+- * @KeyProvider(
+- *   id = "config",
+- *   label = @Translation("Configuration"),
+- *   description = @Translation("The Configuration key provider stores the key in Drupal's configuration system."),
+- *   tags = {
+- *     "config",
+- *   },
+- *   key_value = {
+- *     "accepted" = TRUE,
+- *     "required" = FALSE
+- *   }
+- * )
+  */
++#[KeyProvider(
++  id: 'config',
++  label: new TranslatableMarkup('Configuration'),
++  description: new TranslatableMarkup("The Configuration key provider stores the key in Drupal's configuration system."),
++  tags: [
++    'config',
++  ],
++  key_value: [
++    'accepted' => TRUE,
++    'required' => FALSE,
++  ],
++)]
+ class ConfigKeyProvider extends KeyProviderBase implements KeyPluginFormInterface, KeyProviderSettableValueInterface {
+ 
+   /**
+diff --git a/src/Plugin/KeyProvider/EnvKeyProvider.php b/src/Plugin/KeyProvider/EnvKeyProvider.php
+index 0bde51691d3631a0874902c4e5cbfd618fab1f93..1d5f6bdebc89ba4607e87010c43b11919d1852e7 100644
+--- a/src/Plugin/KeyProvider/EnvKeyProvider.php
++++ b/src/Plugin/KeyProvider/EnvKeyProvider.php
+@@ -3,26 +3,27 @@
+ namespace Drupal\key\Plugin\KeyProvider;
+ 
+ use Drupal\Core\Form\FormStateInterface;
+-use Drupal\key\Plugin\KeyProviderBase;
+-use Drupal\key\Plugin\KeyPluginFormInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyProvider;
+ use Drupal\key\KeyInterface;
++use Drupal\key\Plugin\KeyPluginFormInterface;
++use Drupal\key\Plugin\KeyProviderBase;
+ 
+ /**
+  * A key provider that allows a key to be stored in an environment variable.
+- *
+- * @KeyProvider(
+- *   id = "env",
+- *   label = @Translation("Environment"),
+- *   description = @Translation("The Environment key provider allows a key to be retrieved from an environment variable."),
+- *   tags = {
+- *     "env",
+- *   },
+- *   key_value = {
+- *     "accepted" = FALSE,
+- *     "required" = FALSE
+- *   }
+- * )
+  */
++#[KeyProvider(
++  id: 'env',
++  label: new TranslatableMarkup('Environment'),
++  description: new TranslatableMarkup('The Environment key provider allows a key to be retrieved from an environment variable.'),
++  tags: [
++    'env',
++  ],
++  key_value: [
++    'accepted' => FALSE,
++    'required' => FALSE,
++  ],
++)]
+ class EnvKeyProvider extends KeyProviderBase implements KeyPluginFormInterface {
+ 
+   /**
+diff --git a/src/Plugin/KeyProvider/FileKeyProvider.php b/src/Plugin/KeyProvider/FileKeyProvider.php
+index 996aa78b8dbee2df471ed40e6a93ee3f899f0db6..e40e2597db359e96519df541982550a0aab4b472 100644
+--- a/src/Plugin/KeyProvider/FileKeyProvider.php
++++ b/src/Plugin/KeyProvider/FileKeyProvider.php
+@@ -3,26 +3,27 @@
+ namespace Drupal\key\Plugin\KeyProvider;
+ 
+ use Drupal\Core\Form\FormStateInterface;
+-use Drupal\key\Plugin\KeyProviderBase;
+-use Drupal\key\Plugin\KeyPluginFormInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyProvider;
+ use Drupal\key\KeyInterface;
++use Drupal\key\Plugin\KeyPluginFormInterface;
++use Drupal\key\Plugin\KeyProviderBase;
+ 
+ /**
+  * Adds a key provider that allows a key to be stored in a file.
+- *
+- * @KeyProvider(
+- *   id = "file",
+- *   label = @Translation("File"),
+- *   description = @Translation("The File key provider allows a key to be stored in a file, preferably outside of the web root."),
+- *   tags = {
+- *     "file",
+- *   },
+- *   key_value = {
+- *     "accepted" = FALSE,
+- *     "required" = FALSE
+- *   }
+- * )
+  */
++#[KeyProvider(
++  id: 'file',
++  label: new TranslatableMarkup('File'),
++  description: new TranslatableMarkup('The File key provider allows a key to be stored in a file, preferably outside of the web root.'),
++  tags: [
++    'file',
++  ],
++  key_value: [
++    'accepted' => FALSE,
++    'required' => FALSE,
++  ],
++)]
+ class FileKeyProvider extends KeyProviderBase implements KeyPluginFormInterface {
+ 
+   /**
+diff --git a/src/Plugin/KeyProvider/StateKeyProvider.php b/src/Plugin/KeyProvider/StateKeyProvider.php
+index 2e3be18f924c5822bc5d98e80c13dfa1b371b1cf..788cb05c30b4aaabdb82af70123ce8076fe63ef4 100644
+--- a/src/Plugin/KeyProvider/StateKeyProvider.php
++++ b/src/Plugin/KeyProvider/StateKeyProvider.php
+@@ -4,9 +4,11 @@ namespace Drupal\key\Plugin\KeyProvider;
+ 
+ use Drupal\Core\Form\FormStateInterface;
+ use Drupal\Core\State\StateInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyProvider;
+ use Drupal\key\KeyInterface;
+-use Drupal\key\Plugin\KeyProviderBase;
+ use Drupal\key\Plugin\KeyPluginFormInterface;
++use Drupal\key\Plugin\KeyProviderBase;
+ use Symfony\Component\DependencyInjection\ContainerInterface;
+ 
+ /**
+@@ -16,20 +18,19 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
+  * should be considered to have the same security properties as database-stored
+  * configuration. This provider is suitable for development keys, API tokens
+  * with limited permissions, or other keys where database storage is acceptable.
+- *
+- * @KeyProvider(
+- *   id = "state",
+- *   label = @Translation("State"),
+- *   description = @Translation("The State key provider allows a key to be retrieved from Drupal state."),
+- *   tags = {
+- *     "state",
+- *   },
+- *   key_value = {
+- *     "accepted" = FALSE,
+- *     "required" = FALSE
+- *   }
+- * )
+  */
++#[KeyProvider(
++  id: 'state',
++  label: new TranslatableMarkup('State'),
++  description: new TranslatableMarkup('The State key provider allows a key to be retrieved from Drupal state.'),
++  tags: [
++    'state',
++  ],
++  key_value: [
++    'accepted' => FALSE,
++    'required' => FALSE,
++  ],
++)]
+ class StateKeyProvider extends KeyProviderBase implements KeyPluginFormInterface {
+ 
+   /**
+diff --git a/src/Plugin/KeyType/AuthenticationKeyType.php b/src/Plugin/KeyType/AuthenticationKeyType.php
+index d5bbd8419c668a36de518145453bfcca22995280..b4ea929e6e1b56cb46b319511a83b837d12cec21 100644
+--- a/src/Plugin/KeyType/AuthenticationKeyType.php
++++ b/src/Plugin/KeyType/AuthenticationKeyType.php
+@@ -3,21 +3,22 @@
+ namespace Drupal\key\Plugin\KeyType;
+ 
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyType;
+ use Drupal\key\Plugin\KeyTypeBase;
+ 
+ /**
+  * Defines a generic key type for authentication.
+- *
+- * @KeyType(
+- *   id = "authentication",
+- *   label = @Translation("Authentication"),
+- *   description = @Translation("A generic key type to use for a password or API key that does not belong to any other defined key type."),
+- *   group = "authentication",
+- *   key_value = {
+- *     "plugin" = "text_field"
+- *   }
+- * )
+  */
++#[KeyType(
++  id: 'authentication',
++  label: new TranslatableMarkup('Authentication'),
++  description: new TranslatableMarkup('A generic key type to use for a password or API key that does not belong to any other defined key type.'),
++  group: 'authentication',
++  key_value: [
++    'plugin' => 'text_field',
++  ],
++)]
+ class AuthenticationKeyType extends KeyTypeBase {
+ 
+   /**
+diff --git a/src/Plugin/KeyType/AuthenticationMultivalueKeyType.php b/src/Plugin/KeyType/AuthenticationMultivalueKeyType.php
+index 7aa888aff968b319e4a0e42d4071ae59383e6e17..467f9e039b70feebd800f62850c1c9c719577bea 100644
+--- a/src/Plugin/KeyType/AuthenticationMultivalueKeyType.php
++++ b/src/Plugin/KeyType/AuthenticationMultivalueKeyType.php
+@@ -4,26 +4,27 @@ namespace Drupal\key\Plugin\KeyType;
+ 
+ use Drupal\Component\Serialization\Json;
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyType;
+ use Drupal\key\Plugin\KeyTypeBase;
+ use Drupal\key\Plugin\KeyTypeMultivalueInterface;
+ 
+ /**
+  * Defines a generic key type for authentication with multiple values.
+- *
+- * @KeyType(
+- *   id = "authentication_multivalue",
+- *   label = @Translation("Authentication (Multivalue)"),
+- *   description = @Translation("A generic key type to use for an authentication key that contains multiple values."),
+- *   group = "authentication",
+- *   key_value = {
+- *     "plugin" = "textarea_field"
+- *   },
+- *   multivalue = {
+- *     "enabled" = true,
+- *     "fields" = {}
+- *   }
+- * )
+  */
++#[KeyType(
++  id: 'authentication_multivalue',
++  label: new TranslatableMarkup('Authentication (Multivalue)'),
++  description: new TranslatableMarkup('A generic key type to use for an authentication key that contains multiple values.'),
++  group: 'authentication',
++  key_value: [
++    'plugin' => 'textarea_field',
++  ],
++  multivalue: [
++    'enabled' => TRUE,
++    'fields' => [],
++  ],
++)]
+ class AuthenticationMultivalueKeyType extends KeyTypeBase implements KeyTypeMultivalueInterface {
+ 
+   /**
+diff --git a/src/Plugin/KeyType/EncryptionKeyType.php b/src/Plugin/KeyType/EncryptionKeyType.php
+index 6bf6619a85c180cd9fe8a2af440988f1c0600185..9b9f165246aed22a3d9056625c78207188085099 100644
+--- a/src/Plugin/KeyType/EncryptionKeyType.php
++++ b/src/Plugin/KeyType/EncryptionKeyType.php
+@@ -3,22 +3,23 @@
+ namespace Drupal\key\Plugin\KeyType;
+ 
+ use Drupal\Core\Form\FormStateInterface;
+-use Drupal\key\Plugin\KeyTypeBase;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyType;
+ use Drupal\key\Plugin\KeyPluginFormInterface;
++use Drupal\key\Plugin\KeyTypeBase;
+ 
+ /**
+  * Defines a generic key type for encryption.
+- *
+- * @KeyType(
+- *   id = "encryption",
+- *   label = @Translation("Encryption"),
+- *   description = @Translation("A generic key type to use for an encryption key that does not belong to any other defined key type."),
+- *   group = "encryption",
+- *   key_value = {
+- *     "plugin" = "text_field"
+- *   }
+- * )
+  */
++#[KeyType(
++  id: 'encryption',
++  label: new TranslatableMarkup('Encryption'),
++  description: new TranslatableMarkup('A generic key type to use for an encryption key that does not belong to any other defined key type.'),
++  group: 'encryption',
++  key_value: [
++    'plugin' => 'text_field',
++  ],
++)]
+ class EncryptionKeyType extends KeyTypeBase implements KeyPluginFormInterface {
+ 
+   /**
+diff --git a/src/Plugin/KeyType/UserPasswordKeyType.php b/src/Plugin/KeyType/UserPasswordKeyType.php
+index 8d9d9f8809dd2ce435633e77ad38b0c8ef7ffd8c..2f485da0ed889e117f90a63fd4a2bd5ce774eabd 100644
+--- a/src/Plugin/KeyType/UserPasswordKeyType.php
++++ b/src/Plugin/KeyType/UserPasswordKeyType.php
+@@ -2,24 +2,26 @@
+ 
+ namespace Drupal\key\Plugin\KeyType;
+ 
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyType;
++
+ /**
+  * Defines a key that combines a user name and password.
+- *
+- * @KeyType(
+- *   id = "user_password",
+- *   label = @Translation("User/password"),
+- *   description = @Translation("A key type to store a user/password pair."),
+- *   group = "authentication",
+- *   key_value = {
+- *     "plugin" = "textarea_field"
+- *   },
+- *   multivalue = {
+- *     "enabled" = true,
+- *     "fields" = {
+- *       "username" = @Translation("User name"),
+- *       "password" = @Translation("Password")
+- *     }
+- *   }
+- * )
+  */
++#[KeyType(
++  id: 'user_password',
++  label: new TranslatableMarkup('User/password'),
++  description: new TranslatableMarkup('A key type to store a user/password pair.'),
++  group: 'authentication',
++  key_value: [
++    'plugin' => 'textarea_field',
++  ],
++  multivalue: [
++    'enabled' => TRUE,
++    'fields' => [
++      'username' => new TranslatableMarkup('User name'),
++      'password' => new TranslatableMarkup('Password'),
++    ],
++  ],
++)]
+ class UserPasswordKeyType extends AuthenticationMultivalueKeyType {}
+diff --git a/tests/modules/key_deprecation_test/key_deprecation_test.info.yml b/tests/modules/key_deprecation_test/key_deprecation_test.info.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..b2ffc6d81a93d264f48f4bac87b21d6d50f3d4cb
+--- /dev/null
++++ b/tests/modules/key_deprecation_test/key_deprecation_test.info.yml
+@@ -0,0 +1,7 @@
++name: Key deprecation test
++type: module
++description: 'Provides key plugins that use deprecated definition entries.'
++package: Testing
++hidden: true
++dependencies:
++  - key:key
+diff --git a/tests/modules/key_test/src/Plugin/KeyProvider/DeprecatedDefinition.php b/tests/modules/key_deprecation_test/src/Plugin/KeyProvider/DeprecatedDefinition.php
+similarity index 66%
+rename from tests/modules/key_test/src/Plugin/KeyProvider/DeprecatedDefinition.php
+rename to tests/modules/key_deprecation_test/src/Plugin/KeyProvider/DeprecatedDefinition.php
+index 73191448bf6b6633fafc418e8a3f66273abfa143..83ecbbf3e60f7592227e86277f0b034fe76c1e2b 100644
+--- a/tests/modules/key_test/src/Plugin/KeyProvider/DeprecatedDefinition.php
++++ b/tests/modules/key_deprecation_test/src/Plugin/KeyProvider/DeprecatedDefinition.php
+@@ -1,13 +1,18 @@
+ <?php
+ 
+-namespace Drupal\key_test\Plugin\KeyProvider;
++declare(strict_types=1);
++
++namespace Drupal\key_deprecation_test\Plugin\KeyProvider;
+ 
+-use Drupal\key\Plugin\KeyProviderBase;
+ use Drupal\key\KeyInterface;
++use Drupal\key\Plugin\KeyProviderBase;
+ 
+ /**
+  * Plugin with deprecated definition entries.
+  *
++ * It is defined with an annotation on purpose: attributes have no
++ * 'storage_method' entry.
++ *
+  * @KeyProvider(
+  *   id = "deprecated_defintion_entries",
+  *   label = @Translation("Deprecated"),
+@@ -18,7 +23,7 @@ use Drupal\key\KeyInterface;
+  *   }
+  * )
+  */
+-class DeprecatedDefinition extends KeyProviderBase {
++final class DeprecatedDefinition extends KeyProviderBase {
+ 
+   /**
+    * {@inheritdoc}
+diff --git a/tests/modules/key_test/src/Plugin/KeyInput/MutliValueKeyInput.php b/tests/modules/key_test/src/Plugin/KeyInput/MutliValueKeyInput.php
+index fe9dad4e30b9fec1d2f2da2d3a361045d52e12d9..f2bd1c97a8ea12b1f26b447d1935239c8ffe932d 100644
+--- a/tests/modules/key_test/src/Plugin/KeyInput/MutliValueKeyInput.php
++++ b/tests/modules/key_test/src/Plugin/KeyInput/MutliValueKeyInput.php
+@@ -3,16 +3,17 @@
+ namespace Drupal\key_test\Plugin\KeyInput;
+ 
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyInput;
+ use Drupal\key\Plugin\KeyInputBase;
+ 
+ /**
+  * Defines a multi-value key input class.
+- *
+- * @KeyInput(
+- *   id = "key_test_multi",
+- *   label = @Translation("Test multivalue")
+- * )
+  */
++#[KeyInput(
++  id: 'key_test_multi',
++  label: new TranslatableMarkup('Test multivalue'),
++)]
+ class MutliValueKeyInput extends KeyInputBase {
+ 
+   /**
+diff --git a/tests/modules/key_test/src/Plugin/KeyProvider/State.php b/tests/modules/key_test/src/Plugin/KeyProvider/State.php
+index b615fd1ecd8ce5a62c6805af9554009c6c8ac4c3..97772f61c1c426dccb5b82e5484a5aad1471c02c 100644
+--- a/tests/modules/key_test/src/Plugin/KeyProvider/State.php
++++ b/tests/modules/key_test/src/Plugin/KeyProvider/State.php
+@@ -3,6 +3,8 @@
+ namespace Drupal\key_test\Plugin\KeyProvider;
+ 
+ use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyProvider;
+ use Drupal\key\KeyInterface;
+ use Drupal\key\Plugin\KeyProviderBase;
+ use Drupal\key\Plugin\KeyProviderSettableValueInterface;
+@@ -10,20 +12,19 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
+ 
+ /**
+  * Defines a key provider that stores in memory.
+- *
+- * @KeyProvider(
+- *   id = "key_test_state",
+- *   label = @Translation("State ☠️"),
+- *   description = @Translation("Stores keys in state."),
+- *   tags = {
+- *     "state",
+- *   },
+- *   key_value = {
+- *     "accepted" = TRUE,
+- *     "required" = FALSE
+- *   }
+- * )
+  */
++#[KeyProvider(
++  id: 'key_test_state',
++  label: new TranslatableMarkup('State ☠️'),
++  description: new TranslatableMarkup('Stores keys in state.'),
++  tags: [
++    'state',
++  ],
++  key_value: [
++    'accepted' => TRUE,
++    'required' => FALSE,
++  ],
++)]
+ class State extends KeyProviderBase implements KeyProviderSettableValueInterface, ContainerFactoryPluginInterface {
+ 
+   /**
+diff --git a/tests/modules/key_test/src/Plugin/KeyType/MultiValueKeyType.php b/tests/modules/key_test/src/Plugin/KeyType/MultiValueKeyType.php
+index dd00fcbe5a9a6fc3d9f775ba49726e89a1139387..a547ba9129edd9617b74411f1da2d3c64c105892 100644
+--- a/tests/modules/key_test/src/Plugin/KeyType/MultiValueKeyType.php
++++ b/tests/modules/key_test/src/Plugin/KeyType/MultiValueKeyType.php
+@@ -3,35 +3,36 @@
+ namespace Drupal\key_test\Plugin\KeyType;
+ 
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\StringTranslation\TranslatableMarkup;
++use Drupal\key\Attribute\KeyType;
+ use Drupal\key\Plugin\KeyTypeBase;
+ use Drupal\key\Plugin\KeyTypeMultivalueInterface;
+ 
+ /**
+  * Defines a key type that is multi-value.
+- *
+- * @KeyType(
+- *   id = "key_test_multi",
+- *   label = @Translation("Multi-value test"),
+- *   group = "authentication",
+- *   key_value = {
+- *     "plugin" = "key_test_multi",
+- *     "accepted" = FALSE
+- *   },
+- *   multivalue = {
+- *     "enabled" = true,
+- *     "fields" = {
+- *       "first" = {
+- *         "label" = @Translation("First"),
+- *         "required" = true
+- *       },
+- *       "second" = {
+- *         "label" = @Translation("Second"),
+- *         "required" = true
+- *       },
+- *     }
+- *   }
+- * )
+  */
++#[KeyType(
++  id: 'key_test_multi',
++  label: new TranslatableMarkup('Multi-value test'),
++  group: 'authentication',
++  key_value: [
++    'plugin' => 'key_test_multi',
++    'accepted' => FALSE,
++  ],
++  multivalue: [
++    'enabled' => TRUE,
++    'fields' => [
++      'first' => [
++        'label' => new TranslatableMarkup('First'),
++        'required' => TRUE,
++      ],
++      'second' => [
++        'label' => new TranslatableMarkup('Second'),
++        'required' => TRUE,
++      ],
++    ],
++  ],
++)]
+ class MultiValueKeyType extends KeyTypeBase implements KeyTypeMultivalueInterface {
+ 
+   /**
+diff --git a/tests/src/Functional/KeyAdminTest.php b/tests/src/Functional/KeyAdminTest.php
+index 62eacaec18435d774c940d28c4577698ffca39a1..d3c7b7d8f99f9d22068d9eb778b2e7f4bcfc4de9 100644
+--- a/tests/src/Functional/KeyAdminTest.php
++++ b/tests/src/Functional/KeyAdminTest.php
+@@ -2,6 +2,8 @@
+ 
+ namespace Drupal\Tests\key\Functional;
+ 
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+ use Drupal\Component\Render\FormattableMarkup;
+ use Drupal\Tests\BrowserTestBase;
+ use Drupal\Core\Url;
+@@ -11,6 +13,8 @@ use Drupal\Core\Url;
+  *
+  * @group key
+  */
++#[Group('key')]
++#[RunTestsInSeparateProcesses]
+ class KeyAdminTest extends BrowserTestBase {
+ 
+   use KeyTestTrait;
+diff --git a/tests/src/Functional/KeyDrushCommandsTest.php b/tests/src/Functional/KeyDrushCommandsTest.php
+index c1c1c74c56241e388c512df424d999c8cf9b8d65..a774203f0a9347547e29c467bf2d50ee35302862 100644
+--- a/tests/src/Functional/KeyDrushCommandsTest.php
++++ b/tests/src/Functional/KeyDrushCommandsTest.php
+@@ -2,6 +2,8 @@
+ 
+ namespace Drupal\Tests\key\Functional;
+ 
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+ use Drupal\Tests\BrowserTestBase;
+ use Drush\TestTraits\DrushTestTrait;
+ 
+@@ -9,6 +11,8 @@ use Drush\TestTraits\DrushTestTrait;
+  * @coversDefaultClass \Drupal\key\Commands\KeyCommands
+  * @group key
+  */
++#[Group('key')]
++#[RunTestsInSeparateProcesses]
+ class KeyDrushCommandsTest extends BrowserTestBase {
+ 
+   use DrushTestTrait;
+diff --git a/tests/src/Functional/KeyInputTest.php b/tests/src/Functional/KeyInputTest.php
+index 9f100865133a31c49de847bbed8bf15bd7fae938..6056c4cf61682b63cf6f55eaccb2879defdab24f 100644
+--- a/tests/src/Functional/KeyInputTest.php
++++ b/tests/src/Functional/KeyInputTest.php
+@@ -2,6 +2,8 @@
+ 
+ namespace Drupal\Tests\key\Functional;
+ 
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+ use Drupal\Tests\BrowserTestBase;
+ 
+ /**
+@@ -9,6 +11,8 @@ use Drupal\Tests\BrowserTestBase;
+  *
+  * @group key
+  */
++#[Group('key')]
++#[RunTestsInSeparateProcesses]
+ class KeyInputTest extends BrowserTestBase {
+ 
+   use KeyTestTrait;
+diff --git a/tests/src/Functional/KeyNonAdminAccessTest.php b/tests/src/Functional/KeyNonAdminAccessTest.php
+index c2fa1f16508770335c6dc004df4829e68637d460..bb2d4fed8090f28967c1300715dd216d93e1e3fa 100644
+--- a/tests/src/Functional/KeyNonAdminAccessTest.php
++++ b/tests/src/Functional/KeyNonAdminAccessTest.php
+@@ -2,6 +2,8 @@
+ 
+ namespace Drupal\Tests\key\Functional;
+ 
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+ use Drupal\Tests\BrowserTestBase;
+ 
+ /**
+@@ -9,6 +11,8 @@ use Drupal\Tests\BrowserTestBase;
+  *
+  * @group key
+  */
++#[Group('key')]
++#[RunTestsInSeparateProcesses]
+ class KeyNonAdminAccessTest extends BrowserTestBase {
+ 
+   use KeyTestTrait;
+diff --git a/tests/src/Functional/KeyOverrideAdminTest.php b/tests/src/Functional/KeyOverrideAdminTest.php
+index 7b22f858f8b1559f70e41b9aea91deb99f2923a2..8a0c0de8ef6a604755cf21d6f320bed4f0893d76 100644
+--- a/tests/src/Functional/KeyOverrideAdminTest.php
++++ b/tests/src/Functional/KeyOverrideAdminTest.php
+@@ -2,6 +2,8 @@
+ 
+ namespace Drupal\Tests\key\Functional;
+ 
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+ use Drupal\Tests\BrowserTestBase;
+ 
+ /**
+@@ -9,6 +11,8 @@ use Drupal\Tests\BrowserTestBase;
+  *
+  * @group key
+  */
++#[Group('key')]
++#[RunTestsInSeparateProcesses]
+ class KeyOverrideAdminTest extends BrowserTestBase {
+ 
+   use KeyTestTrait;
+diff --git a/tests/src/Functional/KeyRepositoryServiceTest.php b/tests/src/Functional/KeyRepositoryServiceTest.php
+index 2f3b47ef04933b7ec81331ff9ce6756631f1ac6b..409c406674cdaad27f338b4307b8ad4bc5ea67f4 100644
+--- a/tests/src/Functional/KeyRepositoryServiceTest.php
++++ b/tests/src/Functional/KeyRepositoryServiceTest.php
+@@ -2,6 +2,8 @@
+ 
+ namespace Drupal\Tests\key\Functional;
+ 
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+ use Drupal\Tests\BrowserTestBase;
+ use Drupal\key\KeyInterface;
+ 
+@@ -10,6 +12,8 @@ use Drupal\key\KeyInterface;
+  *
+  * @group key
+  */
++#[Group('key')]
++#[RunTestsInSeparateProcesses]
+ class KeyRepositoryServiceTest extends BrowserTestBase {
+ 
+   use KeyTestTrait;
+diff --git a/tests/src/Kernel/KeyDeprecationTest.php b/tests/src/Kernel/KeyDeprecationTest.php
+index b8d07b3c1cb47c38530427b8e7d2bd519acf3cc0..7aaa3fc201c237afd1a5fd9e9bb4ce965af78cd6 100644
+--- a/tests/src/Kernel/KeyDeprecationTest.php
++++ b/tests/src/Kernel/KeyDeprecationTest.php
+@@ -2,6 +2,10 @@
+ 
+ namespace Drupal\Tests\key\Kernel;
+ 
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\IgnoreDeprecations;
++use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
++use Drupal\Component\Utility\DeprecationHelper;
+ use Drupal\KernelTests\KernelTestBase;
+ use Drupal\key\Entity\Key;
+ 
+@@ -11,12 +15,15 @@ use Drupal\key\Entity\Key;
+  * @group key
+  * @group legacy
+  */
++#[Group('key')]
++#[IgnoreDeprecations]
++#[RunTestsInSeparateProcesses]
+ class KeyDeprecationTest extends KernelTestBase {
+ 
+   /**
+    * {@inheritdoc}
+    */
+-  protected static $modules = ['key', 'key_test'];
++  protected static $modules = ['key', 'key_deprecation_test'];
+ 
+   /**
+    * @covers \Drupal\key\Annotation\KeyProvider
+@@ -25,19 +32,22 @@ class KeyDeprecationTest extends KernelTestBase {
+    * @covers \Drupal\key\KeyRepository::getKeyNamesAsOptions
+    */
+   public function testStorageMethodDeprecation(): void {
+-    $this->expectDeprecation("The key provider 'storage_method' definition entry is deprecated in key:1.18.0 and is removed from key:2.0.0. Use the 'tags' definition entry instead. See https://www.drupal.org/node/3364701");
++    $message = "The key provider 'storage_method' definition entry is deprecated in key:1.18.0 and is removed from key:2.0.0. Use the 'tags' definition entry instead. See https://www.drupal.org/node/3364701";
++    DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.4.0', fn() => $this->expectUserDeprecationMessage($message), fn() => $this->expectDeprecation($message));
+     $plugin = $this->container->get('plugin.manager.key.key_provider')->createInstance('deprecated_defintion_entries');
+     $this->assertSame(['whatever'], $plugin->getPluginDefinition()['tags']);
+ 
+     $key_repository = $this->container->get('key.repository');
+     Key::create(['id' => 'test', 'key_provider' => 'file'])->save();
+ 
+-    $this->expectDeprecation('Drupal\key\KeyRepository::getKeysByStorageMethod() is deprecated in key:1.18.0 and is removed from key:2.0.0. Use self::getKeysByTags() instead. See https://www.drupal.org/node/3364701');
++    $message = 'Drupal\key\KeyRepository::getKeysByStorageMethod() is deprecated in key:1.18.0 and is removed from key:2.0.0. Use self::getKeysByTags() instead. See https://www.drupal.org/node/3364701';
++    DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.4.0', fn() => $this->expectUserDeprecationMessage($message), fn() => $this->expectDeprecation($message));
+     $keys = $key_repository->getKeysByStorageMethod('file');
+     $this->assertCount(1, $keys);
+     $this->assertSame('file', reset($keys)->getKeyProvider()->getPluginId());
+ 
+-    $this->expectDeprecation("Passing 'storage_method' as filter to Drupal\key\KeyRepository::getKeyNamesAsOptions() is deprecated in key:1.18.0 and is removed from key:2.0.0. Use the 'tags' filter instead. See https://www.drupal.org/node/3364701");
++    $message = "Passing 'storage_method' as filter to Drupal\key\KeyRepository::getKeyNamesAsOptions() is deprecated in key:1.18.0 and is removed from key:2.0.0. Use the 'tags' filter instead. See https://www.drupal.org/node/3364701";
++    DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.4.0', fn() => $this->expectUserDeprecationMessage($message), fn() => $this->expectDeprecation($message));
+     $names = $key_repository->getKeyNamesAsOptions(['storage_method' => 'file']);
+     $this->assertCount(1, $names);
+     $this->assertArrayHasKey('test', $names);
+diff --git a/tests/src/Kernel/KeyMultiValueTest.php b/tests/src/Kernel/KeyMultiValueTest.php
+index 34051c91184b3717bc2308617987c6233907ffbf..fdde69a7ecdf754ebb2a8c05db470558aa0ffed3 100644
+--- a/tests/src/Kernel/KeyMultiValueTest.php
++++ b/tests/src/Kernel/KeyMultiValueTest.php
+@@ -2,6 +2,8 @@
+ 
+ namespace Drupal\Tests\key\Kernel;
+ 
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+ use Drupal\KernelTests\KernelTestBase;
+ use Drupal\key\Entity\Key;
+ 
+@@ -10,6 +12,8 @@ use Drupal\key\Entity\Key;
+  *
+  * @group key
+  */
++#[Group('key')]
++#[RunTestsInSeparateProcesses]
+ class KeyMultiValueTest extends KernelTestBase {
+ 
+   /**
+diff --git a/tests/src/Unit/Entity/KeyEntityTest.php b/tests/src/Unit/Entity/KeyEntityTest.php
+index cef6c58d71afb69dafc53b039dc6a13b8af2013e..213b8335d75cf413c3ce7360fd2a616dc735a29a 100644
+--- a/tests/src/Unit/Entity/KeyEntityTest.php
++++ b/tests/src/Unit/Entity/KeyEntityTest.php
+@@ -2,6 +2,7 @@
+ 
+ namespace Drupal\Tests\key\Unit\Entity;
+ 
++use PHPUnit\Framework\Attributes\Group;
+ use Drupal\key\Entity\Key;
+ use Drupal\key\Plugin\KeyProvider\ConfigKeyProvider;
+ use Drupal\key\Plugin\KeyType\AuthenticationKeyType;
+@@ -12,6 +13,7 @@ use Drupal\Tests\key\Unit\KeyTestBase;
+  * @coversDefaultClass \Drupal\key\Entity\Key
+  * @group key
+  */
++#[Group('key')]
+ class KeyEntityTest extends KeyTestBase {
+ 
+   /**
+@@ -92,12 +94,12 @@ class KeyEntityTest extends KeyTestBase {
+     // Mock the KeyTypeManager service.
+     $this->keyTypeManager = $this->createMock('\Drupal\key\Plugin\KeyPluginManager');
+ 
+-    $this->keyTypeManager->expects($this->any())
++    $this->keyTypeManager
+       ->method('getDefinitions')
+       ->willReturn([
+         ['id' => 'authentication', 'label' => 'Authentication'],
+       ]);
+-    $this->keyTypeManager->expects($this->any())
++    $this->keyTypeManager
+       ->method('createInstance')
+       ->with('authentication', $this->keyTypeSettings)
+       ->willReturn($plugin);
+@@ -114,7 +116,7 @@ class KeyEntityTest extends KeyTestBase {
+     // Mock the KeyProviderManager service.
+     $this->keyProviderManager = $this->createMock('\Drupal\key\Plugin\KeyPluginManager');
+ 
+-    $this->keyProviderManager->expects($this->any())
++    $this->keyProviderManager
+       ->method('getDefinitions')
+       ->willReturn([
+         ['id' => 'file', 'label' => 'File', 'tags' => ['file']],
+@@ -124,7 +126,7 @@ class KeyEntityTest extends KeyTestBase {
+           'tags' => ['config'],
+         ],
+       ]);
+-    $this->keyProviderManager->expects($this->any())
++    $this->keyProviderManager
+       ->method('createInstance')
+       ->with('config', $this->keyProviderSettings)
+       ->willReturn($plugin);
+@@ -140,12 +142,12 @@ class KeyEntityTest extends KeyTestBase {
+     // Mock the KeyInputManager service.
+     $this->keyInputManager = $this->createMock('\Drupal\key\Plugin\KeyPluginManager');
+ 
+-    $this->keyInputManager->expects($this->any())
++    $this->keyInputManager
+       ->method('getDefinitions')
+       ->willReturn([
+         ['id' => 'none', 'label' => 'None'],
+       ]);
+-    $this->keyInputManager->expects($this->any())
++    $this->keyInputManager
+       ->method('createInstance')
+       ->with('none', $this->keyInputSettings)
+       ->willReturn($plugin);
+diff --git a/tests/src/Unit/KeyTestBase.php b/tests/src/Unit/KeyTestBase.php
+index 06a16bb0ba653777d58da97e13831eccbdfa3c6a..799d80ea1812c44a8b75fc8adb80728932db9161 100644
+--- a/tests/src/Unit/KeyTestBase.php
++++ b/tests/src/Unit/KeyTestBase.php
+@@ -49,15 +49,15 @@ abstract class KeyTestBase extends UnitTestCase {
+     parent::setUp();
+ 
+     // Mock the Config object, but methods will be mocked in the test class.
+-    $this->config = $this->createMock('\Drupal\Core\Config\ImmutableConfig');
++    $this->config = $this->createStub('\Drupal\Core\Config\ImmutableConfig');
+ 
+     // Mock ConfigEntityStorage object, but methods will be mocked in the test
+     // class.
+-    $this->configStorage = $this->createMock('\Drupal\Core\Config\Entity\ConfigEntityStorage');
++    $this->configStorage = $this->createStub('\Drupal\Core\Config\Entity\ConfigEntityStorage');
+ 
+     // Mock EntityTypeManager service.
+     $this->entityTypeManager = $this->createMock('\Drupal\Core\Entity\EntityTypeManager');
+-    $this->entityTypeManager->expects($this->any())
++    $this->entityTypeManager
+       ->method('getStorage')
+       ->with('key')
+       ->willReturn($this->configStorage);
+diff --git a/tests/src/Unit/Plugin/KeyProvider/StateKeyProviderTest.php b/tests/src/Unit/Plugin/KeyProvider/StateKeyProviderTest.php
+index 904a1de054fe428d6c0bbae0281e205a2b238420..f2775aac728caf0dcc8b668cbe8a943199ddcc54 100644
+--- a/tests/src/Unit/Plugin/KeyProvider/StateKeyProviderTest.php
++++ b/tests/src/Unit/Plugin/KeyProvider/StateKeyProviderTest.php
+@@ -2,6 +2,7 @@
+ 
+ namespace Drupal\Tests\key\Unit\Plugin\KeyProvider;
+ 
++use PHPUnit\Framework\Attributes\Group;
+ use Drupal\Core\DependencyInjection\ContainerBuilder;
+ use Drupal\Core\Form\FormState;
+ use Drupal\Core\State\StateInterface;
+@@ -14,6 +15,7 @@ use Drupal\Tests\UnitTestCase;
+  * @coversDefaultClass \Drupal\key\Plugin\KeyProvider\StateKeyProvider
+  * @group key
+  */
++#[Group('key')]
+ class StateKeyProviderTest extends UnitTestCase {
+ 
+   /**
+@@ -26,10 +28,17 @@ class StateKeyProviderTest extends UnitTestCase {
+   /**
+    * The state service.
+    *
+-   * @var \Drupal\Core\State\StateInterface|\PHPUnit\Framework\MockObject\MockObject
++   * @var \Drupal\Core\State\StateInterface|\PHPUnit\Framework\MockObject\Stub
+    */
+   protected $state;
+ 
++  /**
++   * The logger channel.
++   *
++   * @var \Drupal\Core\Logger\LoggerChannelInterface|\PHPUnit\Framework\MockObject\Stub
++   */
++  protected $logger;
++
+   /**
+    * The configuration object.
+    *
+@@ -54,14 +63,14 @@ class StateKeyProviderTest extends UnitTestCase {
+   /**
+    * The key entity object.
+    *
+-   * @var \Drupal\key\Entity\Key|\PHPUnit\Framework\MockObject\MockObject
++   * @var \Drupal\key\Entity\Key|\PHPUnit\Framework\MockObject\Stub
+    */
+   protected $key;
+ 
+   /**
+    * The string translation service.
+    *
+-   * @var \Drupal\Core\StringTranslation\TranslationInterface|\PHPUnit\Framework\MockObject\MockObject
++   * @var \Drupal\Core\StringTranslation\TranslationInterface|\PHPUnit\Framework\MockObject\Stub
+    */
+   protected $stringTranslation;
+ 
+@@ -75,7 +84,7 @@ class StateKeyProviderTest extends UnitTestCase {
+     $container = new ContainerBuilder();
+ 
+     // Mock the string translation service.
+-    $this->stringTranslation = $this->createMock(TranslationInterface::class);
++    $this->stringTranslation = $this->createStub(TranslationInterface::class);
+     $this->stringTranslation->method('translate')
+       ->willReturnCallback(function ($string) {
+         return $string;
+@@ -89,8 +98,10 @@ class StateKeyProviderTest extends UnitTestCase {
+     // Set the container.
+     \Drupal::setContainer($container);
+ 
+-    // Mock the state service.
+-    $this->state = $this->createMock(StateInterface::class);
++    // Stub the state service. Tests that expect calls on it replace it with
++    // a mock through ::createProvider().
++    $this->state = $this->createStub(StateInterface::class);
++    $this->logger = $loggerFactory->get('key');
+     $this->configuration = ['state_key' => 'test_key_state'];
+     $this->pluginId = 'state';
+     $this->pluginDefinition = [
+@@ -98,22 +109,10 @@ class StateKeyProviderTest extends UnitTestCase {
+       'label' => 'State',
+     ];
+ 
+-    $this->provider = new StateKeyProvider(
+-      $this->configuration,
+-      $this->pluginId,
+-      $this->pluginDefinition,
+-      $this->state,
+-      $loggerFactory->get('key')
+-    );
+-
+-    // Add translation service to the provider.
+-    $this->provider->setStringTranslation($this->stringTranslation);
++    $this->provider = $this->createProvider($this->state);
+ 
+-    // Create a properly configured key mock.
+-    $this->key = $this->getMockBuilder(Key::class)
+-      ->disableOriginalConstructor()
+-      ->onlyMethods(['id'])
+-      ->getMock();
++    // Create a properly configured key stub.
++    $this->key = $this->createStub(Key::class);
+     $this->key->method('id')->willReturn('test_key');
+   }
+ 
+@@ -129,10 +128,12 @@ class StateKeyProviderTest extends UnitTestCase {
+    * @covers ::getKeyValue
+    */
+   public function testGetKeyValue() {
+-    $this->state->expects($this->once())
++    $state = $this->createMock(StateInterface::class);
++    $state->expects($this->once())
+       ->method('get')
+       ->with('test_key_state')
+       ->willReturn('secret_value');
++    $this->provider = $this->createProvider($state);
+ 
+     $result = $this->provider->getKeyValue($this->key);
+     $this->assertEquals('secret_value', $result);
+@@ -189,24 +190,47 @@ class StateKeyProviderTest extends UnitTestCase {
+     $form_state->setValues(['state_key' => 'test_key_state']);
+ 
+     // Set up the state mock to return a value.
+-    $this->state->expects($this->once())
++    $state = $this->createMock(StateInterface::class);
++    $state->expects($this->once())
+       ->method('get')
+       ->with('test_key_state')
+       ->willReturn('some_value');
++    $this->provider = $this->createProvider($state);
+ 
+     // This should not cause any errors.
+     $this->provider->validateConfigurationForm($form, $form_state);
+     $this->assertFalse($form_state->hasAnyErrors());
+   }
+ 
++  /**
++   * Creates the state key provider under test.
++   *
++   * @param \Drupal\Core\State\StateInterface $state
++   *   The state service to give the provider.
++   *
++   * @return \Drupal\key\Plugin\KeyProvider\StateKeyProvider
++   *   The state key provider.
++   */
++  protected function createProvider(StateInterface $state): StateKeyProvider {
++    $provider = new StateKeyProvider(
++      $this->configuration,
++      $this->pluginId,
++      $this->pluginDefinition,
++      $state,
++      $this->logger
++    );
++    $provider->setStringTranslation($this->stringTranslation);
++    return $provider;
++  }
++
+   /**
+    * Helper to mock the logger.factory service.
+    */
+   protected function getLoggerFactoryMock() {
+-    $logger = $this->createMock('Drupal\Core\Logger\LoggerChannelInterface');
++    $logger = $this->createStub('Drupal\Core\Logger\LoggerChannelInterface');
+ 
+     $factory = $this->createMock('Drupal\Core\Logger\LoggerChannelFactoryInterface');
+-    $factory->expects($this->any())
++    $factory
+       ->method('get')
+       ->with('key')
+       ->willReturn($logger);

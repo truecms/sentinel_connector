@@ -1,0 +1,6 @@
+name: 'Sentinel Connector configuration pull request test'
+type: module
+description: 'Leaves system.date out of exports, the way Config Ignore does.'
+package: Testing
+hidden: true
+core_version_requirement: ^10.3 || ^11 || ^12

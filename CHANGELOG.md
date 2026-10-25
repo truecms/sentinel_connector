@@ -3,6 +3,40 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.3.0 - Unreleased
+
+### Added
+
+- The sync payload is `schema_version: 3` and has a `config_drift` block: the
+  names of configuration objects that differ between production and the
+  configuration sync directory, their collection and the type of change
+  (`create`, `update`, `delete`, `rename`). Configuration values are never
+  sent. The export storage is compared, so Config Ignore and Config Split are
+  respected, as in `drush config:status`.
+- The list holds at most 200 objects with an exact `total` and a `truncated`
+  flag. The comparison has a 10-second budget (`status: incomplete`); a
+  missing or unreadable sync directory, or any failure, is reported as
+  `status: unavailable` with a reason and never fails the push.
+- `config_pr_enabled` says whether the Config Pull Request module is enabled.
+- A "Report configuration drift" checkbox on the settings form, on by default.
+  Update `10003` turns it on for existing sites; export configuration
+  afterwards (`drush cex`).
+- Drift is part of the push fingerprint: a change in drift is pushed by the
+  next cron run or `drush sentinel_connector:deploy`.
+- Optional submodule `sentinel_connector_config_pr`: opens one configuration
+  pull request (GitHub) or merge request (GitLab) through `drupal/config_pr`,
+  from `drush sentinel_connector:config-pr` or cron (off by default). It never
+  merges. Its open pull request is added to the drift block as
+  `export_pull_request`.
+
+### Requires
+
+- A Sentinel server that accepts payload `schema_version: 3`, deployed before
+  upgrading clients. See [RELEASE.md](RELEASE.md) for the staged rollout.
+- Release 1.2.0 already shipped Drupal 12 compatibility with payload v2.
+  This follow-on release adds configuration drift and the optional configuration
+  pull request submodule; it must not replace the published 1.2.0 tag.
+
 ## 1.2.0 - 2026-10-25
 
 ### Changed

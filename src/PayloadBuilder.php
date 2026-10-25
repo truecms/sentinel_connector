@@ -17,12 +17,14 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '1.2.0';
+  public const CONNECTOR_VERSION = '1.3.0';
 
   /**
-   * Sync payload contract version. Version 2 adds the platform block.
+   * Sync payload contract version.
+   *
+   * Version 2 adds the platform block, version 3 the config_drift block.
    */
-  public const SCHEMA_VERSION = 2;
+  public const SCHEMA_VERSION = 3;
 
   /**
    * Constructs a PayloadBuilder.
@@ -39,6 +41,9 @@ class PayloadBuilder {
    *   Resolves the Composer package of an extension without packaging data.
    * @param array<string, array<string, string>> $platform
    *   The platform block, without the parts that could not be read.
+   * @param \Closure|null $configDrift
+   *   Returns the config_drift block, or NULL to leave it out. Called on the
+   *   first build only: the comparison exports the whole configuration.
    */
   public function __construct(
     protected ModuleExtensionList $moduleList,
@@ -47,7 +52,15 @@ class PayloadBuilder {
     protected string $ipAddress,
     protected ?ComposerProjectResolver $composerProjects = NULL,
     protected array $platform = [],
+    protected ?\Closure $configDrift = NULL,
   ) {}
+
+  /**
+   * The config_drift block of the first build, FALSE before it.
+   *
+   * @var array<string, mixed>|null|false
+   */
+  protected array|null|false $drift = FALSE;
 
   /**
    * Build the modules array for the given scope.
@@ -124,6 +137,12 @@ class PayloadBuilder {
     // PHP encodes an empty array as a list, which is not an object.
     if ($this->platform !== []) {
       $payload['platform'] = $this->platform;
+    }
+    if ($this->drift === FALSE) {
+      $this->drift = $this->configDrift ? ($this->configDrift)() : NULL;
+    }
+    if ($this->drift !== NULL) {
+      $payload['config_drift'] = $this->drift;
     }
     return $payload;
   }
