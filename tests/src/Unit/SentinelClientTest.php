@@ -379,12 +379,14 @@ class SentinelClientTest extends TestCase {
    */
   #[DataProvider('handlerErrors')]
   public function testTransportStatsAreSafe(mixed $handlerError, int $expected): void {
-    $http = new Client(['handler' => HandlerStack::create(new MockHandler([
-      static function ($request, array $options) use ($handlerError): ConnectException {
-        $options['on_stats'](new TransferStats($request, NULL, 0.0, $handlerError));
-        return new ConnectException('SECRET connection detail', $request);
-      },
-    ]))]);
+    $http = new Client([
+      'handler' => HandlerStack::create(new MockHandler([
+        static function ($request, array $options) use ($handlerError): ConnectException {
+          $options['on_stats'](new TransferStats($request, NULL, 0.0, $handlerError));
+          return new ConnectException('SECRET connection detail', $request);
+        },
+      ])),
+    ]);
     $result = (new SentinelClient($http))->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
     $this->assertSame('transport_error', $result->status);
     $this->assertSame([
