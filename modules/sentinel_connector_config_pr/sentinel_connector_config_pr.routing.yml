@@ -1,0 +1,7 @@
+sentinel_connector_config_pr.settings:
+  path: '/admin/config/services/sentinel-connector/config-pr'
+  defaults:
+    _form: 'Drupal\sentinel_connector_config_pr\Form\SettingsForm'
+    _title: 'Configuration pull request'
+  requirements:
+    _permission: 'administer sentinel connector'

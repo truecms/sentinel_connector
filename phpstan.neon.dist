@@ -5,9 +5,12 @@ parameters:
     - tests
     - sentinel_connector.module
     - sentinel_connector.install
+    - modules
   ignoreErrors:
     # Drupal 11 requires this attribute; PHPUnit 9 on Drupal 10 has no class.
     # PHP 8 ignores uninstantiated attributes, so both runtimes remain valid.
     - message: '#^Attribute class PHPUnit\\Framework\\Attributes\\RunTestsInSeparateProcesses does not exist\.$#'
-      path: tests/src/Kernel/*Test.php
+      paths:
+        - tests/src/Kernel/*Test.php
+        - modules/*/tests/src/Kernel/*Test.php
       reportUnmatched: false

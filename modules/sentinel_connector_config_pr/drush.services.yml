@@ -1,0 +1,6 @@
+services:
+  sentinel_connector_config_pr.commands:
+    class: Drupal\sentinel_connector_config_pr\Commands\ConfigPrCommands
+    arguments: ['@Drupal\sentinel_connector_config_pr\ConfigPrRunner']
+    tags:
+      - { name: drush.command }

@@ -1,0 +1,6 @@
+services:
+  Drupal\sentinel_connector_config_pr_test\IgnoreSubscriber:
+    class: Drupal\sentinel_connector_config_pr_test\IgnoreSubscriber
+    arguments: ['@config.storage.sync']
+    tags:
+      - { name: event_subscriber }

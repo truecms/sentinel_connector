@@ -132,6 +132,11 @@ in every collection, such as the `language.fr` translation overrides.
   `total` is the full count and `truncated` says the list was cut.
 - `config_pr_enabled` is `true` when the Config Pull Request (`config_pr`)
   module is enabled. It is sent with every status.
+- `export_pull_request` (`{"url": …, "updated_at": "2026-11-02T03:04:05Z"}`)
+  is added when the `sentinel_connector_config_pr` submodule has a
+  configuration pull request open. It is read from State, with no call to the
+  Git host. A new or updated pull request changes the push fingerprint, so the
+  next cron run sends it.
 - A failure in the comparison never fails the push.
 - The drift list is part of the push fingerprint, so a change in drift is
   pushed by the next cron run or `drush sentinel_connector:deploy`. Run
@@ -518,6 +523,94 @@ Connector* entry:
 "Accepted" means Sentinel answered 200 or 202. A plan limit that ended less
 than 6 hours ago also shows as information, so that a Free site does not
 report an error between the end of its daily limit and the next cron run.
+
+## Configuration pull request (optional submodule)
+
+The `sentinel_connector_config_pr` submodule brings configuration that changed
+on production back into code. It writes every configuration object that
+differs from the sync directory to an export branch and opens one pull request
+(GitHub) or merge request (GitLab), or updates the one already open. Your team
+reviews and merges it; the module never merges. It uses
+[Config Pull Request](https://www.drupal.org/project/config_pr) (`config_pr`
+3.0) for the GitHub and GitLab APIs only: its own form and its user token
+field are not used.
+
+Install it on the site that should open the pull request:
+
+```bash
+composer require drupal/config_pr:^3.0
+drush en sentinel_connector_config_pr config_pr_github
+```
+
+For GitLab, enable `config_pr_gitlab` instead and add its API client, which
+`config_pr` does not install:
+
+```bash
+composer require m4tthumphrey/php-gitlab-api:^12.0 php-http/guzzle7-adapter http-interop/http-factory-guzzle
+```
+
+Set the repository on **Configuration > Web services > Sentinel configuration
+pull request** (`/admin/config/services/sentinel-connector/config-pr`): Git
+host, owner (for GitLab the group path, subgroups separated by `/`) and name
+or, for GitLab, the numeric project id, the host URL for GitHub Enterprise or self-managed GitLab, the base branch
+(empty for the default branch), the export branch (default
+`sentinel/config-export`), the path of the sync directory in the repository
+(default `config/sync`) and the pull request title. The settings hold no
+secrets.
+
+### Access token
+
+The token comes only from `settings.php` or from a [Key](https://www.drupal.org/project/key)
+module key selected on the settings form. It is never read from configuration
+or State, never logged and never sent to Sentinel. A key that keeps its value
+in configuration is refused; use a key provider that reads a file or an
+environment variable. The settings form shows only whether a token is present.
+
+```php
+$settings['sentinel_connector_config_pr']['token'] = getenv('CONFIG_PR_TOKEN');
+```
+
+Give the token access to the one repository only:
+
+- **GitHub**: a fine-grained personal access token for that repository, with
+  **Contents** and **Pull requests** set to read and write.
+- **GitLab**: a project access token with the `api` scope and the
+  **Developer** role. Do not protect the export branch.
+
+### Running it
+
+```bash
+# List the configuration objects a run would export; writes nothing.
+drush sentinel_connector:config-pr --dry-run
+# Export now, even if the interval has not passed.
+drush sc-config-pr --force
+```
+
+A run compares the export storage with the sync directory, the same comparison
+as `drush config:status`, so objects that Config Ignore or Config Split leave
+out are not exported. It writes created and updated objects as YAML and deletes
+the files of deleted objects. Files that already match the export branch are
+skipped, so a run without a new change makes no commit. After the pull request
+is merged or closed, the next run starts the export branch again from the base
+branch. The module owns the export branch: do not push other work to it. A run
+refuses a branch of that name that it did not create in this repository (or
+that changed after its pull request closed), an open pull request from it that
+it did not open or that targets another base branch, and an empty sync
+directory. Keep the token on production only: a database copy also copies the
+record of the open pull request.
+
+Cron runs are off by default. When turned on, cron runs at most once per
+interval (default 24 hours), and only while Sentinel Connector's own cron
+reporting is enabled, so the guard in
+[Send reports from production only](#send-reports-from-production-only) also
+keeps non-production environments from opening pull requests.
+
+Each run logs its outcome, the pull request URL and the number of files on the
+`sentinel_connector` channel, never configuration values or the token.
+Configuration values are never sent to Sentinel.
+
+Known limit: `config_pr` makes one commit per file, so a large export makes
+many commits.
 
 ## Permissions
 

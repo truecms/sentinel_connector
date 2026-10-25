@@ -23,6 +23,11 @@ All notable changes to this project are documented here. Versions follow
   afterwards (`drush cex`).
 - Drift is part of the push fingerprint: a change in drift is pushed by the
   next cron run or `drush sentinel_connector:deploy`.
+- Optional submodule `sentinel_connector_config_pr`: opens one configuration
+  pull request (GitHub) or merge request (GitLab) through `drupal/config_pr`,
+  from `drush sentinel_connector:config-pr` or cron (off by default). It never
+  merges. Its open pull request is added to the drift block as
+  `export_pull_request`.
 
 ### Requires
 

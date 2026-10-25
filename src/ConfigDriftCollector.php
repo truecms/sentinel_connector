@@ -87,6 +87,26 @@ class ConfigDriftCollector {
    *   and objects keys.
    */
   public function collect(): array {
+    $drift = $this->report();
+    // The configuration pull request submodule adds the pull request it has
+    // open as export_pull_request.
+    try {
+      $altered = $drift;
+      $this->moduleHandler->alter('sentinel_connector_config_drift', $altered);
+      $drift = $altered;
+    }
+    catch (\Throwable) {
+    }
+    return $drift;
+  }
+
+  /**
+   * Builds the drift block before other modules add to it.
+   *
+   * @return array<string, mixed>
+   *   The drift block.
+   */
+  protected function report(): array {
     $configPr = $this->configPrEnabled();
     try {
       if ($this->configFactory->get('sentinel_connector.settings')->get('report_config_drift') === FALSE) {
