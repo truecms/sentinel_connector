@@ -265,6 +265,23 @@ class ConfigPrRunnerTest extends KernelTestBase {
   }
 
   /**
+   * A branch left by a failed run whose cleanup also failed starts again.
+   */
+  public function testFailedCleanupIsRetried(): void {
+    $this->config('system.site')->set('slogan', 'Drifted')->save();
+    $this->host->failAfterWrites = 0;
+    $this->host->alsoFailOn = 'deleteBranch';
+    $this->assertSame('failed', $this->runner()->run(FALSE, TRUE)->status);
+    $this->assertArrayHasKey('sentinel/config-export', $this->host->branches);
+
+    $this->host->failAfterWrites = -1;
+    $this->host->alsoFailOn = NULL;
+    $this->assertSame('created', $this->runner()->run(FALSE, TRUE)->status);
+    $this->assertContains('deleteBranch', $this->host->calls);
+    $this->assertCount(1, $this->host->pulls);
+  }
+
+  /**
    * A partly failed update still puts back what it wrote, on the next run.
    */
   public function testPartialUpdateIsPutBackLater(): void {

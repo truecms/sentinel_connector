@@ -43,6 +43,11 @@ class FakeHost implements HostInterface {
   public ?string $failOn = NULL;
 
   /**
+   * A second method that throws when called.
+   */
+  public ?string $alsoFailOn = NULL;
+
+  /**
    * Writes that succeed before writeFile() throws; negative never throws.
    */
   public int $failAfterWrites = -1;
@@ -158,7 +163,7 @@ class FakeHost implements HostInterface {
    */
   protected function call(string $method): void {
     $this->calls[] = $method;
-    if ($this->failOn === $method) {
+    if ($this->failOn === $method || $this->alsoFailOn === $method) {
       throw new HostException('Fake failure.');
     }
   }

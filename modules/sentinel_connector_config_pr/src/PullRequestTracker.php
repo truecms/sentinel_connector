@@ -146,7 +146,18 @@ class PullRequestTracker {
     return is_array($owned)
       && ($owned['identity'] ?? NULL) === $identity
       && $head !== NULL
-      && ($owned['head'] ?? NULL) === $head;
+      && (!empty($owned['unfinished']) || ($owned['head'] ?? NULL) === $head);
+  }
+
+  /**
+   * Records an export branch this module created but has not finished.
+   *
+   * Set as soon as the branch exists, so a run that stops before its pull
+   * request is opened, and fails to delete the branch, leaves a branch that
+   * the next run still deletes and starts again, whatever its head.
+   */
+  public function setUnfinishedBranch(string $identity): void {
+    $this->state->set(self::STATE_BRANCH, ['identity' => $identity, 'head' => NULL, 'unfinished' => TRUE]);
   }
 
   /**

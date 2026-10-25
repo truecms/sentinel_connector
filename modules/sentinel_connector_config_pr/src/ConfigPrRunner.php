@@ -266,6 +266,7 @@ class ConfigPrRunner {
         $step = 'branch';
         $host->createBranch($branch, $base);
         $createdBranch = TRUE;
+        $this->tracker->setUnfinishedBranch($identity);
       }
       $step = 'write';
       if ($pull !== NULL) {
@@ -306,7 +307,8 @@ class ConfigPrRunner {
           $this->tracker->clearOwnedBranch();
         }
         catch (\Throwable) {
-          // The next run deletes it before starting again.
+          // Still recorded as unfinished, so the next run deletes it before
+          // starting again.
         }
       }
       $this->logger->error('Configuration pull request run failed at step @step (@class, code @code). @reason', [
