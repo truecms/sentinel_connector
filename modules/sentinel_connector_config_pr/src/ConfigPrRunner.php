@@ -196,11 +196,13 @@ class ConfigPrRunner {
       $step = 'read';
       $pull = $host->findOpenPullRequest($branch);
       $head = $host->branchHead($branch);
-      // Only a branch this module created, or the branch of the pull request
-      // it opened, is ever written to or deleted.
-      $owned = $this->tracker->ownedBranch() === $branch
-        || ($pull !== NULL && $pull['url'] === ($this->tracker->get()['url'] ?? NULL));
-      if ($head !== NULL && !$owned) {
+      // Only the pull request this module opened, or a branch still at the
+      // commit this module left it at in this repository, is ever written to
+      // or deleted.
+      $identity = $this->branchIdentity($branch);
+      $owned = ($pull !== NULL && $pull['url'] === ($this->tracker->get()['url'] ?? NULL))
+        || ($pull === NULL && $this->tracker->ownsBranch($identity, $head));
+      if (($head !== NULL || $pull !== NULL) && !$owned) {
         throw new HostException('The export branch exists but was not created by this module. Choose another export branch.');
       }
       if ($pull !== NULL && $pull['base'] !== $base) {
@@ -213,6 +215,7 @@ class ConfigPrRunner {
         if ($head !== NULL) {
           $step = 'reset';
           $host->deleteBranch($branch);
+          $this->tracker->clearOwnedBranch();
           $head = NULL;
         }
       }
@@ -233,7 +236,10 @@ class ConfigPrRunner {
 
       $step = 'compare';
       $ref = $head !== NULL ? $branch : $base;
-      $operations = FilePlan::plan($desired, static fn (string $path): ?string => $host->blobSha($path, $ref));
+      $operations = FilePlan::plan($desired, function (string $path) use ($host, $ref): ?string {
+        $this->renewLock();
+        return $host->blobSha($path, $ref);
+      });
       if ($operations === []) {
         $this->tracker->setLastRun($now);
         if ($pull === NULL) {
@@ -248,7 +254,6 @@ class ConfigPrRunner {
       if ($head === NULL) {
         $step = 'branch';
         $host->createBranch($branch, $base);
-        $this->tracker->setOwnedBranch($branch);
         $createdBranch = TRUE;
       }
       $step = 'write';
@@ -259,7 +264,7 @@ class ConfigPrRunner {
       }
       foreach ($operations as $path => $operation) {
         // config_pr makes one commit per file; keep the lock while writing.
-        $this->lock->acquire(self::LOCK, self::LOCK_TIMEOUT);
+        $this->renewLock();
         $name = $paths[$path]['name'];
         if ($operation['op'] === 'delete') {
           $host->deleteFile($path, sprintf('Delete %s (exported configuration)', $name), $branch);
@@ -268,10 +273,15 @@ class ConfigPrRunner {
           $host->writeFile($path, (string) $operation['content'], sprintf('%s %s (exported configuration)', $operation['exists'] ? 'Update' : 'Add', $name), $branch, $operation['exists']);
         }
       }
+      $step = 'record';
+      $after = $host->branchHead($branch);
+      if ($after !== NULL) {
+        $this->tracker->setOwnedBranch($identity, $after);
+      }
       $status = 'updated';
       if ($pull === NULL) {
         $step = 'pull_request';
-        $this->lock->acquire(self::LOCK, self::LOCK_TIMEOUT);
+        $this->renewLock();
         $pull = $host->createPullRequest($base, $branch, $this->title(), $this->body());
         $status = 'created';
       }
@@ -282,6 +292,7 @@ class ConfigPrRunner {
         // Leave no partial branch behind a pull request that was not opened.
         try {
           $host->deleteBranch($branch);
+          $this->tracker->clearOwnedBranch();
         }
         catch (\Throwable) {
           // The next run deletes it before starting again.
@@ -302,6 +313,30 @@ class ConfigPrRunner {
     $this->tracker->setLastRun($now);
     $message = $status === 'created' ? 'Opened a configuration pull request.' : 'Updated the open configuration pull request.';
     return new RunResult($status, $message, $pull['url'], count($operations));
+  }
+
+  /**
+   * Extends the run's lock, and stops the run if another run holds it.
+   */
+  protected function renewLock(): void {
+    if (!$this->lock->acquire(self::LOCK, self::LOCK_TIMEOUT)) {
+      throw new HostException('The run lost its lock to another run.');
+    }
+  }
+
+  /**
+   * The export branch with the host and repository it belongs to.
+   */
+  public function branchIdentity(string $branch): string {
+    $settings = $this->settings();
+    return implode('|', [
+      (string) $settings->get('provider'),
+      rtrim(trim((string) $settings->get('api_base_url')), '/'),
+      trim((string) $settings->get('repo_owner')),
+      trim((string) $settings->get('repo_name')),
+      $settings->get('provider') === 'gitlab' ? trim((string) $settings->get('gitlab_project_id')) : '',
+      $branch,
+    ]);
   }
 
   /**

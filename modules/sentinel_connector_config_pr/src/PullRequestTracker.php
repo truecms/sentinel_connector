@@ -24,7 +24,7 @@ class PullRequestTracker {
   public const STATE_PATHS = 'sentinel_connector_config_pr.paths';
 
   /**
-   * State key of the export branch this module created.
+   * State key of the export branch this module created, with its repository.
    */
   public const STATE_BRANCH = 'sentinel_connector_config_pr.branch';
 
@@ -134,17 +134,39 @@ class PullRequestTracker {
   }
 
   /**
-   * The export branch this module created, or ''.
+   * Whether the export branch is the one this module last left.
+   *
+   * @param string $identity
+   *   The branch with its host and repository.
+   * @param string|null $head
+   *   The branch's current head commit.
    */
-  public function ownedBranch(): string {
-    return (string) $this->state->get(self::STATE_BRANCH, '');
+  public function ownsBranch(string $identity, ?string $head): bool {
+    $owned = $this->state->get(self::STATE_BRANCH);
+    return is_array($owned)
+      && ($owned['identity'] ?? NULL) === $identity
+      && $head !== NULL
+      && ($owned['head'] ?? NULL) === $head;
   }
 
   /**
-   * Records that this module created the export branch.
+   * Records the export branch and the head commit this module left it at.
+   *
+   * @param string $identity
+   *   The branch with its host and repository, so a branch of the same name in
+   *   another repository is not taken for this module's.
+   * @param string $head
+   *   The head commit after this module's last write.
    */
-  public function setOwnedBranch(string $branch): void {
-    $this->state->set(self::STATE_BRANCH, $branch);
+  public function setOwnedBranch(string $identity, string $head): void {
+    $this->state->set(self::STATE_BRANCH, ['identity' => $identity, 'head' => $head]);
+  }
+
+  /**
+   * Forgets the export branch, after this module deleted it.
+   */
+  public function clearOwnedBranch(): void {
+    $this->state->delete(self::STATE_BRANCH);
   }
 
 }

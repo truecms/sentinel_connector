@@ -166,6 +166,54 @@ class ConfigPrRunnerTest extends KernelTestBase {
   }
 
   /**
+   * A branch of the same name in another repository is not this module's.
+   */
+  public function testOwnershipIsPerRepository(): void {
+    $this->config('system.site')->set('slogan', 'Drifted')->save();
+    $this->assertSame('created', $this->runner()->run(FALSE, TRUE)->status);
+    $this->host->pulls[1]['open'] = FALSE;
+
+    // Another repository with a branch of the same name.
+    $this->config('sentinel_connector_config_pr.settings')->set('repo_name', 'other')->save();
+    $this->host->branches['sentinel/config-export'] = ['team-work.txt' => "x\n"];
+    $this->assertSame('failed', $this->runner()->run(FALSE, TRUE)->status);
+    $this->assertArrayNotHasKey('config/sync/system.site.yml', $this->host->branches['sentinel/config-export']);
+    $this->assertNotContains('deleteBranch', $this->host->calls);
+  }
+
+  /**
+   * A branch changed by someone else after its pull request closed is kept.
+   */
+  public function testChangedBranchIsNotDeleted(): void {
+    $this->config('system.site')->set('slogan', 'Drifted')->save();
+    $this->assertSame('created', $this->runner()->run(FALSE, TRUE)->status);
+    $this->host->pulls[1]['open'] = FALSE;
+    $this->host->branches['sentinel/config-export']['team-work.txt'] = "x\n";
+
+    $this->assertSame('failed', $this->runner()->run(FALSE, TRUE)->status);
+    $this->assertContains('team-work.txt', array_keys($this->host->branches['sentinel/config-export'] ?? []));
+    $this->assertNotContains('deleteBranch', $this->host->calls);
+  }
+
+  /**
+   * An open pull request this module did not open is not taken over.
+   */
+  public function testForeignPullRequestIsRefused(): void {
+    $this->config('system.site')->set('slogan', 'Drifted')->save();
+    $this->host->pulls[1] = [
+      'branch' => 'sentinel/config-export',
+      'base' => 'main',
+      'url' => 'https://git.example.com/fork/pull/1',
+      'open' => TRUE,
+      'title' => 'Fork',
+    ];
+
+    $this->assertSame('failed', $this->runner()->run(FALSE, TRUE)->status);
+    $this->assertArrayNotHasKey('sentinel/config-export', $this->host->branches);
+    $this->assertNull($this->container->get(PullRequestTracker::class)->openPullRequest());
+  }
+
+  /**
    * A missing token fails before any request and leaves no branch.
    */
   public function testMissingTokenFailsWithoutBranch(): void {

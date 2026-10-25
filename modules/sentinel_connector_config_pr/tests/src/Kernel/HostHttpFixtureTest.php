@@ -123,7 +123,7 @@ class HostHttpFixtureTest extends KernelTestBase {
    */
   public function testUpdate(string $provider, string $baseUrl, string $host, string $prefix): void {
     $this->configure($provider, $baseUrl);
-    $this->container->get(PullRequestTracker::class)->setOwnedBranch('sentinel/config-export');
+    $this->trackOpenPullRequest($provider);
     $client = ReplayHttpClient::$current = ReplayHttpClient::fromFile(__DIR__ . "/../../fixtures/{$provider}_update.json", $prefix);
 
     $result = $this->container->get(ConfigPrRunner::class)->run(FALSE, TRUE);
@@ -144,7 +144,7 @@ class HostHttpFixtureTest extends KernelTestBase {
    */
   public function testDelete(string $provider, string $baseUrl, string $host, string $prefix): void {
     $this->configure($provider, $baseUrl);
-    $this->container->get(PullRequestTracker::class)->setOwnedBranch('sentinel/config-export');
+    $this->trackOpenPullRequest($provider);
     // The code still has an object the site no longer has.
     $this->container->get('config.storage.sync')->write('system.removed', ['a' => 1]);
     $fixtures = __DIR__ . '/../../fixtures/';
@@ -193,6 +193,14 @@ class HostHttpFixtureTest extends KernelTestBase {
     unset($GLOBALS['config']['sentinel_connector_config_pr.settings']);
     $this->assertSame('created', $result->status, $result->message . "\n" . $this->logger->text());
     $this->assertRequests($client, 'github.example.com');
+  }
+
+  /**
+   * Records the fixtures' open pull request as the one this module opened.
+   */
+  protected function trackOpenPullRequest(string $provider): void {
+    $url = $provider === 'github' ? 'https://github.example.com/acme/site/pull/7' : 'https://gitlab.example.com/acme/site/-/merge_requests/3';
+    $this->container->get(PullRequestTracker::class)->set($url, $provider === 'github' ? 7 : 3, 1);
   }
 
   /**

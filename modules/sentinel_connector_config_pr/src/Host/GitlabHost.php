@@ -73,7 +73,9 @@ class GitlabHost extends ConfigPrHost {
       'source_branch' => $branch,
     ]);
     foreach (is_array($requests) ? $requests : [] as $request) {
-      if (($request['source_branch'] ?? NULL) === $branch && !empty($request['web_url'])) {
+      // A merge request from a fork can use the same branch name.
+      $sameProject = (string) ($request['source_project_id'] ?? '') === $this->controller->getRepoId();
+      if ($sameProject && ($request['source_branch'] ?? NULL) === $branch && !empty($request['web_url'])) {
         return [
           'url' => (string) $request['web_url'],
           'number' => (int) $request['iid'],

@@ -529,8 +529,11 @@ the files of deleted objects. Files that already match the export branch are
 skipped, so a run without a new change makes no commit. After the pull request
 is merged or closed, the next run starts the export branch again from the base
 branch. The module owns the export branch: do not push other work to it. A run
-refuses a branch of that name that it did not create, an open pull request from
-it into another base branch, and an empty sync directory.
+refuses a branch of that name that it did not create in this repository (or
+that changed after its pull request closed), an open pull request from it that
+it did not open or that targets another base branch, and an empty sync
+directory. Keep the token on production only: a database copy also copies the
+record of the open pull request.
 
 Cron runs are off by default. When turned on, cron runs at most once per
 interval (default 24 hours), and only while Sentinel Connector's own cron
