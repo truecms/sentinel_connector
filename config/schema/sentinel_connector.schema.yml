@@ -20,3 +20,6 @@ sentinel_connector.settings:
     enabled:
       type: boolean
       label: 'Enable cron sync'
+    report_config_drift:
+      type: boolean
+      label: 'Report configuration drift'

@@ -215,11 +215,176 @@
                 }
             }
         },
+        "config_drift": {
+            "type": "object",
+            "required": [
+                "status",
+                "reason",
+                "generated_at",
+                "total",
+                "config_pr_enabled",
+                "truncated",
+                "objects"
+            ],
+            "additionalProperties": false,
+            "oneOf": [
+                {
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "complete"
+                            ]
+                        },
+                        "reason": {
+                            "type": "null"
+                        }
+                    }
+                },
+                {
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "incomplete"
+                            ]
+                        },
+                        "reason": {
+                            "enum": [
+                                "time_budget"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "unavailable"
+                            ]
+                        },
+                        "reason": {
+                            "enum": [
+                                "sync_directory_missing",
+                                "sync_unreadable",
+                                "error",
+                                "disabled"
+                            ]
+                        },
+                        "total": {
+                            "enum": [
+                                0
+                            ]
+                        },
+                        "truncated": {
+                            "enum": [
+                                false
+                            ]
+                        },
+                        "objects": {
+                            "maxItems": 0
+                        }
+                    }
+                }
+            ],
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "complete",
+                        "incomplete",
+                        "unavailable"
+                    ]
+                },
+                "reason": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "enum": [
+                        "sync_directory_missing",
+                        "sync_unreadable",
+                        "time_budget",
+                        "error",
+                        "disabled",
+                        null
+                    ]
+                },
+                "generated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+                },
+                "total": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "config_pr_enabled": {
+                    "type": "boolean"
+                },
+                "truncated": {
+                    "type": "boolean"
+                },
+                "objects": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "name",
+                            "collection",
+                            "change"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 250
+                            },
+                            "collection": {
+                                "type": "string",
+                                "maxLength": 250
+                            },
+                            "change": {
+                                "type": "string",
+                                "enum": [
+                                    "create",
+                                    "update",
+                                    "delete",
+                                    "rename"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "export_pull_request": {
+                    "type": "object",
+                    "required": [
+                        "url",
+                        "updated_at"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "format": "uri",
+                            "pattern": "^https?://",
+                            "maxLength": 2048
+                        },
+                        "updated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+                        }
+                    }
+                }
+            }
+        },
         "schema_version": {
             "type": "integer",
             "enum": [
                 1,
-                2
+                2,
+                3
             ]
         }
     }
