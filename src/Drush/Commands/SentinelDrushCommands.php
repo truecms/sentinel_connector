@@ -10,6 +10,7 @@ use Drush\Attributes as CLI;
 use Drush\Commands\AutowireTrait;
 use Drush\Commands\DrushCommands;
 use Drush\Drush;
+use Symfony\Component\Process\Process;
 
 /**
  * Drush commands for Sentinel Connector. CLI execution has full access.
@@ -87,6 +88,10 @@ class SentinelDrushCommands extends DrushCommands {
     if (!$this->upgradeStatus->isDetected()) {
       throw new \RuntimeException(dt('Upgrade Status is not enabled. Add it with "composer require --dev drupal/upgrade_status" and "drush pm:install upgrade_status", then run this command again.'));
     }
+    // A scan takes minutes: do not run one whose result cannot be sent.
+    if (!$this->syncService->isConfigured()) {
+      throw new \RuntimeException(dt('Sentinel connector is not fully configured; no scan was run.'));
+    }
     $this->logger()->notice(dt('Scanning custom projects with Upgrade Status. This can take several minutes.'));
     $exit = $this->scan();
     // Upgrade Status exits with 3 when the scan found problems: that is a
@@ -123,7 +128,12 @@ class SentinelDrushCommands extends DrushCommands {
     // A scan of a large codebase takes longer than the default time limit.
     $process->setTimeout(NULL);
     return $process->run(function (string $type, string $buffer): void {
-      $this->output()->write($buffer);
+      if ($type === Process::ERR) {
+        $this->io()->getErrorStyle()->write($buffer);
+      }
+      else {
+        $this->output()->write($buffer);
+      }
     });
   }
 

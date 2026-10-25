@@ -132,6 +132,19 @@ class SyncService {
   protected ?string $pendingDrift = NULL;
 
   /**
+   * State key: hash of the readiness block in the last accepted fingerprint.
+   *
+   * A read of Upgrade Status that failed with an error counts as this one, so
+   * a passing failure does not push twice.
+   */
+  public const STATE_LAST_UPGRADE_STATUS = 'sentinel_connector.last_upgrade_status';
+
+  /**
+   * Hash of the readiness block in the fingerprint of the push in progress.
+   */
+  protected ?string $pendingUpgradeStatus = NULL;
+
+  /**
    * Constructs the sync service.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -172,6 +185,7 @@ class SyncService {
   public function sync(string $trigger = self::TRIGGER_FORM): SyncResult {
     $this->pendingFingerprint = NULL;
     $this->pendingDrift = NULL;
+    $this->pendingUpgradeStatus = NULL;
     $extra = [];
     try {
       $deferred = $this->deferredResult();
@@ -303,6 +317,7 @@ class SyncService {
     // after the comparison recovers corrects it.
     $this->pendingFingerprint = $this->fingerprint($payload, TRUE);
     $this->pendingDrift = $this->driftPart($payload, TRUE)['report'] ?? NULL;
+    $this->pendingUpgradeStatus = $this->upgradeStatusPart($payload, TRUE);
 
     $result = $this->client->sync($baseUrl, $uuid, $apiKey, $payload);
     return $result;
@@ -333,9 +348,8 @@ class SyncService {
    * out: they describe the process that sends the push, which differs between
    * a web request and the command line, and between containers, without
    * anything being deployed. The daily resend still reports them.
-   * The drift report counts as returned by driftPart(). The generation time
-   * of the upgrade_status block does not count: a new scan result pushes, an
-   * unchanged one does not.
+   * The drift report counts as returned by driftPart(), the readiness block
+   * as returned by upgradeStatusPart().
    * The API base URL is added: a push accepted by one Sentinel says nothing
    * about another.
    *
@@ -345,8 +359,9 @@ class SyncService {
    *   TRUE for the payload being sent, FALSE to check whether one is due.
    */
   protected function fingerprint(array $payload, bool $sent = FALSE): string {
-    unset($payload['drupal_info']['ip_address'], $payload['platform']['php'], $payload['platform']['os'], $payload['upgrade_status']['generated_at']);
+    unset($payload['drupal_info']['ip_address'], $payload['platform']['php'], $payload['platform']['os']);
     $payload['config_drift'] = $this->driftPart($payload, $sent);
+    $payload['upgrade_status'] = $this->upgradeStatusPart($payload, $sent);
     $modules = [];
     foreach ($payload['modules'] ?? [] as $module) {
       ksort($module);
@@ -394,6 +409,37 @@ class SyncService {
       $last = hash('sha256', json_encode($report, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
     }
     return ['report' => $last, 'config_pr_enabled' => $configPr];
+  }
+
+  /**
+   * The part of the readiness block that counts as an inventory change.
+   *
+   * Everything but the generation time counts: a new scan result pushes, an
+   * unchanged one does not. A read that failed with an error counts as the
+   * block of the last accepted push, so a passing failure and its recovery do
+   * not push twice. A failed block that is sent counts as it is.
+   *
+   * @param array<string, mixed> $payload
+   *   The payload sent to Sentinel.
+   * @param bool $sent
+   *   TRUE for the payload being sent, FALSE to check whether one is due.
+   *
+   * @return string|null
+   *   A hash of the block, NULL when the payload has none.
+   */
+  protected function upgradeStatusPart(array $payload, bool $sent = FALSE): ?string {
+    $block = $payload['upgrade_status'] ?? NULL;
+    if (!is_array($block)) {
+      return NULL;
+    }
+    $transient = ($block['status'] ?? NULL) === 'unavailable' && ($block['reason'] ?? NULL) === 'error';
+    $last = $transient && !$sent ? $this->state->get(self::STATE_LAST_UPGRADE_STATUS) : NULL;
+    if (is_string($last) && $last !== '') {
+      return $last;
+    }
+    unset($block['generated_at']);
+    ksort($block);
+    return hash('sha256', json_encode($block, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
   }
 
   /**
@@ -581,6 +627,7 @@ class SyncService {
       if ($this->pendingFingerprint !== NULL) {
         $this->state->set(self::STATE_LAST_FINGERPRINT, $this->pendingFingerprint);
         $this->state->set(self::STATE_LAST_DRIFT, $this->pendingDrift);
+        $this->state->set(self::STATE_LAST_UPGRADE_STATUS, $this->pendingUpgradeStatus);
       }
     }
     $this->state->set('sentinel_connector.last_result', $result->status);

@@ -187,6 +187,7 @@ class PayloadContractTest extends TestCase {
       'unavailable with counts' => [['projects_total' => 3] + $unavailable],
       'unknown reason' => [['reason' => 'timeout'] + $unavailable],
       'local time' => [['generated_at' => '2026-10-25 01:00:00'] + $block],
+      'module version with spaces' => [['module_version' => '4.3 dev build'] + $block],
     ];
   }
 

@@ -137,6 +137,12 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
         'not_scanned',
         0,
       ],
+      'not scanned with uninstalled custom code' => [
+        $relax + ['site_a' => ['custom', 'scan'], 'old_custom' => ['custom', 'remove']],
+        [],
+        'not_scanned',
+        0,
+      ],
       'scanned but next step unknown' => [
         $relax + ['site_a' => ['custom', 'scan']],
         ['site_a' => $date],
@@ -224,6 +230,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
   #[DataProvider('brokenCollectors')]
   public function testUnavailable(string $mode, string $reason): void {
     $this->setProjects(['token' => ['contrib', 'relax']], ['token' => 1792800000]);
+    // An accepted push first, so the change check builds a payload.
+    $this->push();
+    $this->logger()->cleanLogs();
     match ($mode) {
       // An older or newer Upgrade Status without the method.
       'older' => $this->container->set(UpgradeStatusCollector::SERVICE, new \stdClass()),
@@ -235,7 +244,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     // warning is logged once.
     $this->mockSentinel();
     $sync = $this->container->get(SyncService::class);
-    $this->assertTrue($sync->hasInventoryChanged());
+    // A passing error counts as the last accepted result; the others change
+    // what Sentinel shows, so they push.
+    $this->assertSame($reason !== 'error', $sync->hasInventoryChanged());
     $this->assertTrue($sync->sync(SyncService::TRIGGER_CRON)->isOk());
     $body = json_decode((string) $this->transactions[0]['request']->getBody(), TRUE);
     $block = $body['upgrade_status'];
@@ -297,7 +308,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
       ['secret_custom_marker' => ['custom', 'manual'], 'token' => ['contrib', 'relax']],
       ['secret_custom_marker' => 1792800000],
     );
-    $raw = json_encode($this->push()['upgrade_status']);
+    $body = $this->push();
+    $this->assertSchema($body);
+    $raw = json_encode($body['upgrade_status']);
     $this->assertStringNotContainsString('secret_custom_marker', $raw);
     $this->assertStringNotContainsString('token', $raw);
     $this->assertStringNotContainsString('modules/', $raw);
@@ -323,6 +336,14 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->assertTrue($this->sync()->hasInventoryChanged());
     $second = $this->push();
     $this->assertSame('not_ready', $second['upgrade_status']['status']);
+    $this->assertSchema($second);
+    $this->assertFalse($this->sync()->hasInventoryChanged());
+
+    // A passing error, and its recovery, push nothing.
+    $this->container->get('state')->set(ProjectCollector::STATE_MODE, 'throw');
+    $this->assertSame('error', $this->collect()['reason']);
+    $this->assertFalse($this->sync()->hasInventoryChanged());
+    $this->container->get('state')->delete(ProjectCollector::STATE_MODE);
     $this->assertFalse($this->sync()->hasInventoryChanged());
 
     // A rescan with the same outcome still changes the scan date.
@@ -382,6 +403,22 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     }
     catch (\RuntimeException $e) {
       $this->assertStringContainsString('not enabled', $e->getMessage());
+    }
+    $this->assertFalse($command->scanned);
+  }
+
+  /**
+   * An unconfigured connector runs no scan.
+   */
+  public function testDrushCommandUnconfigured(): void {
+    $this->config('sentinel_connector.settings')->set('site_uuid', '')->save();
+    $command = $this->command(0);
+    try {
+      $command->upgradeStatus();
+      $this->fail('The command must fail when the connector is not configured.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('not fully configured', $e->getMessage());
     }
     $this->assertFalse($command->scanned);
   }

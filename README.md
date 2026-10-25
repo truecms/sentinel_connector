@@ -231,7 +231,7 @@ and messages are never sent.**
 | Status | Rule |
 | --- | --- |
 | `not_ready` | At least one project is `update`, `collaborate`, `rector` or `manual` |
-| `not_scanned` | There is custom code, every custom project is `scan` and none has a stored result |
+| `not_scanned` | There is installed custom code, every installed custom project is `scan` and none has a stored result |
 | `incomplete` | Some projects are `scan` |
 | `ready` | Every project is `relax` or `remove` |
 | `unavailable` | Upgrade Status could not be read (`reason`: `service_missing`, `unsupported_api`, `unexpected_data` or `error`); one warning is logged and the push goes ahead |

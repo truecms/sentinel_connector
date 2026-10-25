@@ -141,7 +141,8 @@ class UpgradeStatusCollector {
   public function moduleVersion(): ?string {
     try {
       $version = $this->moduleList->getExtensionInfo('upgrade_status')['version'] ?? NULL;
-      return is_string($version) && trim($version) !== '' ? mb_substr(trim($version), 0, 50) : NULL;
+      // Sentinel refuses a push whose version is not a plain release string.
+      return is_string($version) && preg_match('/^[A-Za-z0-9][A-Za-z0-9.+_-]{0,49}$/D', trim($version)) ? trim($version) : NULL;
     }
     catch (\Throwable) {
       return NULL;
@@ -210,7 +211,8 @@ class UpgradeStatusCollector {
         return $this->unavailable(self::REASON_UNEXPECTED_DATA);
       }
       $counts[$next]++;
-      if (($info['upgrade_status_type'] ?? NULL) === 'custom') {
+      // Uninstalled custom code is not scanned: it only needs removing.
+      if (($info['upgrade_status_type'] ?? NULL) === 'custom' && $next !== 'remove') {
         $customTotal++;
         $custom[] = $name;
         $customScan += $next === 'scan' ? 1 : 0;

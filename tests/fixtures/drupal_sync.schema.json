@@ -451,8 +451,8 @@
                         "string",
                         "null"
                     ],
-                    "minLength": 1,
-                    "maxLength": 50
+                    "maxLength": 50,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_-]*$"
                 },
                 "current_major": {
                     "type": "integer",
