@@ -51,12 +51,12 @@ interface HostInterface {
   public function deleteFile(string $path, string $message, string $branch): void;
 
   /**
-   * The open pull request from a branch into a base branch.
+   * The open pull request from a branch, whatever its base branch.
    *
-   * @return array{url: string, number: int}|null
+   * @return array{url: string, number: int, base: string}|null
    *   The pull request, or NULL when none is open.
    */
-  public function findOpenPullRequest(string $branch, string $base): ?array;
+  public function findOpenPullRequest(string $branch): ?array;
 
   /**
    * Opens a pull request.

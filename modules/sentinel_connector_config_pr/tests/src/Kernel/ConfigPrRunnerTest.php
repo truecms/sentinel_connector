@@ -145,6 +145,27 @@ class ConfigPrRunnerTest extends KernelTestBase {
   }
 
   /**
+   * Branches and pull requests this module did not make are left alone.
+   */
+  public function testForeignBranchAndOtherBaseAreRefused(): void {
+    $this->config('system.site')->set('slogan', 'Drifted')->save();
+    $this->host->branches['sentinel/config-export'] = ['team-work.txt' => "x\n"];
+    $this->assertSame('failed', $this->runner()->run(FALSE, TRUE)->status);
+    $this->assertArrayNotHasKey('config/sync/system.site.yml', $this->host->branches['sentinel/config-export']);
+    $this->assertNotContains('deleteBranch', $this->host->calls);
+
+    // The module's own pull request, after the base branch setting changed.
+    unset($this->host->branches['sentinel/config-export']);
+    $this->assertSame('created', $this->runner()->run(FALSE, TRUE)->status);
+    $this->host->branches['develop'] = $this->host->branches['main'];
+    $this->config('sentinel_connector_config_pr.settings')->set('base_branch', 'develop')->save();
+    $this->assertSame('failed', $this->runner()->run(FALSE, TRUE)->status);
+    $this->assertStringContainsString('targets another base branch', $this->logger->text());
+    $this->assertTrue($this->host->pulls[1]['open']);
+    $this->assertArrayHasKey('sentinel/config-export', $this->host->branches);
+  }
+
+  /**
    * A missing token fails before any request and leaves no branch.
    */
   public function testMissingTokenFailsWithoutBranch(): void {

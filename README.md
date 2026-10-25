@@ -487,8 +487,8 @@ composer require m4tthumphrey/php-gitlab-api:^12.0 php-http/guzzle7-adapter http
 
 Set the repository on **Configuration > Web services > Sentinel configuration
 pull request** (`/admin/config/services/sentinel-connector/config-pr`): Git
-host, owner (for GitLab the group path, subgroups separated by `/`) and name,
-the host URL for GitHub Enterprise or self-managed GitLab, the base branch
+host, owner (for GitLab the group path, subgroups separated by `/`) and name
+or, for GitLab, the numeric project id, the host URL for GitHub Enterprise or self-managed GitLab, the base branch
 (empty for the default branch), the export branch (default
 `sentinel/config-export`), the path of the sync directory in the repository
 (default `config/sync`) and the pull request title. The settings hold no
@@ -529,7 +529,8 @@ the files of deleted objects. Files that already match the export branch are
 skipped, so a run without a new change makes no commit. After the pull request
 is merged or closed, the next run starts the export branch again from the base
 branch. The module owns the export branch: do not push other work to it. A run
-refuses to export when the sync directory is empty.
+refuses a branch of that name that it did not create, an open pull request from
+it into another base branch, and an empty sync directory.
 
 Cron runs are off by default. When turned on, cron runs at most once per
 interval (default 24 hours), and only while Sentinel Connector's own cron
@@ -541,9 +542,8 @@ Each run logs its outcome, the pull request URL and the number of files on the
 `sentinel_connector` channel, never configuration values or the token.
 Configuration values are never sent to Sentinel.
 
-Known limits: `config_pr` makes one commit per file, so a large export makes
-many commits; GitLab projects are found by their path, not by a numeric
-project id.
+Known limit: `config_pr` makes one commit per file, so a large export makes
+many commits.
 
 ## Permissions
 

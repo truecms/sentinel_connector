@@ -122,13 +122,18 @@ final class SettingsForm extends ConfigFormBase {
       '#title' => $this->t('Repository owner'),
       '#default_value' => $config->get('repo_owner'),
       '#description' => $this->t('The GitHub user or organisation, or the GitLab group path (subgroups separated by /).'),
-      '#required' => TRUE,
     ];
     $form['repository']['repo_name'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Repository name'),
       '#default_value' => $config->get('repo_name'),
-      '#required' => TRUE,
+    ];
+    $form['repository']['gitlab_project_id'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('GitLab project id'),
+      '#default_value' => $config->get('gitlab_project_id'),
+      '#description' => $this->t('GitLab only: the numeric project id, used instead of the owner and name when set.'),
+      '#states' => ['visible' => [':input[name="provider"]' => ['value' => 'gitlab']]],
     ];
     $form['repository']['base_branch'] = [
       '#type' => 'textfield',
@@ -140,7 +145,7 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Export branch'),
       '#default_value' => $config->get('branch') ?: 'sentinel/config-export',
-      '#description' => $this->t('This module owns the branch: it updates the branch while its pull request is open and starts it again from the base branch after the pull request is merged or closed. Do not push other work to it.'),
+      '#description' => $this->t('This module owns the branch: it updates the branch while its pull request is open and starts it again from the base branch after the pull request is merged or closed. Do not push other work to it. A run refuses a branch that already exists and was not created by this module.'),
       '#required' => TRUE,
     ];
     $form['repository']['sync_path'] = [
@@ -261,11 +266,17 @@ final class SettingsForm extends ConfigFormBase {
     if ($url !== '' && !str_starts_with(strtolower($url), 'https://')) {
       $form_state->setErrorByName('api_base_url', $this->t('The host URL must use https.'));
     }
-    if (!preg_match('/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/', trim((string) $form_state->getValue('repo_owner')))) {
-      $form_state->setErrorByName('repo_owner', $this->t('Use letters, digits, ".", "-", "_" and "/" only.'));
+    $projectId = trim((string) $form_state->getValue('gitlab_project_id'));
+    if ($projectId !== '' && !ctype_digit($projectId)) {
+      $form_state->setErrorByName('gitlab_project_id', $this->t('Enter the numeric project id.'));
     }
-    if (!preg_match('/^[A-Za-z0-9_.-]+$/', trim((string) $form_state->getValue('repo_name')))) {
-      $form_state->setErrorByName('repo_name', $this->t('Use letters, digits, ".", "-" and "_" only.'));
+    if ($form_state->getValue('provider') !== 'gitlab' || $projectId === '') {
+      if (!preg_match('/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/', trim((string) $form_state->getValue('repo_owner')))) {
+        $form_state->setErrorByName('repo_owner', $this->t('Enter the owner, using letters, digits, ".", "-", "_" and "/" only.'));
+      }
+      if (!preg_match('/^[A-Za-z0-9_.-]+$/', trim((string) $form_state->getValue('repo_name')))) {
+        $form_state->setErrorByName('repo_name', $this->t('Enter the name, using letters, digits, ".", "-" and "_" only.'));
+      }
     }
     $branch = trim((string) $form_state->getValue('branch'));
     if ($branch === trim((string) $form_state->getValue('base_branch'))) {
@@ -298,6 +309,7 @@ final class SettingsForm extends ConfigFormBase {
       ->set('api_base_url', rtrim(trim((string) $form_state->getValue('api_base_url')), '/'))
       ->set('repo_owner', trim((string) $form_state->getValue('repo_owner')))
       ->set('repo_name', trim((string) $form_state->getValue('repo_name')))
+      ->set('gitlab_project_id', trim((string) $form_state->getValue('gitlab_project_id')))
       ->set('base_branch', trim((string) $form_state->getValue('base_branch')))
       ->set('branch', trim((string) $form_state->getValue('branch')))
       ->set('sync_path', trim(trim((string) $form_state->getValue('sync_path')), '/'))

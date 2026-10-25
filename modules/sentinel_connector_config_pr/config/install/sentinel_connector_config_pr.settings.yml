@@ -2,6 +2,7 @@ provider: github
 api_base_url: ''
 repo_owner: ''
 repo_name: ''
+gitlab_project_id: ''
 base_branch: ''
 branch: sentinel/config-export
 sync_path: config/sync

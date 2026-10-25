@@ -11,6 +11,7 @@ services:
     class: Drupal\sentinel_connector_config_pr\Host\HostFactory
     arguments:
       - '@config.factory'
+      - '@messenger'
       - '@?config_pr_github.repo_controller.github'
       - '@?config_pr_github.repo_controller.github_enterprise'
       - '@?config_pr_gitlab.repo_controller.gitlab'

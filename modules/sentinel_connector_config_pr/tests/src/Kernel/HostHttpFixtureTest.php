@@ -5,6 +5,7 @@ namespace Drupal\Tests\sentinel_connector_config_pr\Kernel;
 use Psr\Http\Message\RequestInterface;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector_config_pr\ConfigPrRunner;
+use Drupal\sentinel_connector_config_pr\PullRequestTracker;
 use Drupal\Tests\sentinel_connector_config_pr\Support\ReplayDiscoveryStrategy;
 use Drupal\Tests\sentinel_connector_config_pr\Support\ReplayHttpClient;
 use Drupal\Tests\sentinel_connector_config_pr\Support\TestLogger;
@@ -122,6 +123,7 @@ class HostHttpFixtureTest extends KernelTestBase {
    */
   public function testUpdate(string $provider, string $baseUrl, string $host, string $prefix): void {
     $this->configure($provider, $baseUrl);
+    $this->container->get(PullRequestTracker::class)->setOwnedBranch('sentinel/config-export');
     $client = ReplayHttpClient::$current = ReplayHttpClient::fromFile(__DIR__ . "/../../fixtures/{$provider}_update.json", $prefix);
 
     $result = $this->container->get(ConfigPrRunner::class)->run(FALSE, TRUE);
@@ -133,6 +135,48 @@ class HostHttpFixtureTest extends KernelTestBase {
     $this->assertNotContains('POST', $methods);
     $this->assertNotContains('DELETE', $methods);
     $this->assertCount(1, array_keys($methods, 'PUT', TRUE));
+  }
+
+  /**
+   * A deleted object deletes its file on the export branch.
+   *
+   * @dataProvider hosts
+   */
+  public function testDelete(string $provider, string $baseUrl, string $host, string $prefix): void {
+    $this->configure($provider, $baseUrl);
+    $this->container->get(PullRequestTracker::class)->setOwnedBranch('sentinel/config-export');
+    // The code still has an object the site no longer has.
+    $this->container->get('config.storage.sync')->write('system.removed', ['a' => 1]);
+    $fixtures = __DIR__ . '/../../fixtures/';
+    $client = ReplayHttpClient::$current = new ReplayHttpClient(array_merge(
+      ReplayHttpClient::read($fixtures . "{$provider}_update.json"),
+      ReplayHttpClient::read($fixtures . "{$provider}_delete.json"),
+    ), $prefix);
+
+    $result = $this->container->get(ConfigPrRunner::class)->run(FALSE, TRUE);
+
+    $this->assertSame('updated', $result->status, $result->message . "\n" . $this->logger->text() . "\n" . implode("\n", $client->lines()));
+    $this->assertSame(2, $result->files);
+    $this->assertRequests($client, $host);
+    $delete = $this->request($client, 'DELETE');
+    $this->assertStringEndsWith('config/sync/system.removed.yml', rawurldecode($delete->getUri()->getPath()));
+  }
+
+  /**
+   * An export branch this module did not create is never touched.
+   *
+   * @dataProvider hosts
+   */
+  public function testForeignBranchIsRefused(string $provider, string $baseUrl, string $host, string $prefix): void {
+    $this->configure($provider, $baseUrl);
+    $client = ReplayHttpClient::$current = ReplayHttpClient::fromFile(__DIR__ . "/../../fixtures/{$provider}_update.json", $prefix);
+
+    $result = $this->container->get(ConfigPrRunner::class)->run(FALSE, TRUE);
+
+    $this->assertSame('failed', $result->status);
+    $this->assertStringContainsString('was not created by this module', $this->logger->text());
+    $methods = array_map(static fn ($request): string => $request->getMethod(), $client->requests);
+    $this->assertSame([], array_diff($methods, ['GET', 'HEAD']));
   }
 
   /**

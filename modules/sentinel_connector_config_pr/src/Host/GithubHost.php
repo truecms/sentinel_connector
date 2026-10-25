@@ -50,16 +50,34 @@ class GithubHost extends ConfigPrHost {
 
   /**
    * {@inheritdoc}
+   *
+   * The config_pr GitHub controller declares a bool return for its delete but
+   * returns the API's array, which is a TypeError, so the client is called
+   * directly.
    */
-  public function findOpenPullRequest(string $branch, string $base): ?array {
+  public function deleteFile(string $path, string $message, string $branch): void {
+    $sha = $this->blobSha($path, $branch);
+    if ($sha === NULL) {
+      return;
+    }
+    $this->client()->repo()->contents()->rm($this->owner, $this->name, $path, $message, $sha, $branch, $this->committer);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function findOpenPullRequest(string $branch): ?array {
     $pulls = $this->client()->pullRequest()->all($this->owner, $this->name, [
       'state' => 'open',
       'head' => $this->owner . ':' . $branch,
-      'base' => $base,
     ]);
     foreach ($pulls as $pull) {
       if (($pull['head']['ref'] ?? NULL) === $branch && !empty($pull['html_url'])) {
-        return ['url' => (string) $pull['html_url'], 'number' => (int) $pull['number']];
+        return [
+          'url' => (string) $pull['html_url'],
+          'number' => (int) $pull['number'],
+          'base' => (string) ($pull['base']['ref'] ?? ''),
+        ];
       }
     }
     return NULL;

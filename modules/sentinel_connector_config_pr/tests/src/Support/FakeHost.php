@@ -123,11 +123,11 @@ class FakeHost implements HostInterface {
   /**
    * {@inheritdoc}
    */
-  public function findOpenPullRequest(string $branch, string $base): ?array {
+  public function findOpenPullRequest(string $branch): ?array {
     $this->call(__FUNCTION__);
     foreach ($this->pulls as $number => $pull) {
-      if ($pull['open'] && $pull['branch'] === $branch && $pull['base'] === $base) {
-        return ['url' => $pull['url'], 'number' => $number];
+      if ($pull['open'] && $pull['branch'] === $branch) {
+        return ['url' => $pull['url'], 'number' => $number, 'base' => $pull['base']];
       }
     }
     return NULL;

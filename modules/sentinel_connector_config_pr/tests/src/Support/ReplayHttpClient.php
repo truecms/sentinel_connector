@@ -48,8 +48,17 @@ class ReplayHttpClient implements ClientInterface {
    * Loads a fixture file.
    */
   public static function fromFile(string $path, string $prefix = ''): self {
-    $fixtures = json_decode((string) file_get_contents($path), TRUE, 512, JSON_THROW_ON_ERROR);
-    return new self($fixtures, $prefix);
+    return new self(static::read($path), $prefix);
+  }
+
+  /**
+   * Reads the entries of a fixture file.
+   *
+   * @return array<int, array<string, mixed>>
+   *   The fixture entries.
+   */
+  public static function read(string $path): array {
+    return json_decode((string) file_get_contents($path), TRUE, 512, JSON_THROW_ON_ERROR);
   }
 
   /**

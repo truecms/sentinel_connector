@@ -39,8 +39,13 @@ class RepoUrlOverride implements ConfigFactoryOverrideInterface {
     if (!in_array('config_pr.settings', $names, TRUE)) {
       return [];
     }
-    $settings = $this->storage->read('sentinel_connector_config_pr.settings');
-    $url = is_array($settings) ? trim((string) ($settings['api_base_url'] ?? '')) : '';
+    // Overrides in settings.php ($config) apply too, as they do when the host
+    // factory reads the URL through the config factory.
+    $settings = $GLOBALS['config']['sentinel_connector_config_pr.settings'] ?? [];
+    if (!is_array($settings) || !array_key_exists('api_base_url', $settings)) {
+      $settings = $this->storage->read('sentinel_connector_config_pr.settings');
+    }
+    $url = is_array($settings) ? rtrim(trim((string) ($settings['api_base_url'] ?? '')), '/') : '';
     if ($url === '') {
       return [];
     }

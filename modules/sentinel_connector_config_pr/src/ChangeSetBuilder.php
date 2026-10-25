@@ -2,6 +2,7 @@
 
 namespace Drupal\sentinel_connector_config_pr;
 
+use Drupal\Core\Config\MemoryStorage;
 use Drupal\Core\Config\StorageInterface;
 use Drupal\Core\Config\StorageManagerInterface;
 use Drupal\Component\Serialization\Yaml;
@@ -17,7 +18,10 @@ use Drupal\Component\Serialization\Yaml;
 class ChangeSetBuilder {
 
   /**
-   * The export storage read by the last build.
+   * A copy of the export storage read by the last build.
+   *
+   * Core keeps the export in a shared table that another export can rebuild
+   * while a run is still writing files, so a run works from its own copy.
    */
   protected ?StorageInterface $exportStorage = NULL;
 
@@ -56,7 +60,7 @@ class ChangeSetBuilder {
    *   'update' or 'delete'; 'content' is the YAML to write, or NULL to delete.
    */
   public function build(string $syncPath): array {
-    $this->exportStorage = $this->exportStorageManager->getStorage();
+    $this->exportStorage = $this->snapshot($this->exportStorageManager->getStorage());
     $changes = [];
     foreach ($this->collections() as $collection) {
       $exportData = static::readCollection($this->exportStorage, $collection);
@@ -88,7 +92,7 @@ class ChangeSetBuilder {
    * Reads the export of the last build, so a run sees one export only.
    */
   public function exportContent(string $name, string $collection): ?string {
-    $this->exportStorage ??= $this->exportStorageManager->getStorage();
+    $this->exportStorage ??= $this->snapshot($this->exportStorageManager->getStorage());
     if ($collection !== StorageInterface::DEFAULT_COLLECTION && !in_array($collection, $this->exportStorage->getAllCollectionNames(), TRUE)) {
       return NULL;
     }
@@ -118,6 +122,21 @@ class ChangeSetBuilder {
    */
   public static function encode(array $data): string {
     return Yaml::encode($data);
+  }
+
+  /**
+   * Copies a storage, with all its collections, into memory.
+   */
+  protected static function snapshot(StorageInterface $source): StorageInterface {
+    $copy = new MemoryStorage();
+    foreach (array_merge([StorageInterface::DEFAULT_COLLECTION], $source->getAllCollectionNames()) as $collection) {
+      $from = $source->createCollection($collection);
+      $to = $copy->createCollection($collection);
+      foreach ($from->readMultiple($from->listAll()) as $name => $data) {
+        $to->write($name, $data);
+      }
+    }
+    return $copy;
   }
 
   /**

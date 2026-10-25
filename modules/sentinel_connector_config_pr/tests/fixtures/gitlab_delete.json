@@ -1,0 +1,4 @@
+[
+  {"method": "GET", "path": "/projects/42/repository/files/config/sync/system.removed.yml", "query": {"ref": "sentinel/config-export"}, "body": {"file_name": "system.removed.yml", "file_path": "config/sync/system.removed.yml", "ref": "sentinel/config-export", "blob_id": "5f2e8f9a7c1d3b4e6a8c0d2f4b6a8c0e2d4f6a8b"}},
+  {"method": "DELETE", "path": "/projects/42/repository/files/config/sync/system.removed.yml", "status": 204}
+]

@@ -4,6 +4,7 @@ namespace Drupal\sentinel_connector_config_pr\Host;
 
 use Drupal\config_pr\RepoControllerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Messenger\MessengerInterface;
 
 /**
  * Builds the Git host for the configured provider.
@@ -44,6 +45,8 @@ class HostFactory {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
+   * @param \Drupal\Core\Messenger\MessengerInterface $messenger
+   *   The messenger, for the GitLab controllers built here.
    * @param \Drupal\config_pr\RepoControllerInterface|null $github
    *   The GitHub controller, when config_pr_github is enabled.
    * @param \Drupal\config_pr\RepoControllerInterface|null $githubEnterprise
@@ -55,6 +58,7 @@ class HostFactory {
    */
   public function __construct(
     protected ConfigFactoryInterface $configFactory,
+    protected MessengerInterface $messenger,
     ?RepoControllerInterface $github = NULL,
     ?RepoControllerInterface $githubEnterprise = NULL,
     ?RepoControllerInterface $gitlab = NULL,
@@ -99,14 +103,26 @@ class HostFactory {
     if ($id === NULL || !isset($this->controllers[$id])) {
       throw new HostException(sprintf('Enable the %s module for this Git host.', self::MODULES[$provider] ?? 'config_pr_github or config_pr_gitlab'));
     }
-    // The controller service is shared. A copy keeps the token and the
-    // branch state of this run out of it.
-    $controller = clone $this->controllers[$id];
+    $url = rtrim(trim((string) $settings->get('api_base_url')), '/');
+    if ($url !== '' && rtrim((string) $this->configFactory->get('config_pr.settings')->get('repo.repo_url'), '/') !== $url) {
+      // The self-hosted controllers read the URL from config_pr.settings. If
+      // it is not this module's URL, the token could go to another host.
+      throw new HostException('The host URL could not be passed to config_pr.');
+    }
     $owner = trim((string) $settings->get('repo_owner'));
     $name = trim((string) $settings->get('repo_name'));
-    return $provider === 'gitlab'
-      ? new GitlabHost($controller, $owner, $name, $committer)
-      : new GithubHost($controller, $owner, $name, $committer);
+    if ($provider === 'gitlab') {
+      // config_pr finds GitLab projects by a global search that reads one
+      // page of results, so a subclass looks the project up directly.
+      $controller = $url === ''
+        ? new GitlabProjectController($this->messenger, $this->configFactory)
+        : new GitlabSelfManagedProjectController($this->messenger, $this->configFactory);
+      $controller->setProjectRef(trim((string) $settings->get('gitlab_project_id')));
+      return new GitlabHost($controller, $owner, $name, $committer);
+    }
+    // The controller service is shared. A copy keeps the token and the
+    // branch state of this run out of it.
+    return new GithubHost(clone $this->controllers[$id], $owner, $name, $committer);
   }
 
 }

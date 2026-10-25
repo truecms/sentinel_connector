@@ -24,6 +24,11 @@ class PullRequestTracker {
   public const STATE_PATHS = 'sentinel_connector_config_pr.paths';
 
   /**
+   * State key of the export branch this module created.
+   */
+  public const STATE_BRANCH = 'sentinel_connector_config_pr.branch';
+
+  /**
    * State key of the last run that reached the Git host or found no change.
    */
   public const STATE_LAST_RUN = 'sentinel_connector_config_pr.last_run';
@@ -126,6 +131,20 @@ class PullRequestTracker {
    */
   public function setLastRun(int $time): void {
     $this->state->set(self::STATE_LAST_RUN, $time);
+  }
+
+  /**
+   * The export branch this module created, or ''.
+   */
+  public function ownedBranch(): string {
+    return (string) $this->state->get(self::STATE_BRANCH, '');
+  }
+
+  /**
+   * Records that this module created the export branch.
+   */
+  public function setOwnedBranch(string $branch): void {
+    $this->state->set(self::STATE_BRANCH, $branch);
   }
 
 }

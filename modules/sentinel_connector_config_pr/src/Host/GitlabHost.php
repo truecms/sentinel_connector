@@ -50,16 +50,35 @@ class GitlabHost extends ConfigPrHost {
 
   /**
    * {@inheritdoc}
+   *
+   * The config_pr GitLab controller sends content and encoding with a delete,
+   * which the GitLab client rejects, so the client is called directly.
    */
-  public function findOpenPullRequest(string $branch, string $base): ?array {
+  public function deleteFile(string $path, string $message, string $branch): void {
+    $this->client()->repositoryFiles()->deleteFile($this->controller->getRepoId(), [
+      'file_path' => $path,
+      'branch' => $branch,
+      'commit_message' => $message,
+      'author_email' => $this->committer['email'],
+      'author_name' => $this->committer['name'],
+    ]);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function findOpenPullRequest(string $branch): ?array {
     $requests = $this->client()->mergeRequests()->all($this->controller->getRepoId(), [
       'state' => 'opened',
       'source_branch' => $branch,
-      'target_branch' => $base,
     ]);
     foreach (is_array($requests) ? $requests : [] as $request) {
       if (($request['source_branch'] ?? NULL) === $branch && !empty($request['web_url'])) {
-        return ['url' => (string) $request['web_url'], 'number' => (int) $request['iid']];
+        return [
+          'url' => (string) $request['web_url'],
+          'number' => (int) $request['iid'],
+          'base' => (string) ($request['target_branch'] ?? ''),
+        ];
       }
     }
     return NULL;

@@ -1,10 +1,10 @@
 [
-  {"method": "GET", "path": "/search", "query": {"scope": "projects", "search": "acme/site"}, "body": [{"id": 42, "name": "site", "path_with_namespace": "acme/site", "default_branch": "main"}]},
-  {"method": "GET", "path": "/projects/42/repository/branches", "body": [{"name": "main", "commit": {"id": "7b5c3cc8be40ee161ae89a06bba6229da1032a0c"}, "protected": true}]},
+  {"method": "GET", "path": "/projects/acme/site", "body": {"id": 42, "name": "site", "path_with_namespace": "acme/site", "default_branch": "main"}},
   {"method": "GET", "path": "/projects/42/repository/branches/main", "body": {"name": "main", "commit": {"id": "7b5c3cc8be40ee161ae89a06bba6229da1032a0c"}}},
-  {"method": "GET", "path": "/projects/42/merge_requests", "query": {"state": "opened", "source_branch": "sentinel/config-export", "target_branch": "main"}, "body": []},
+  {"method": "GET", "path": "/projects/42/merge_requests", "query": {"state": "opened", "source_branch": "sentinel/config-export"}, "body": []},
   {"method": "GET", "path": "/projects/42/repository/branches/sentinel/config-export", "status": 404, "body": {"message": "404 Branch Not Found"}},
-  {"method": "GET", "path": "/projects/42/repository/files/config/sync/system.site.yml", "body": {"file_name": "system.site.yml", "file_path": "config/sync/system.site.yml", "size": 180, "encoding": "base64", "ref": "main", "blob_id": "79f7bbd25901e8334750839545a9bd021f0e4c83", "commit_id": "7b5c3cc8be40ee161ae89a06bba6229da1032a0c"}},
+  {"method": "GET", "path": "/projects/42/repository/files/config/sync/system.site.yml", "body": {"file_name": "system.site.yml", "file_path": "config/sync/system.site.yml", "size": 180, "encoding": "base64", "ref": "main", "blob_id": "79f7bbd25901e8334750839545a9bd021f0e4c83", "commit_id": "7b5c3cc8be40ee161ae89a06bba6229da1032a0c"}, "query": {"ref": "main"}},
+  {"method": "GET", "path": "/projects/42/repository/files/config/sync/system.site.yml", "body": {"file_name": "system.site.yml", "file_path": "config/sync/system.site.yml", "size": 180, "encoding": "base64", "ref": "main", "blob_id": "79f7bbd25901e8334750839545a9bd021f0e4c83", "commit_id": "7b5c3cc8be40ee161ae89a06bba6229da1032a0c"}, "query": {"ref": "sentinel/config-export"}},
   {"method": "POST", "path": "/projects/42/repository/branches", "status": 201, "body": {"name": "sentinel/config-export", "commit": {"id": "7b5c3cc8be40ee161ae89a06bba6229da1032a0c"}}},
   {"method": "PUT", "path": "/projects/42/repository/files/config/sync/system.site.yml", "body": {"file_path": "config/sync/system.site.yml", "branch": "sentinel/config-export"}},
   {"method": "POST", "path": "/projects/42/merge_requests", "status": 201, "body": {"id": 1, "iid": 3, "state": "opened", "source_branch": "sentinel/config-export", "target_branch": "main", "web_url": "https://gitlab.example.com/acme/site/-/merge_requests/3"}}

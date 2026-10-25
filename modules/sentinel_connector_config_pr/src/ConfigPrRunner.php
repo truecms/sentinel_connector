@@ -35,6 +35,11 @@ class ConfigPrRunner {
   protected const LOCK = 'sentinel_connector_config_pr';
 
   /**
+   * Seconds the lock lasts; renewed before each file is written.
+   */
+  protected const LOCK_TIMEOUT = 600.0;
+
+  /**
    * Constructs the runner.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -118,7 +123,7 @@ class ConfigPrRunner {
         array_map(static fn (array $change): string => $change['op'], $changes),
       );
     }
-    if (!$this->lock->acquire(self::LOCK, 600)) {
+    if (!$this->lock->acquire(self::LOCK, self::LOCK_TIMEOUT)) {
       return $this->finish(new RunResult('failed', 'Another run is in progress.'), $trigger);
     }
     try {
@@ -137,7 +142,9 @@ class ConfigPrRunner {
     if (!isset(HostFactory::CONTROLLERS[(string) $settings->get('provider')])) {
       return 'Choose GitHub or GitLab on the settings form.';
     }
-    if (trim((string) $settings->get('repo_owner')) === '' || trim((string) $settings->get('repo_name')) === '') {
+    $hasPath = trim((string) $settings->get('repo_owner')) !== '' && trim((string) $settings->get('repo_name')) !== '';
+    $hasProjectId = $settings->get('provider') === 'gitlab' && trim((string) $settings->get('gitlab_project_id')) !== '';
+    if (!$hasPath && !$hasProjectId) {
       return 'Set the repository owner and name on the settings form.';
     }
     $branch = trim((string) $settings->get('branch'));
@@ -187,8 +194,18 @@ class ConfigPrRunner {
       }
 
       $step = 'read';
-      $pull = $host->findOpenPullRequest($branch, $base);
+      $pull = $host->findOpenPullRequest($branch);
       $head = $host->branchHead($branch);
+      // Only a branch this module created, or the branch of the pull request
+      // it opened, is ever written to or deleted.
+      $owned = $this->tracker->ownedBranch() === $branch
+        || ($pull !== NULL && $pull['url'] === ($this->tracker->get()['url'] ?? NULL));
+      if ($head !== NULL && !$owned) {
+        throw new HostException('The export branch exists but was not created by this module. Choose another export branch.');
+      }
+      if ($pull !== NULL && $pull['base'] !== $base) {
+        throw new HostException('The open pull request from the export branch targets another base branch. Close it, or set that base branch.');
+      }
       if ($pull === NULL) {
         // A branch left by a merged or closed pull request starts again from
         // the base branch, so the new pull request holds only current drift.
@@ -231,6 +248,7 @@ class ConfigPrRunner {
       if ($head === NULL) {
         $step = 'branch';
         $host->createBranch($branch, $base);
+        $this->tracker->setOwnedBranch($branch);
         $createdBranch = TRUE;
       }
       $step = 'write';
@@ -240,6 +258,8 @@ class ConfigPrRunner {
         $this->tracker->setPaths($paths);
       }
       foreach ($operations as $path => $operation) {
+        // config_pr makes one commit per file; keep the lock while writing.
+        $this->lock->acquire(self::LOCK, self::LOCK_TIMEOUT);
         $name = $paths[$path]['name'];
         if ($operation['op'] === 'delete') {
           $host->deleteFile($path, sprintf('Delete %s (exported configuration)', $name), $branch);
@@ -251,6 +271,7 @@ class ConfigPrRunner {
       $status = 'updated';
       if ($pull === NULL) {
         $step = 'pull_request';
+        $this->lock->acquire(self::LOCK, self::LOCK_TIMEOUT);
         $pull = $host->createPullRequest($base, $branch, $this->title(), $this->body());
         $status = 'created';
       }

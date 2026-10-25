@@ -14,6 +14,9 @@ sentinel_connector_config_pr.settings:
     repo_name:
       type: string
       label: 'Repository name'
+    gitlab_project_id:
+      type: string
+      label: 'GitLab project id'
     base_branch:
       type: string
       label: 'Base branch'
