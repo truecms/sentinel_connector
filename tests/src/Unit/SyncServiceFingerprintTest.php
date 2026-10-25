@@ -174,6 +174,31 @@ class SyncServiceFingerprintTest extends TestCase {
   }
 
   /**
+   * A report cut short counts by its status, not by what it covered.
+   */
+  public function testIncompleteDriftIsStable(): void {
+    $this->payload['config_drift'] = [
+      'status' => 'incomplete',
+      'reason' => 'time_budget',
+    ] + $this->payload['config_drift'];
+    $this->responses = [SyncResult::success(200, 'ok')];
+    $service = $this->service();
+    $service->sync();
+
+    $this->payload['config_drift']['objects'][] = [
+      'name' => 'views.view.content',
+      'collection' => '',
+      'change' => 'create',
+    ];
+    $this->payload['config_drift']['total'] = 2;
+    $this->assertFalse($service->hasInventoryChanged());
+
+    $this->payload['config_drift']['status'] = 'complete';
+    $this->payload['config_drift']['reason'] = NULL;
+    $this->assertTrue($service->hasInventoryChanged());
+  }
+
+  /**
    * A fingerprint is trusted for a day after the push it belongs to.
    */
   public function testOldFingerprintCountsAsChanged(): void {

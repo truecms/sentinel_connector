@@ -4,8 +4,10 @@ namespace Drupal\sentinel_connector;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ExportStorageManager;
 use Drupal\Core\Config\StorageManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Site\Settings;
 
 /**
@@ -61,6 +63,8 @@ class ConfigDriftCollector {
    *   The module handler, to tell whether config_pr is enabled.
    * @param \Drupal\Core\Site\Settings $settings
    *   The site settings, which name the sync directory.
+   * @param \Drupal\Core\Lock\LockBackendInterface $lock
+   *   The lock the export storage manager takes, taken here without waiting.
    * @param \Drupal\Component\Datetime\TimeInterface $time
    *   The time service, also the clock of the time budget.
    * @param float $timeBudget
@@ -72,6 +76,7 @@ class ConfigDriftCollector {
     protected ConfigFactoryInterface $configFactory,
     protected ModuleHandlerInterface $moduleHandler,
     protected Settings $settings,
+    protected LockBackendInterface $lock,
     protected TimeInterface $time,
     protected float $timeBudget = self::TIME_BUDGET,
   ) {}
@@ -93,7 +98,7 @@ class ConfigDriftCollector {
       if (!is_string($directory) || $directory === '' || !@is_dir($directory)) {
         return $this->unavailable(self::REASON_SYNC_DIRECTORY_MISSING, $configPr);
       }
-      if (!@is_readable($directory) || !$this->collectionsReadable($directory)) {
+      if (!@is_readable($directory) || !@is_executable($directory) || !$this->collectionsReadable($directory)) {
         return $this->unavailable(self::REASON_SYNC_UNREADABLE, $configPr);
       }
       return $this->compare($configPr);
@@ -120,9 +125,20 @@ class ConfigDriftCollector {
     catch (\Throwable) {
       return $this->unavailable(self::REASON_SYNC_UNREADABLE, $configPr);
     }
-    $comparer = new ConfigDriftStorageComparer($this->exportStorageManager->getStorage(), $sync);
-    $done = $comparer->createChangelistWithin($expired);
-    $collections = $done ?? $comparer->getAllCollectionNames();
+    // Core's export waits up to 30 seconds for a concurrent export, such as
+    // `drush cex`. The lock is taken here without waiting, and released once
+    // the comparison is done instead of at the end of the request.
+    if (!$this->lock->acquire(ExportStorageManager::LOCK_NAME)) {
+      return $this->unavailable(self::REASON_ERROR, $configPr);
+    }
+    try {
+      $comparer = new ConfigDriftStorageComparer($this->exportStorageManager->getStorage(), $sync);
+      $done = $comparer->createChangelistWithin($expired);
+      $collections = $done ?? $comparer->getAllCollectionNames();
+    }
+    finally {
+      $this->lock->release(ExportStorageManager::LOCK_NAME);
+    }
 
     $objects = [];
     foreach ($collections as $collection) {
@@ -170,8 +186,9 @@ class ConfigDriftCollector {
   /**
    * Whether the sync directory and its collection directories can be listed.
    *
-   * Core's file storage lists an unreadable directory as empty, which would
-   * report every object as created in production.
+   * Core's file storage lists an unreadable directory as empty, and finds no
+   * file in one it cannot enter. Either would report every object as created
+   * in production.
    */
   protected function collectionsReadable(string $directory): bool {
     $iterator = new \RecursiveIteratorIterator(
@@ -180,7 +197,7 @@ class ConfigDriftCollector {
       \RecursiveIteratorIterator::CATCH_GET_CHILD,
     );
     foreach ($iterator as $file) {
-      if ($file->isDir() && !$file->isReadable()) {
+      if ($file->isDir() && (!$file->isReadable() || !$file->isExecutable())) {
         return FALSE;
       }
     }

@@ -301,9 +301,22 @@ class PayloadBuilderTest extends TestCase {
       'truncated' => FALSE,
       'objects' => [],
     ];
-    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, [], $drift))->build('all');
+    $calls = new \ArrayObject();
+    $builder = new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, [], function () use ($calls, $drift): array {
+      $calls->append(TRUE);
+      return $drift;
+    });
+    // Comparing configuration is left until a payload is built.
+    $this->assertCount(0, $calls);
+    $payload = $builder->build('all');
     $this->assertSame($drift, $payload['config_drift']);
     $this->assertSame(3, $payload['schema_version']);
+    // The sync and its change check see the same drift, compared once.
+    $this->assertSame($drift, $builder->build('contrib')['config_drift']);
+    $this->assertCount(1, $calls);
+
+    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, [], fn () => NULL))->build('all');
+    $this->assertArrayNotHasKey('config_drift', $payload);
   }
 
 }

@@ -37,7 +37,7 @@ class PayloadContractTest extends TestCase {
       'database' => ['driver' => 'mysql', 'product' => 'mariadb', 'version' => '10.11.6-MariaDB'],
       'os' => ['family' => 'Linux', 'distribution' => 'debian', 'release' => '12'],
     ];
-    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform, self::drift()))->build('all');
+    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform, fn () => self::drift()))->build('all');
     // Add the 'site' block the caller normally supplies.
     $payload['site'] = [
       'url' => 'https://example.com',
@@ -121,6 +121,10 @@ class PayloadContractTest extends TestCase {
           ],
         ],
       ],
+      'complete with a reason' => [['reason' => 'error'] + self::drift()],
+      'incomplete without a reason' => [['status' => 'incomplete'] + self::drift()],
+      'unavailable without a reason' => [['status' => 'unavailable', 'total' => 0, 'objects' => []] + self::drift()],
+      'unavailable with objects' => [['status' => 'unavailable', 'reason' => 'error'] + self::drift()],
       'missing config_pr flag' => [array_diff_key(self::drift(), ['config_pr_enabled' => TRUE])],
     ];
   }

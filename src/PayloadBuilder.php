@@ -41,8 +41,9 @@ class PayloadBuilder {
    *   Resolves the Composer package of an extension without packaging data.
    * @param array<string, array<string, string>> $platform
    *   The platform block, without the parts that could not be read.
-   * @param array<string, mixed>|null $configDrift
-   *   The config_drift block, or NULL to leave it out.
+   * @param \Closure|null $configDrift
+   *   Returns the config_drift block, or NULL to leave it out. Called on the
+   *   first build only: the comparison exports the whole configuration.
    */
   public function __construct(
     protected ModuleExtensionList $moduleList,
@@ -51,8 +52,15 @@ class PayloadBuilder {
     protected string $ipAddress,
     protected ?ComposerProjectResolver $composerProjects = NULL,
     protected array $platform = [],
-    protected ?array $configDrift = NULL,
+    protected ?\Closure $configDrift = NULL,
   ) {}
+
+  /**
+   * The config_drift block of the first build, FALSE before it.
+   *
+   * @var array<string, mixed>|null|false
+   */
+  protected array|null|false $drift = FALSE;
 
   /**
    * Build the modules array for the given scope.
@@ -130,8 +138,11 @@ class PayloadBuilder {
     if ($this->platform !== []) {
       $payload['platform'] = $this->platform;
     }
-    if ($this->configDrift !== NULL) {
-      $payload['config_drift'] = $this->configDrift;
+    if ($this->drift === FALSE) {
+      $this->drift = $this->configDrift ? ($this->configDrift)() : NULL;
+    }
+    if ($this->drift !== NULL) {
+      $payload['config_drift'] = $this->drift;
     }
     return $payload;
   }

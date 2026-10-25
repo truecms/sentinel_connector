@@ -227,6 +227,64 @@
                 "objects"
             ],
             "additionalProperties": false,
+            "oneOf": [
+                {
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "complete"
+                            ]
+                        },
+                        "reason": {
+                            "type": "null"
+                        }
+                    }
+                },
+                {
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "incomplete"
+                            ]
+                        },
+                        "reason": {
+                            "enum": [
+                                "time_budget"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "unavailable"
+                            ]
+                        },
+                        "reason": {
+                            "enum": [
+                                "sync_directory_missing",
+                                "sync_unreadable",
+                                "error",
+                                "disabled"
+                            ]
+                        },
+                        "total": {
+                            "enum": [
+                                0
+                            ]
+                        },
+                        "truncated": {
+                            "enum": [
+                                false
+                            ]
+                        },
+                        "objects": {
+                            "maxItems": 0
+                        }
+                    }
+                }
+            ],
             "properties": {
                 "status": {
                     "type": "string",

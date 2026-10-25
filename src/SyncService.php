@@ -317,7 +317,9 @@ class SyncService {
    * a web request and the command line, and between containers, without
    * anything being deployed. The daily resend still reports them.
    * The drift block's generation time is left out too; its names, change
-   * types and status are kept, so a change in drift is pushed.
+   * types and status are kept, so a change in drift is pushed. A report that
+   * is not complete counts by its status and reason alone: a comparison cut
+   * short covers a different part of the site each time.
    * The API base URL is added: a push accepted by one Sentinel says nothing
    * about another.
    *
@@ -326,6 +328,10 @@ class SyncService {
    */
   protected function fingerprint(array $payload): string {
     unset($payload['drupal_info']['ip_address'], $payload['platform']['php'], $payload['platform']['os'], $payload['config_drift']['generated_at']);
+    if (isset($payload['config_drift']) && ($payload['config_drift']['status'] ?? NULL) !== 'complete') {
+      $kept = array_flip(['status', 'reason', 'config_pr_enabled']);
+      $payload['config_drift'] = array_intersect_key($payload['config_drift'], $kept);
+    }
     $modules = [];
     foreach ($payload['modules'] ?? [] as $module) {
       ksort($module);

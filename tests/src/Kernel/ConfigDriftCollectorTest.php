@@ -6,6 +6,8 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ExportStorageManager;
 use Drupal\Core\Config\StorageInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Lock\DatabaseLockBackend;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\ConfigDriftCollector;
@@ -251,6 +253,43 @@ class ConfigDriftCollectorTest extends KernelTestBase {
   }
 
   /**
+   * A sync directory that cannot be entered is not reported as an empty one.
+   */
+  public function testSyncDirectoryWithoutExecute(): void {
+    chmod($this->syncDirectory, 0644);
+    clearstatcache();
+    if (is_executable($this->syncDirectory)) {
+      $this->markTestSkipped('The test runs as a user that enters any directory.');
+    }
+
+    $drift = $this->collect();
+    $this->assertSame('unavailable', $drift['status']);
+    $this->assertSame('sync_unreadable', $drift['reason']);
+  }
+
+  /**
+   * A concurrent export is not waited for, and its lock is not taken over.
+   */
+  public function testConcurrentExportIsNotAwaited(): void {
+    // Kernel tests replace the lock service with one that never locks.
+    $own = new DatabaseLockBackend($this->container->get('database'));
+    $other = new DatabaseLockBackend($this->container->get('database'));
+    $this->assertTrue($other->acquire(ExportStorageManager::LOCK_NAME));
+
+    $start = microtime(TRUE);
+    $drift = $this->collector(lock: $own)->collect();
+    $this->assertLessThan(5, microtime(TRUE) - $start);
+    $this->assertSame('unavailable', $drift['status']);
+    $this->assertSame('error', $drift['reason']);
+    $this->assertFalse($other->lockMayBeAvailable(ExportStorageManager::LOCK_NAME));
+    $other->release(ExportStorageManager::LOCK_NAME);
+
+    // The lock is released after a comparison, for the next export.
+    $this->assertSame('complete', $this->collector(lock: $own)->collect()['status']);
+    $this->assertTrue($other->acquire(ExportStorageManager::LOCK_NAME));
+  }
+
+  /**
    * A failing comparison is reported as an error, and never thrown.
    */
   public function testCollectorError(): void {
@@ -310,12 +349,13 @@ class ConfigDriftCollectorTest extends KernelTestBase {
       array_column($body['config_drift']['objects'], 'name'),
     );
 
-    if (class_exists(Validator::class)) {
-      $validator = new Validator();
-      $data = json_decode($raw);
-      $validator->validate($data, (object) ['$ref' => 'file://' . dirname(__DIR__, 3) . '/tests/fixtures/drupal_sync.schema.json']);
-      $this->assertSame([], array_map(fn ($e) => $e['property'] . ': ' . $e['message'], $validator->getErrors()));
+    if (!class_exists(Validator::class)) {
+      $this->markTestSkipped('justinrainbow/json-schema is not installed.');
     }
+    $validator = new Validator();
+    $data = json_decode($raw);
+    $validator->validate($data, (object) ['$ref' => 'file://' . dirname(__DIR__, 3) . '/tests/fixtures/drupal_sync.schema.json']);
+    $this->assertSame([], array_map(fn ($e) => $e['property'] . ': ' . $e['message'], $validator->getErrors()));
   }
 
   /**
@@ -346,13 +386,14 @@ class ConfigDriftCollectorTest extends KernelTestBase {
   /**
    * Builds a collector with some services replaced.
    */
-  protected function collector(?TimeInterface $time = NULL, float $budget = ConfigDriftCollector::TIME_BUDGET, ?ModuleHandlerInterface $moduleHandler = NULL, mixed $exportManager = NULL): ConfigDriftCollector {
+  protected function collector(?TimeInterface $time = NULL, float $budget = ConfigDriftCollector::TIME_BUDGET, ?ModuleHandlerInterface $moduleHandler = NULL, mixed $exportManager = NULL, ?LockBackendInterface $lock = NULL): ConfigDriftCollector {
     return new ConfigDriftCollector(
       $exportManager ?? $this->exportManager(),
       fn (): StorageInterface => $this->container->get('config.storage.sync'),
       $this->container->get('config.factory'),
       $moduleHandler ?? $this->container->get('module_handler'),
       Settings::getInstance(),
+      $lock ?? $this->container->get('lock'),
       $time ?? $this->container->get('datetime.time'),
       $budget,
     );

@@ -38,13 +38,19 @@ class PayloadBuilderFactory {
       // Stack versions are optional: never fail a sync over them.
       $platform = [];
     }
-    try {
-      $configDrift = $this->configDrift?->collect();
-    }
-    catch (\Throwable) {
-      // The collector reports its own failures; this guards the push anyway.
-      $configDrift = NULL;
-    }
+    // Drift is compared when a payload is built, not when a service that
+    // could send one is created: that happens on every cron run and Drush
+    // command.
+    $collector = $this->configDrift;
+    $configDrift = $collector === NULL ? NULL : static function () use ($collector): ?array {
+      try {
+        return $collector->collect();
+      }
+      catch (\Throwable) {
+        // The collector reports its own failures; this guards the push anyway.
+        return NULL;
+      }
+    };
     return new PayloadBuilder($this->moduleList, \Drupal::VERSION, PHP_VERSION, $ip, ComposerProjectResolver::fromInstalledVersions($this->appRoot), $platform, $configDrift);
   }
 

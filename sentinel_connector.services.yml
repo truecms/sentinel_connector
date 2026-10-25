@@ -24,6 +24,7 @@ services:
       - '@config.factory'
       - '@module_handler'
       - '@settings'
+      - '@lock'
       - '@datetime.time'
 
   Drupal\sentinel_connector\PlatformCollector:
