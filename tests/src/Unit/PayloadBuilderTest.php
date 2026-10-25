@@ -271,7 +271,7 @@ class PayloadBuilderTest extends TestCase {
     $list->method('getList')->willReturn([]);
 
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4'))->build('all');
-    $this->assertSame(3, $payload['schema_version']);
+    $this->assertSame(4, $payload['schema_version']);
     $this->assertArrayNotHasKey('platform', $payload);
 
     $platform = ['php' => ['version' => '8.3.0', 'sapi' => 'fpm-fcgi']];
@@ -310,13 +310,38 @@ class PayloadBuilderTest extends TestCase {
     $this->assertCount(0, $calls);
     $payload = $builder->build('all');
     $this->assertSame($drift, $payload['config_drift']);
-    $this->assertSame(3, $payload['schema_version']);
+    $this->assertSame(4, $payload['schema_version']);
     // The sync and its change check see the same drift, compared once.
     $this->assertSame($drift, $builder->build('contrib')['config_drift']);
     $this->assertCount(1, $calls);
 
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, [], fn () => NULL))->build('all');
     $this->assertArrayNotHasKey('config_drift', $payload);
+  }
+
+  /**
+   * Schema version 4 carries the upgrade_status block, read once.
+   *
+   * @covers ::build
+   */
+  public function testUpgradeStatusBlock(): void {
+    $list = $this->createMock(ModuleExtensionList::class);
+    $list->method('reset')->willReturnSelf();
+    $list->method('getList')->willReturn([]);
+
+    $block = ['status' => 'ready', 'generated_at' => '2026-10-25T01:00:00Z'];
+    $calls = new \ArrayObject();
+    $builder = new PayloadBuilder($list, '11.2.0', '8.4.0', '203.0.113.4', NULL, [], NULL, function () use ($calls, $block): array {
+      $calls->append(TRUE);
+      return $block;
+    });
+    $this->assertCount(0, $calls);
+    $this->assertSame($block, $builder->build('all')['upgrade_status']);
+    $this->assertSame($block, $builder->build('contrib')['upgrade_status']);
+    $this->assertCount(1, $calls);
+
+    $payload = (new PayloadBuilder($list, '11.2.0', '8.4.0', '203.0.113.4', NULL, [], NULL, fn () => NULL))->build('all');
+    $this->assertArrayNotHasKey('upgrade_status', $payload);
   }
 
 }

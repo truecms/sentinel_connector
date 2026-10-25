@@ -5,9 +5,11 @@ namespace Drupal\sentinel_connector\Drush\Commands;
 use Drupal\sentinel_connector\PushLimitFormatter;
 use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
+use Drupal\sentinel_connector\UpgradeStatusCollector;
 use Drush\Attributes as CLI;
 use Drush\Commands\AutowireTrait;
 use Drush\Commands\DrushCommands;
+use Drush\Drush;
 
 /**
  * Drush commands for Sentinel Connector. CLI execution has full access.
@@ -23,10 +25,13 @@ class SentinelDrushCommands extends DrushCommands {
    *   The sync service.
    * @param \Drupal\sentinel_connector\PushLimitFormatter $pushLimitFormatter
    *   Builds the messages for a refused push.
+   * @param \Drupal\sentinel_connector\UpgradeStatusCollector $upgradeStatus
+   *   Reads the Upgrade Status result after a scan.
    */
   public function __construct(
     protected SyncService $syncService,
     protected PushLimitFormatter $pushLimitFormatter,
+    protected UpgradeStatusCollector $upgradeStatus,
   ) {
     parent::__construct();
   }
@@ -67,6 +72,59 @@ class SentinelDrushCommands extends DrushCommands {
       return;
     }
     $this->report($this->syncService->sync(SyncService::TRIGGER_DRUSH));
+  }
+
+  /**
+   * Scan custom projects with Upgrade Status, then sync.
+   *
+   * Opt-in: a scan runs PHPStan over custom code, which takes minutes and
+   * uses CPU. It never runs on cron or during a push. Contributed projects
+   * are not scanned: their next steps come from release data.
+   */
+  #[CLI\Command(name: 'sentinel_connector:upgrade-status', aliases: ['sc-upgrade-status'])]
+  #[CLI\Usage(name: 'drush sentinel_connector:upgrade-status', description: 'Scan custom projects with Upgrade Status, then push the readiness to Sentinel.')]
+  public function upgradeStatus(): void {
+    if (!$this->upgradeStatus->isDetected()) {
+      throw new \RuntimeException(dt('Upgrade Status is not enabled. Add it with "composer require --dev drupal/upgrade_status" and "drush pm:install upgrade_status", then run this command again.'));
+    }
+    $this->logger()->notice(dt('Scanning custom projects with Upgrade Status. This can take several minutes.'));
+    $exit = $this->scan();
+    // Upgrade Status exits with 3 when the scan found problems: that is a
+    // result, not a failure.
+    if ($exit !== self::EXIT_SUCCESS && $exit !== self::EXIT_FAILURE_WITH_CLARITY) {
+      throw new \RuntimeException(dt('The Upgrade Status scan failed (exit code @code). No push was sent.', ['@code' => $exit]));
+    }
+    $block = $this->upgradeStatus->collect(FALSE);
+    if ($block === NULL) {
+      $this->logger()->warning(dt('Upgrade Status reporting is switched off in the Sentinel connector settings; the push carries no readiness.'));
+    }
+    else {
+      $counts = [];
+      foreach ($block['counts'] as $step => $count) {
+        $counts[] = $step . ' ' . $count;
+      }
+      $this->logger()->notice(dt('Drupal @target readiness: @status (@counts).', [
+        '@target' => $block['target_major'],
+        '@status' => $block['status'] . ($block['reason'] ? ', ' . $block['reason'] : ''),
+        '@counts' => implode(', ', $counts),
+      ]));
+    }
+    $this->report($this->syncService->sync(SyncService::TRIGGER_DRUSH));
+  }
+
+  /**
+   * Runs the Upgrade Status scan of custom projects and returns its exit code.
+   */
+  protected function scan(): int {
+    $process = Drush::drush(Drush::aliasManager()->getSelf(), 'upgrade_status:analyze', [], [
+      'all' => TRUE,
+      'ignore-contrib' => TRUE,
+    ]);
+    // A scan of a large codebase takes longer than the default time limit.
+    $process->setTimeout(NULL);
+    return $process->run(function (string $type, string $buffer): void {
+      $this->output()->write($buffer);
+    });
   }
 
   /**

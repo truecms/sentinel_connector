@@ -138,6 +138,59 @@ class PayloadContractTest extends TestCase {
   }
 
   /**
+   * Every case of the shared v4 fixture matches the schema.
+   */
+  public function testV4FixtureMatchesSchema(): void {
+    $cases = json_decode((string) file_get_contents(dirname(__DIR__, 3) . '/tests/fixtures/drupal_sync_v4.json'), TRUE);
+    unset($cases['_comment']);
+    $this->assertNotEmpty($cases);
+    foreach ($cases as $case => $payload) {
+      $this->assertSame(4, $payload['schema_version']);
+      $this->assertSame([], $this->errors($payload), "Fixture case $case must match the schema.");
+    }
+  }
+
+  /**
+   * The schema refuses names, unknown values or extra keys in upgrade_status.
+   *
+   * @param array<string, mixed> $block
+   *   The upgrade_status block.
+   *
+   * @dataProvider invalidUpgradeStatus
+   */
+  #[DataProvider('invalidUpgradeStatus')]
+  public function testUpgradeStatusSchemaRefusesExtraData(array $block): void {
+    $payload = $this->payload(self::drift());
+    $payload['schema_version'] = 4;
+    $payload['upgrade_status'] = $block;
+    $this->assertNotSame([], $this->errors($payload));
+  }
+
+  /**
+   * Upgrade Status blocks the schema refuses.
+   *
+   * @return array<string, array{array<string, mixed>}>
+   *   Blocks keyed by case.
+   */
+  public static function invalidUpgradeStatus(): array {
+    $cases = json_decode((string) file_get_contents(dirname(__DIR__, 3) . '/tests/fixtures/drupal_sync_v4.json'), TRUE);
+    $block = $cases['not_ready']['upgrade_status'];
+    $unavailable = $cases['unavailable']['upgrade_status'];
+    return [
+      'project names' => [$block + ['projects' => ['my_module' => 'manual']]],
+      'unknown status' => [['status' => 'blocked'] + $block],
+      'unknown next step' => [['counts' => ['later' => 1] + $block['counts']] + $block],
+      'missing count' => [['counts' => array_diff_key($block['counts'], ['scan' => 0])] + $block],
+      'negative count' => [['projects_total' => -1] + $block],
+      'ready with a reason' => [['reason' => 'error'] + $block],
+      'unavailable without a reason' => [['reason' => NULL] + $unavailable],
+      'unavailable with counts' => [['projects_total' => 3] + $unavailable],
+      'unknown reason' => [['reason' => 'timeout'] + $unavailable],
+      'local time' => [['generated_at' => '2026-10-25 01:00:00'] + $block],
+    ];
+  }
+
+  /**
    * A complete drift block.
    *
    * @return array<string, mixed>

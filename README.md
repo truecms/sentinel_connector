@@ -40,6 +40,23 @@ Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
+## Upgrading to 1.4.0
+
+Release `1.4.0` introduces payload v4 with the optional `upgrade_status`
+block ([Drupal upgrade readiness](#drupal-upgrade-readiness-upgrade-status-integration)).
+Upgrade only after the receiving Sentinel environment accepts v4, then:
+
+```bash
+composer require drupal/sentinel_connector:^1.4 --with-all-dependencies
+drush updb
+```
+
+Update `10004` enables `report_upgrade_status`. Export configuration
+afterwards (`drush cex`), or add `report_upgrade_status: true` to the site's
+`sentinel_connector.settings.yml`, so a later import keeps it. Nothing is sent
+until Upgrade Status is enabled on the site; no scan runs on cron. Sites
+upgrading from a release before 1.3.0 also follow the 1.3.0 steps below.
+
 ## Upgrading to 1.3.0
 
 Release `1.3.0` introduces payload v3, configuration drift and the optional
@@ -103,7 +120,7 @@ A `POST` to `{api_base_url}/api/v1/sites/{site_uuid}/modules/sync` with an
 list of installed modules (machine name, display name, type, enabled, version,
 description). Every sync is a full snapshot (`full_sync: true`).
 
-The payload is `schema_version: 3`. Its `platform` block reports the stack
+The payload is `schema_version: 4`. Its `platform` block reports the stack
 Sentinel matches against known vulnerabilities:
 
 | Part | Fields | Source |
@@ -183,6 +200,75 @@ Turn it off with **Report configuration drift** on the settings form
 (`report_config_drift: false`); the block is then sent as `unavailable` with
 `reason: disabled`.
 
+### Drupal upgrade readiness (Upgrade Status integration)
+
+When the contrib module [Upgrade Status](https://www.drupal.org/project/upgrade_status)
+is enabled on the site the connector reports from, Sentinel receives its
+result and shows whether the site is ready for the next major Drupal version.
+The connector does not need Upgrade Status, and nothing is sent without it.
+Upgrade Status is often installed on a development or staging environment
+only; the connector reports from wherever it runs.
+
+The `upgrade_status` block holds counts only: how many projects are at each
+Upgrade Status next step and when they were scanned. **Project names, paths
+and messages are never sent.**
+
+```json
+"upgrade_status": {
+  "module_version": "4.3.10", "current_major": 11, "target_major": 12,
+  "status": "not_ready", "projects_total": 84,
+  "counts": {"relax": 76, "update": 3, "collaborate": 1, "rector": 2,
+             "manual": 1, "remove": 1, "scan": 0},
+  "custom_not_ready": 1, "reason": null,
+  "newest_scan_at": "2026-10-20T03:12:00Z",
+  "oldest_scan_at": "2026-10-12T22:40:00Z",
+  "generated_at": "2026-10-25T01:00:00Z"
+}
+```
+
+`status` follows these rules, in order:
+
+| Status | Rule |
+| --- | --- |
+| `not_ready` | At least one project is `update`, `collaborate`, `rector` or `manual` |
+| `not_scanned` | There is custom code, every custom project is `scan` and none has a stored result |
+| `incomplete` | Some projects are `scan` |
+| `ready` | Every project is `relax` or `remove` |
+| `unavailable` | Upgrade Status could not be read (`reason`: `service_missing`, `unsupported_api`, `unexpected_data` or `error`); one warning is logged and the push goes ahead |
+
+- Contributed projects get their next step from release data without a scan,
+  so a site without custom code can be `ready` without one.
+- `remove` (code present, module not enabled) is a warning only: it never
+  makes a site not ready.
+- `custom_not_ready` counts custom projects at `rector` or `manual`.
+- Scan dates come only from stored results of projects still on the site.
+- The block is part of the push fingerprint, except `generated_at`: a new
+  scan result is pushed by the next cron run, an unchanged one is not.
+- The hosting environment checks of Upgrade Status (PHP, database, web
+  server) are not reported.
+
+The connector never scans on cron or during a push. A scan runs PHPStan over
+custom code: it takes minutes and uses CPU, so run it in a quiet window:
+
+```bash
+# Scan custom projects with Upgrade Status, then sync. Fails if the scan fails.
+drush sentinel_connector:upgrade-status
+
+# The same in two steps.
+drush upgrade_status:analyze --all --ignore-contrib
+drush sentinel_connector:sync
+```
+
+Turn reporting off with **Report Upgrade Status readiness to Sentinel** in the
+Integrations section of the settings form (`report_upgrade_status: false`), or
+in `settings.php`, which takes precedence:
+
+```php
+$settings['sentinel_connector.report_upgrade_status'] = FALSE;
+```
+
+The block is then left out, as it is when Upgrade Status is not enabled.
+
 ## Configuration
 
 Admin UI: **Configuration → Web services → Sentinel Connector**
@@ -195,6 +281,7 @@ Admin UI: **Configuration → Web services → Sentinel Connector**
 | Site URL | Must match the URL registered in Sentinel |
 | Report scope | `all` (default), `contrib_custom`, or `contrib` |
 | Report configuration drift | On by default. Sends the names of configuration objects that differ from the sync directory, never their values; see [Configuration drift](#configuration-drift) |
+| Integrations | Upgrade Status: detected or not, version, last scan, **Report Upgrade Status readiness to Sentinel** (on by default) and the scan command. Config PR: detected or not, with a link to its settings |
 
 ### API key (secret — never stored in exported config)
 

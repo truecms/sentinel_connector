@@ -1,0 +1,454 @@
+{
+    "_comment": "Sync payload v4 examples shared with the Sentinel backend (truecms/sentinel#1351). One full payload per upgrade_status case; all validate against drupal_sync.schema.json. A v4 payload without upgrade_status means Upgrade Status is not enabled or reporting is off.",
+    "not_ready": {
+        "site": {
+            "url": "https://example.com",
+            "name": "Example",
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.4.0",
+        "schema_version": 4,
+        "upgrade_status": {
+            "module_version": "4.3.10",
+            "current_major": 11,
+            "target_major": 12,
+            "status": "not_ready",
+            "projects_total": 84,
+            "counts": {
+                "relax": 76,
+                "update": 3,
+                "collaborate": 1,
+                "rector": 2,
+                "manual": 1,
+                "remove": 1,
+                "scan": 0
+            },
+            "custom_not_ready": 1,
+            "reason": null,
+            "newest_scan_at": "2026-10-20T03:12:00Z",
+            "oldest_scan_at": "2026-10-12T22:40:00Z",
+            "generated_at": "2026-10-25T01:00:00Z"
+        }
+    },
+    "ready": {
+        "site": {
+            "url": "https://example.com",
+            "name": "Example",
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.4.0",
+        "schema_version": 4,
+        "upgrade_status": {
+            "module_version": "4.3.10",
+            "current_major": 11,
+            "target_major": 12,
+            "status": "ready",
+            "projects_total": 40,
+            "counts": {
+                "relax": 40,
+                "update": 0,
+                "collaborate": 0,
+                "rector": 0,
+                "manual": 0,
+                "remove": 0,
+                "scan": 0
+            },
+            "custom_not_ready": 0,
+            "reason": null,
+            "newest_scan_at": "2026-10-20T03:12:00Z",
+            "oldest_scan_at": "2026-10-12T22:40:00Z",
+            "generated_at": "2026-10-25T01:00:00Z"
+        }
+    },
+    "ready_remove_only": {
+        "site": {
+            "url": "https://example.com",
+            "name": "Example",
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.4.0",
+        "schema_version": 4,
+        "upgrade_status": {
+            "module_version": "4.3.10",
+            "current_major": 11,
+            "target_major": 12,
+            "status": "ready",
+            "projects_total": 12,
+            "counts": {
+                "relax": 10,
+                "update": 0,
+                "collaborate": 0,
+                "rector": 0,
+                "manual": 0,
+                "remove": 2,
+                "scan": 0
+            },
+            "custom_not_ready": 0,
+            "reason": null,
+            "newest_scan_at": "2026-10-20T03:12:00Z",
+            "oldest_scan_at": "2026-10-12T22:40:00Z",
+            "generated_at": "2026-10-25T01:00:00Z"
+        }
+    },
+    "ready_contrib_only_unscanned": {
+        "site": {
+            "url": "https://example.com",
+            "name": "Example",
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.4.0",
+        "schema_version": 4,
+        "upgrade_status": {
+            "module_version": "4.3.10",
+            "current_major": 11,
+            "target_major": 12,
+            "status": "ready",
+            "projects_total": 25,
+            "counts": {
+                "relax": 25,
+                "update": 0,
+                "collaborate": 0,
+                "rector": 0,
+                "manual": 0,
+                "remove": 0,
+                "scan": 0
+            },
+            "custom_not_ready": 0,
+            "reason": null,
+            "newest_scan_at": null,
+            "oldest_scan_at": null,
+            "generated_at": "2026-10-25T01:00:00Z"
+        }
+    },
+    "incomplete": {
+        "site": {
+            "url": "https://example.com",
+            "name": "Example",
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.4.0",
+        "schema_version": 4,
+        "upgrade_status": {
+            "module_version": "4.3.10",
+            "current_major": 11,
+            "target_major": 12,
+            "status": "incomplete",
+            "projects_total": 30,
+            "counts": {
+                "relax": 27,
+                "update": 0,
+                "collaborate": 0,
+                "rector": 0,
+                "manual": 0,
+                "remove": 0,
+                "scan": 3
+            },
+            "custom_not_ready": 0,
+            "reason": null,
+            "newest_scan_at": "2026-10-20T03:12:00Z",
+            "oldest_scan_at": "2026-10-12T22:40:00Z",
+            "generated_at": "2026-10-25T01:00:00Z"
+        }
+    },
+    "not_scanned": {
+        "site": {
+            "url": "https://example.com",
+            "name": "Example",
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.4.0",
+        "schema_version": 4,
+        "upgrade_status": {
+            "module_version": "4.3.10",
+            "current_major": 11,
+            "target_major": 12,
+            "status": "not_scanned",
+            "projects_total": 30,
+            "counts": {
+                "relax": 26,
+                "update": 0,
+                "collaborate": 0,
+                "rector": 0,
+                "manual": 0,
+                "remove": 0,
+                "scan": 4
+            },
+            "custom_not_ready": 0,
+            "reason": null,
+            "newest_scan_at": null,
+            "oldest_scan_at": null,
+            "generated_at": "2026-10-25T01:00:00Z"
+        }
+    },
+    "unavailable": {
+        "site": {
+            "url": "https://example.com",
+            "name": "Example",
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.4.0",
+        "schema_version": 4,
+        "upgrade_status": {
+            "module_version": "4.3.10",
+            "current_major": 11,
+            "target_major": 12,
+            "status": "unavailable",
+            "projects_total": 0,
+            "counts": {
+                "relax": 0,
+                "update": 0,
+                "collaborate": 0,
+                "rector": 0,
+                "manual": 0,
+                "remove": 0,
+                "scan": 0
+            },
+            "custom_not_ready": 0,
+            "reason": "unsupported_api",
+            "newest_scan_at": null,
+            "oldest_scan_at": null,
+            "generated_at": "2026-10-25T01:00:00Z"
+        }
+    },
+    "no_block": {
+        "site": {
+            "url": "https://example.com",
+            "name": "Example",
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.4.0",
+        "schema_version": 4
+    }
+}

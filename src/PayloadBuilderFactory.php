@@ -6,7 +6,7 @@ use Drupal\Core\Extension\ModuleExtensionList;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
- * Creates a PayloadBuilder with runtime core/php/ip, platform and drift.
+ * Creates a PayloadBuilder with runtime values, platform, drift and readiness.
  */
 class PayloadBuilderFactory {
 
@@ -16,6 +16,7 @@ class PayloadBuilderFactory {
     protected string $appRoot,
     protected ?PlatformCollector $platform = NULL,
     protected ?ConfigDriftCollector $configDrift = NULL,
+    protected ?UpgradeStatusCollector $upgradeStatus = NULL,
   ) {}
 
   /**
@@ -51,7 +52,16 @@ class PayloadBuilderFactory {
         return NULL;
       }
     };
-    return new PayloadBuilder($this->moduleList, \Drupal::VERSION, PHP_VERSION, $ip, ComposerProjectResolver::fromInstalledVersions($this->appRoot), $platform, $configDrift);
+    $readiness = $this->upgradeStatus;
+    $upgradeStatus = $readiness === NULL ? NULL : static function () use ($readiness): ?array {
+      try {
+        return $readiness->collect();
+      }
+      catch (\Throwable) {
+        return NULL;
+      }
+    };
+    return new PayloadBuilder($this->moduleList, \Drupal::VERSION, PHP_VERSION, $ip, ComposerProjectResolver::fromInstalledVersions($this->appRoot), $platform, $configDrift, $upgradeStatus);
   }
 
 }

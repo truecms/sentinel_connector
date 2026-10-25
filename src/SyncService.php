@@ -333,7 +333,9 @@ class SyncService {
    * out: they describe the process that sends the push, which differs between
    * a web request and the command line, and between containers, without
    * anything being deployed. The daily resend still reports them.
-   * The drift report counts as returned by driftPart().
+   * The drift report counts as returned by driftPart(). The generation time
+   * of the upgrade_status block does not count: a new scan result pushes, an
+   * unchanged one does not.
    * The API base URL is added: a push accepted by one Sentinel says nothing
    * about another.
    *
@@ -343,7 +345,7 @@ class SyncService {
    *   TRUE for the payload being sent, FALSE to check whether one is due.
    */
   protected function fingerprint(array $payload, bool $sent = FALSE): string {
-    unset($payload['drupal_info']['ip_address'], $payload['platform']['php'], $payload['platform']['os']);
+    unset($payload['drupal_info']['ip_address'], $payload['platform']['php'], $payload['platform']['os'], $payload['upgrade_status']['generated_at']);
     $payload['config_drift'] = $this->driftPart($payload, $sent);
     $modules = [];
     foreach ($payload['modules'] ?? [] as $module) {

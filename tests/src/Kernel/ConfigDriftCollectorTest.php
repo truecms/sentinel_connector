@@ -410,7 +410,7 @@ class ConfigDriftCollectorTest extends KernelTestBase {
     $raw = $this->push(TRUE);
     $this->assertStringNotContainsString('secret_value_marker', $raw);
     $body = json_decode($raw, TRUE);
-    $this->assertSame(3, $body['schema_version']);
+    $this->assertSame(4, $body['schema_version']);
     $this->assertSame('complete', $body['config_drift']['status']);
     $this->assertSame(
       ['system.action.code_only', 'system.action.planted', 'system.site'],
