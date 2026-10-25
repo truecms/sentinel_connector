@@ -47,8 +47,10 @@ these runtime failures; it does not fix them or make the release ready.
 The authoritative server plan is
 [Sentinel #1312](https://github.com/truecms/sentinel/issues/1312), with migration
 ordering in [#1314](https://github.com/truecms/sentinel/pull/1314).
-The receiver step is currently blocked: [#1315](https://github.com/truecms/sentinel/pull/1315)
-is open and its migration has not been tested on a copy of UAT. #1312's
+The receiver step requires [#1315](https://github.com/truecms/sentinel/pull/1315)
+to be included in the scoped deployed release, plus upgrade/reversal evidence
+on a copy of UAT. #1315 is merged into `release/1297-config-drift`, but its PR
+still records that copy test as unperformed. #1312's
 promotion also contains unrelated billing, phone and Patching work; its newer
 `pre-develop` head includes #1272 despite the older exclusion in the issue.
 Resolve the intended receiver scope and migration evidence before promotion.
