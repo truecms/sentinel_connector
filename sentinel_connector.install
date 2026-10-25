@@ -60,3 +60,16 @@ function sentinel_connector_update_10002(): string {
 
   return (string) t('Removed the unused Sentinel Connector site token setting. The API key is unchanged.');
 }
+
+/**
+ * Turn on configuration drift reporting.
+ */
+function sentinel_connector_update_10003(): string {
+  // Only names and change types are sent, so drift is reported by default.
+  $config = \Drupal::configFactory()->getEditable('sentinel_connector.settings');
+  if ($config->get('report_config_drift') === NULL) {
+    $config->set('report_config_drift', TRUE)->save();
+  }
+
+  return (string) t('Sentinel Connector now reports configuration drift: the names of changed configuration objects, never their values. Turn it off on the settings form.');
+}

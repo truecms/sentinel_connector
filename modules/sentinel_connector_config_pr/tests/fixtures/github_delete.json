@@ -1,0 +1,4 @@
+[
+  {"method": "GET", "path": "/repos/acme/site/contents/config/sync/system.removed.yml", "query": {"ref": "sentinel/config-export"}, "body": {"type": "file", "name": "system.removed.yml", "path": "config/sync/system.removed.yml", "sha": "5f2e8f9a7c1d3b4e6a8c0d2f4b6a8c0e2d4f6a8b"}},
+  {"method": "DELETE", "path": "/repos/acme/site/contents/config/sync/system.removed.yml", "body": {"content": null, "commit": {"sha": "9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b"}}}
+]

@@ -1,0 +1,9 @@
+[
+  {"method": "GET", "path": "/repos/acme/site", "body": {"id": 1296269, "full_name": "acme/site", "default_branch": "main", "private": true}},
+  {"method": "GET", "path": "/repos/acme/site/branches", "body": [{"name": "main", "commit": {"sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"}}, {"name": "sentinel/config-export", "commit": {"sha": "7638417db6d59f3c431d3e1f261cc637155684cd"}}]},
+  {"method": "GET", "path": "/repos/acme/site/pulls", "query": {"state": "open", "head": "acme:sentinel/config-export"}, "body": [{"number": 7, "state": "open", "html_url": "https://github.example.com/acme/site/pull/7", "head": {"ref": "sentinel/config-export"}, "base": {"ref": "main"}}]},
+  {"method": "GET", "path": "/repos/acme/site/branches/sentinel/config-export", "body": {"name": "sentinel/config-export", "commit": {"sha": "7638417db6d59f3c431d3e1f261cc637155684cd"}}},
+  {"method": "GET", "path": "/repos/acme/site/contents/config/sync/system.site.yml", "query": {"ref": "sentinel/config-export"}, "body": {"type": "file", "name": "system.site.yml", "path": "config/sync/system.site.yml", "sha": "95b966ae1c166bd92f8ae7d1c313e738c731dfc3", "size": 190}},
+  {"method": "HEAD", "path": "/repos/acme/site/contents/config/sync/system.site.yml", "status": 200, "query": {"ref": "sentinel/config-export"}},
+  {"method": "PUT", "path": "/repos/acme/site/contents/config/sync/system.site.yml", "body": {"content": {"name": "system.site.yml", "path": "config/sync/system.site.yml", "sha": "1f2e3d4c5b6a79881726354453627180918a7b6c"}, "commit": {"sha": "8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c"}}}
+]

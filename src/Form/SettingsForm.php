@@ -133,6 +133,12 @@ final class SettingsForm extends ConfigFormBase {
       ],
       '#default_value' => $config->get('report_scope') ?: 'all',
     ];
+    $form['report_config_drift'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Report configuration drift'),
+      '#description' => $this->t('Sends the names of configuration objects that differ from the configuration sync directory, and the type of change. Configuration values are never sent.'),
+      '#default_value' => $config->get('report_config_drift') ?? TRUE,
+    ];
     // API key status: the source is shown, the key never is.
     $source = $this->apiKeyResolver->getSource();
     $form['api_key_status'] = [
@@ -269,6 +275,7 @@ final class SettingsForm extends ConfigFormBase {
       ->set('site_url', (string) $form_state->getValue('site_url'))
       ->set('site_name', (string) $form_state->getValue('site_name'))
       ->set('report_scope', (string) $form_state->getValue('report_scope'))
+      ->set('report_config_drift', (bool) $form_state->getValue('report_config_drift'))
       ->save();
 
     $key = (string) $form_state->getValue('api_key_state');

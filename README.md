@@ -40,15 +40,35 @@ Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
-## Upgrading
+## Upgrading to 1.3.0
 
-After updating the module code:
+Release `1.3.0` introduces payload v3, configuration drift and the optional
+`sentinel_connector_config_pr` submodule. Release `1.2.0` already provides
+Drupal 12 compatibility and uses payload v2. Upgrade only after the receiving
+Sentinel environment accepts v3; preserve the site's API URL, UUID, key and
+production-only overrides. See [RELEASE.md](RELEASE.md) for release and canary
+gates. Availability on Drupal.org must be confirmed before running:
 
 ```bash
+composer require drupal/sentinel_connector:^1.3 --with-all-dependencies
 drush updb
-drush cr
-drush sentinel_connector:sync
 ```
+
+Update `10003` enables `report_config_drift`. Add `report_config_drift: true`
+to the existing `sentinel_connector.settings.yml` in the site's configuration
+repository and commit only that intended change. If using `drush cex`, export
+on a development copy and discard unrelated exported changes before deployment.
+Keep the deployed sync directory as the code baseline during drift verification;
+exporting all active production configuration there would hide existing drift.
+This preserves the setting on a later configuration import. Keep the optional submodule disabled
+unless that site's setup has been separately agreed. Run
+`drush sentinel_connector:deploy` last in the site's normal deployment, then
+verify a fresh accepted receiver-side payload contains `schema_version: 3` and
+`config_drift`, including its generation time and status.
+
+
+For a manual verification after deployment, run `drush cr` and
+`drush sentinel_connector:sync` (or use "Sync now").
 
 Release `0.3.0` has database updates: they remove the `cron_interval` and
 `site_token` settings. Sites that keep configuration in code must export
@@ -68,6 +88,14 @@ against Drupal.org; see [CHANGELOG.md](CHANGELOG.md).
 
 Drush 12.5 or later is required to use the optional command-line commands.
 
+Drupal 12 sites using Config Split or the optional Key integration need compatible
+upstream versions. CI exercises their runtime paths with explicit, checksum-pinned upstream
+patches and a narrow Composer Lenient allow-list. This does not establish site
+installation/update compatibility: Config Split and Config Ignore also need
+upstream Drupal 12 module metadata. See
+[optional integration prerequisites](patches/drupal12/README.md); installing this
+module does not automatically patch those dependencies.
+
 ## What it sends
 
 A `POST` to `{api_base_url}/api/v1/sites/{site_uuid}/modules/sync` with an
@@ -75,7 +103,7 @@ A `POST` to `{api_base_url}/api/v1/sites/{site_uuid}/modules/sync` with an
 list of installed modules (machine name, display name, type, enabled, version,
 description). Every sync is a full snapshot (`full_sync: true`).
 
-The payload is `schema_version: 2`. Its `platform` block reports the stack
+The payload is `schema_version: 3`. Its `platform` block reports the stack
 Sentinel matches against known vulnerabilities:
 
 | Part | Fields | Source |
@@ -94,6 +122,67 @@ parts describe the process that sends the push: on cron or Drush that is the
 command-line PHP. A value the module cannot read is left out and never fails
 the sync; Sentinel shows it as unknown.
 
+### Configuration drift
+
+The `config_drift` block says which configuration objects differ between the
+production site and the configuration sync directory (the code). It is what
+`drush config:status` reports: the export storage (active configuration after
+export transformations, so Config Ignore, Config Split and
+`config_exclude_modules` are respected) is compared with the sync directory,
+in every collection, such as the `language.fr` translation overrides.
+
+**Configuration values are never sent**: only the object name, its collection
+(`""` for the default collection) and the type of change.
+
+| Change | Meaning |
+| --- | --- |
+| `create` | Only in production |
+| `update` | In both, changed in production (also an object recreated under the same name) |
+| `delete` | Only in code |
+| `rename` | Renamed in production; reported under the production name |
+
+```json
+"config_drift": {
+  "status": "complete",
+  "reason": null,
+  "generated_at": "2026-11-02T03:04:05Z",
+  "total": 3,
+  "config_pr_enabled": false,
+  "truncated": false,
+  "objects": [
+    {"name": "system.site", "collection": "", "change": "update"},
+    {"name": "views.view.content", "collection": "language.fr", "change": "create"}
+  ]
+}
+```
+
+- `status` is `complete`, `incomplete` (the 10-second time budget ran out; the
+  collections compared so far are listed) or `unavailable`, with `reason`
+  `sync_directory_missing`, `sync_unreadable`, `time_budget`, `error` or
+  `disabled`. `reason` is `null` when complete.
+- `objects` holds at most 200 entries, sorted by collection then name.
+  `total` is the full count and `truncated` says the list was cut.
+- `config_pr_enabled` is `true` when the Config Pull Request (`config_pr`)
+  module is enabled. It is sent with every status.
+- `export_pull_request` (`{"url": …, "updated_at": "2026-11-02T03:04:05Z"}`)
+  is added when the `sentinel_connector_config_pr` submodule has a
+  configuration pull request open. It is read from State, with no call to the
+  Git host. A new or updated pull request changes the push fingerprint, so the
+  next cron run sends it.
+- A failure in the comparison never fails the push.
+- The drift list is part of the push fingerprint, so a change in drift is
+  pushed by the next cron run or `drush sentinel_connector:deploy`. Run
+  `drush sentinel_connector:deploy` as the last step of each production
+  deployment so drift clears promptly after `drush cim`. A change past the
+  first 200 objects counts only through `total`; the daily resend reports it.
+  A comparison that is cut short or fails (for example while `drush cex`
+  holds the export lock, which is never waited for) does not count as a
+  change on its own.
+
+Turn it off with **Report configuration drift** on the settings form
+(`report_config_drift: false`); the block is then sent as `unavailable` with
+`reason: disabled`.
+
 ## Configuration
 
 Admin UI: **Configuration → Web services → Sentinel Connector**
@@ -105,6 +194,7 @@ Admin UI: **Configuration → Web services → Sentinel Connector**
 | Site UUID | The registered site's UUID (must match Sentinel). Saved and sent in lower case with hyphens; see below |
 | Site URL | Must match the URL registered in Sentinel |
 | Report scope | `all` (default), `contrib_custom`, or `contrib` |
+| Report configuration drift | On by default. Sends the names of configuration objects that differ from the sync directory, never their values; see [Configuration drift](#configuration-drift) |
 
 ### API key (secret — never stored in exported config)
 
@@ -247,6 +337,8 @@ Options and notes:
   uses it when something changed and once a day, so it is normally free when
   a deployment needs it. On Free the daily push uses the whole limit, so a
   deployment after it is held until the next day's push.
+- Configuration drift is part of the inventory, so run the command after
+  `drush cim`: the push then reports that production matches the code again.
 - The PHP version is part of the inventory. If Drush and the web server run
   different PHP versions and cron runs through the web server, every
   deployment counts as a change and pushes.
@@ -463,6 +555,97 @@ Connector* entry:
 "Accepted" means Sentinel answered 200 or 202. A plan limit that ended less
 than 6 hours ago also shows as information, so that a Free site does not
 report an error between the end of its daily limit and the next cron run.
+
+## Configuration pull request (optional submodule)
+
+The `sentinel_connector_config_pr` submodule brings configuration that changed
+on production back into code. It writes every configuration object that
+differs from the sync directory to an export branch and opens one pull request
+(GitHub) or merge request (GitLab), or updates the one already open. Your team
+reviews and merges it; the module never merges. It uses
+[Config Pull Request](https://www.drupal.org/project/config_pr) (`config_pr`
+3.0) for the GitHub and GitLab APIs only: its own form and its user token
+field are not used.
+
+Install it on the site that should open the pull request:
+
+```bash
+composer require drupal/config_pr:^3.0
+drush en sentinel_connector_config_pr config_pr_github
+```
+
+For GitLab, enable `config_pr_gitlab` instead and add its API client, which
+`config_pr` does not install:
+
+```bash
+composer require m4tthumphrey/php-gitlab-api:^12.0
+```
+
+Drupal core supplies the PSR-18 HTTP client and PSR-17 factories. Do not add
+Guzzle 7-only adapters or factories to Drupal 12, which uses Guzzle 8/PSR-7 3.
+
+Set the repository on **Configuration > Web services > Sentinel configuration
+pull request** (`/admin/config/services/sentinel-connector/config-pr`): Git
+host, owner (for GitLab the group path, subgroups separated by `/`) and name
+or, for GitLab, the numeric project id, the host URL for GitHub Enterprise or self-managed GitLab, the base branch
+(empty for the default branch), the export branch (default
+`sentinel/config-export`), the path of the sync directory in the repository
+(default `config/sync`) and the pull request title. The settings hold no
+secrets.
+
+### Access token
+
+The token comes only from `settings.php` or from a [Key](https://www.drupal.org/project/key)
+module key selected on the settings form. It is never read from configuration
+or State, never logged and never sent to Sentinel. A key that keeps its value
+in configuration is refused; use a key provider that reads a file or an
+environment variable. The settings form shows only whether a token is present.
+
+```php
+$settings['sentinel_connector_config_pr']['token'] = getenv('CONFIG_PR_TOKEN');
+```
+
+Give the token access to the one repository only:
+
+- **GitHub**: a fine-grained personal access token for that repository, with
+  **Contents** and **Pull requests** set to read and write.
+- **GitLab**: a project access token with the `api` scope and the
+  **Developer** role. Do not protect the export branch.
+
+### Running it
+
+```bash
+# List the configuration objects a run would export; writes nothing.
+drush sentinel_connector:config-pr --dry-run
+# Export now, even if the interval has not passed.
+drush sc-config-pr --force
+```
+
+A run compares the export storage with the sync directory, the same comparison
+as `drush config:status`, so objects that Config Ignore or Config Split leave
+out are not exported. It writes created and updated objects as YAML and deletes
+the files of deleted objects. Files that already match the export branch are
+skipped, so a run without a new change makes no commit. After the pull request
+is merged or closed, the next run starts the export branch again from the base
+branch. The module owns the export branch: do not push other work to it. A run
+refuses a branch of that name that it did not create in this repository (or
+that changed after its pull request closed), an open pull request from it that
+it did not open or that targets another base branch, and an empty sync
+directory. Keep the token on production only: a database copy also copies the
+record of the open pull request.
+
+Cron runs are off by default. When turned on, cron runs at most once per
+interval (default 24 hours), and only while Sentinel Connector's own cron
+reporting is enabled, so the guard in
+[Send reports from production only](#send-reports-from-production-only) also
+keeps non-production environments from opening pull requests.
+
+Each run logs its outcome, the pull request URL and the number of files on the
+`sentinel_connector` channel, never configuration values or the token.
+Configuration values are never sent to Sentinel.
+
+Known limit: `config_pr` makes one commit per file, so a large export makes
+many commits.
 
 ## Permissions
 

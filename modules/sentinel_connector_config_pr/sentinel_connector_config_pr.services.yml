@@ -1,0 +1,40 @@
+services:
+  Drupal\sentinel_connector_config_pr\TokenResolver:
+    class: Drupal\sentinel_connector_config_pr\TokenResolver
+    arguments: ['@config.factory', '@settings', '@?key.repository']
+
+  Drupal\sentinel_connector_config_pr\ChangeSetBuilder:
+    class: Drupal\sentinel_connector_config_pr\ChangeSetBuilder
+    arguments: ['@config.storage.export.manager', '@config.storage.sync']
+
+  Drupal\sentinel_connector_config_pr\Host\HostFactory:
+    class: Drupal\sentinel_connector_config_pr\Host\HostFactory
+    arguments:
+      - '@config.factory'
+      - '@messenger'
+      - '@?config_pr_github.repo_controller.github'
+      - '@?config_pr_github.repo_controller.github_enterprise'
+      - '@?config_pr_gitlab.repo_controller.gitlab'
+      - '@?config_pr_gitlab.repo_controller.gitlab_self_managed'
+
+  Drupal\sentinel_connector_config_pr\PullRequestTracker:
+    class: Drupal\sentinel_connector_config_pr\PullRequestTracker
+    arguments: ['@state']
+
+  Drupal\sentinel_connector_config_pr\ConfigPrRunner:
+    class: Drupal\sentinel_connector_config_pr\ConfigPrRunner
+    arguments:
+      - '@config.factory'
+      - '@Drupal\sentinel_connector_config_pr\ChangeSetBuilder'
+      - '@Drupal\sentinel_connector_config_pr\TokenResolver'
+      - '@Drupal\sentinel_connector_config_pr\Host\HostFactory'
+      - '@Drupal\sentinel_connector_config_pr\PullRequestTracker'
+      - '@lock'
+      - '@datetime.time'
+      - '@logger.channel.sentinel_connector'
+
+  Drupal\sentinel_connector_config_pr\Config\RepoUrlOverride:
+    class: Drupal\sentinel_connector_config_pr\Config\RepoUrlOverride
+    arguments: ['@config.storage']
+    tags:
+      - { name: config.factory.override, priority: 5 }

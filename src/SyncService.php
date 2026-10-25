@@ -119,6 +119,19 @@ class SyncService {
   protected ?string $pendingFingerprint = NULL;
 
   /**
+   * State key: hash of the drift report in the last accepted fingerprint.
+   *
+   * A report that failed for a passing reason counts as this one, so it does
+   * not push twice. A hash, because state is cached for every request.
+   */
+  public const STATE_LAST_DRIFT = 'sentinel_connector.last_drift';
+
+  /**
+   * Hash of the drift report in the fingerprint of the push in progress.
+   */
+  protected ?string $pendingDrift = NULL;
+
+  /**
    * Constructs the sync service.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -158,6 +171,7 @@ class SyncService {
    */
   public function sync(string $trigger = self::TRIGGER_FORM): SyncResult {
     $this->pendingFingerprint = NULL;
+    $this->pendingDrift = NULL;
     $extra = [];
     try {
       $deferred = $this->deferredResult();
@@ -285,7 +299,10 @@ class SyncService {
     $this->markConfigured();
 
     $payload = $this->buildPayload();
-    $this->pendingFingerprint = $this->fingerprint($payload);
+    // What is sent is recorded, a failed drift report too, so that the push
+    // after the comparison recovers corrects it.
+    $this->pendingFingerprint = $this->fingerprint($payload, TRUE);
+    $this->pendingDrift = $this->driftPart($payload, TRUE)['report'] ?? NULL;
 
     $result = $this->client->sync($baseUrl, $uuid, $apiKey, $payload);
     return $result;
@@ -316,14 +333,18 @@ class SyncService {
    * out: they describe the process that sends the push, which differs between
    * a web request and the command line, and between containers, without
    * anything being deployed. The daily resend still reports them.
+   * The drift report counts as returned by driftPart().
    * The API base URL is added: a push accepted by one Sentinel says nothing
    * about another.
    *
    * @param array<string, mixed> $payload
    *   The payload sent to Sentinel.
+   * @param bool $sent
+   *   TRUE for the payload being sent, FALSE to check whether one is due.
    */
-  protected function fingerprint(array $payload): string {
+  protected function fingerprint(array $payload, bool $sent = FALSE): string {
     unset($payload['drupal_info']['ip_address'], $payload['platform']['php'], $payload['platform']['os']);
+    $payload['config_drift'] = $this->driftPart($payload, $sent);
     $modules = [];
     foreach ($payload['modules'] ?? [] as $module) {
       ksort($module);
@@ -335,6 +356,42 @@ class SyncService {
     $payload['api_base_url'] = rtrim((string) $this->configFactory->get('sentinel_connector.settings')->get('api_base_url'), '/');
     ksort($payload);
     return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+  }
+
+  /**
+   * The part of the drift report that counts as an inventory change.
+   *
+   * The names, change types and status count, so a change in drift is
+   * pushed; the generation time does not. A comparison cut short by the time
+   * budget, or failed on a busy lock or another error, counts as the report
+   * of the last accepted push: it covers a different part of the site each
+   * time, or says nothing about it, and would otherwise push twice. A failed
+   * report that is sent counts by its status and reason.
+   *
+   * @param array<string, mixed> $payload
+   *   The payload sent to Sentinel.
+   * @param bool $sent
+   *   TRUE for the payload being sent, FALSE to check whether one is due.
+   *
+   * @return array{report: string, config_pr_enabled: bool}|null
+   *   A hash of the report and the config_pr flag, which is known even when
+   *   the comparison failed; NULL when the payload has no drift report.
+   */
+  protected function driftPart(array $payload, bool $sent = FALSE): ?array {
+    $drift = $payload['config_drift'] ?? NULL;
+    if (!is_array($drift)) {
+      return NULL;
+    }
+    $configPr = (bool) ($drift['config_pr_enabled'] ?? FALSE);
+    $transient = ($drift['status'] ?? NULL) === 'incomplete' || ($drift['reason'] ?? NULL) === 'error';
+    $last = $transient && !$sent ? $this->state->get(self::STATE_LAST_DRIFT) : NULL;
+    if (!is_string($last) || $last === '') {
+      $report = $transient ? array_intersect_key($drift, array_flip(['status', 'reason'])) : $drift;
+      unset($report['generated_at'], $report['config_pr_enabled']);
+      ksort($report);
+      $last = hash('sha256', json_encode($report, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+    }
+    return ['report' => $last, 'config_pr_enabled' => $configPr];
   }
 
   /**
@@ -521,6 +578,7 @@ class SyncService {
       $this->state->set(self::STATE_LAST_ACCEPTED_TIME, $this->time->getRequestTime());
       if ($this->pendingFingerprint !== NULL) {
         $this->state->set(self::STATE_LAST_FINGERPRINT, $this->pendingFingerprint);
+        $this->state->set(self::STATE_LAST_DRIFT, $this->pendingDrift);
       }
     }
     $this->state->set('sentinel_connector.last_result', $result->status);

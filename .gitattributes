@@ -7,3 +7,5 @@
 /phpcs.xml.dist export-ignore
 /phpstan.neon.dist export-ignore
 /tests export-ignore
+/scripts export-ignore
+/modules/sentinel_connector_config_pr/tests export-ignore
