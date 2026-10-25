@@ -14,6 +14,17 @@ services:
       - '@request_stack'
       - '%app.root%'
       - '@Drupal\sentinel_connector\PlatformCollector'
+      - '@Drupal\sentinel_connector\ConfigDriftCollector'
+
+  Drupal\sentinel_connector\ConfigDriftCollector:
+    class: Drupal\sentinel_connector\ConfigDriftCollector
+    arguments:
+      - '@config.storage.export.manager'
+      - !service_closure '@config.storage.sync'
+      - '@config.factory'
+      - '@module_handler'
+      - '@settings'
+      - '@datetime.time'
 
   Drupal\sentinel_connector\PlatformCollector:
     class: Drupal\sentinel_connector\PlatformCollector

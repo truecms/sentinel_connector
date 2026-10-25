@@ -271,12 +271,39 @@ class PayloadBuilderTest extends TestCase {
     $list->method('getList')->willReturn([]);
 
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4'))->build('all');
-    $this->assertSame(2, $payload['schema_version']);
+    $this->assertSame(3, $payload['schema_version']);
     $this->assertArrayNotHasKey('platform', $payload);
 
     $platform = ['php' => ['version' => '8.3.0', 'sapi' => 'fpm-fcgi']];
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform))->build('all');
     $this->assertSame($platform, $payload['platform']);
+  }
+
+  /**
+   * Schema version 3 carries the config_drift block when one is given.
+   *
+   * @covers ::build
+   */
+  public function testConfigDriftBlock(): void {
+    $list = $this->createMock(ModuleExtensionList::class);
+    $list->method('reset')->willReturnSelf();
+    $list->method('getList')->willReturn([]);
+
+    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4'))->build('all');
+    $this->assertArrayNotHasKey('config_drift', $payload);
+
+    $drift = [
+      'status' => 'unavailable',
+      'reason' => 'sync_directory_missing',
+      'generated_at' => '2026-11-02T03:04:05Z',
+      'total' => 0,
+      'config_pr_enabled' => TRUE,
+      'truncated' => FALSE,
+      'objects' => [],
+    ];
+    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, [], $drift))->build('all');
+    $this->assertSame($drift, $payload['config_drift']);
+    $this->assertSame(3, $payload['schema_version']);
   }
 
 }

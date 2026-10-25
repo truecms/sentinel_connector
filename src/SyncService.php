@@ -316,6 +316,8 @@ class SyncService {
    * out: they describe the process that sends the push, which differs between
    * a web request and the command line, and between containers, without
    * anything being deployed. The daily resend still reports them.
+   * The drift block's generation time is left out too; its names, change
+   * types and status are kept, so a change in drift is pushed.
    * The API base URL is added: a push accepted by one Sentinel says nothing
    * about another.
    *
@@ -323,7 +325,7 @@ class SyncService {
    *   The payload sent to Sentinel.
    */
   protected function fingerprint(array $payload): string {
-    unset($payload['drupal_info']['ip_address'], $payload['platform']['php'], $payload['platform']['os']);
+    unset($payload['drupal_info']['ip_address'], $payload['platform']['php'], $payload['platform']['os'], $payload['config_drift']['generated_at']);
     $modules = [];
     foreach ($payload['modules'] ?? [] as $module) {
       ksort($module);

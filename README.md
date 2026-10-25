@@ -71,7 +71,7 @@ A `POST` to `{api_base_url}/api/v1/sites/{site_uuid}/modules/sync` with an
 list of installed modules (machine name, display name, type, enabled, version,
 description). Every sync is a full snapshot (`full_sync: true`).
 
-The payload is `schema_version: 2`. Its `platform` block reports the stack
+The payload is `schema_version: 3`. Its `platform` block reports the stack
 Sentinel matches against known vulnerabilities:
 
 | Part | Fields | Source |
@@ -90,6 +90,58 @@ parts describe the process that sends the push: on cron or Drush that is the
 command-line PHP. A value the module cannot read is left out and never fails
 the sync; Sentinel shows it as unknown.
 
+### Configuration drift
+
+The `config_drift` block says which configuration objects differ between the
+production site and the configuration sync directory (the code). It is what
+`drush config:status` reports: the export storage (active configuration after
+export transformations, so Config Ignore, Config Split and
+`config_exclude_modules` are respected) is compared with the sync directory,
+in every collection, such as the `language.fr` translation overrides.
+
+**Configuration values are never sent**: only the object name, its collection
+(`""` for the default collection) and the type of change.
+
+| Change | Meaning |
+| --- | --- |
+| `create` | Only in production |
+| `update` | In both, changed in production (also an object recreated under the same name) |
+| `delete` | Only in code |
+| `rename` | Renamed in production; reported under the production name |
+
+```json
+"config_drift": {
+  "status": "complete",
+  "reason": null,
+  "generated_at": "2026-11-02T03:04:05Z",
+  "total": 3,
+  "config_pr_enabled": false,
+  "truncated": false,
+  "objects": [
+    {"name": "system.site", "collection": "", "change": "update"},
+    {"name": "views.view.content", "collection": "language.fr", "change": "create"}
+  ]
+}
+```
+
+- `status` is `complete`, `incomplete` (the 10-second time budget ran out; the
+  collections compared so far are listed) or `unavailable`, with `reason`
+  `sync_directory_missing`, `sync_unreadable`, `time_budget`, `error` or
+  `disabled`. `reason` is `null` when complete.
+- `objects` holds at most 200 entries, sorted by collection then name.
+  `total` is the full count and `truncated` says the list was cut.
+- `config_pr_enabled` is `true` when the Config Pull Request (`config_pr`)
+  module is enabled. It is sent with every status.
+- A failure in the comparison never fails the push.
+- The drift list is part of the push fingerprint, so a change in drift is
+  pushed by the next cron run or `drush sentinel_connector:deploy`. Run
+  `drush sentinel_connector:deploy` as the last step of each production
+  deployment so drift clears promptly after `drush cim`.
+
+Turn it off with **Report configuration drift** on the settings form
+(`report_config_drift: false`); the block is then sent as `unavailable` with
+`reason: disabled`.
+
 ## Configuration
 
 Admin UI: **Configuration → Web services → Sentinel Connector**
@@ -101,6 +153,7 @@ Admin UI: **Configuration → Web services → Sentinel Connector**
 | Site UUID | The registered site's UUID (must match Sentinel). Saved and sent in lower case with hyphens; see below |
 | Site URL | Must match the URL registered in Sentinel |
 | Report scope | `all` (default), `contrib_custom`, or `contrib` |
+| Report configuration drift | On by default. Sends the names of configuration objects that differ from the sync directory, never their values; see [Configuration drift](#configuration-drift) |
 
 ### API key (secret — never stored in exported config)
 
@@ -243,6 +296,8 @@ Options and notes:
   uses it when something changed and once a day, so it is normally free when
   a deployment needs it. On Free the daily push uses the whole limit, so a
   deployment after it is held until the next day's push.
+- Configuration drift is part of the inventory, so run the command after
+  `drush cim`: the push then reports that production matches the code again.
 - The PHP version is part of the inventory. If Drush and the web server run
   different PHP versions and cron runs through the web server, every
   deployment counts as a change and pushes.
