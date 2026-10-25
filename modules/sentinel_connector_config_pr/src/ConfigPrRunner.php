@@ -234,6 +234,11 @@ class ConfigPrRunner {
         $createdBranch = TRUE;
       }
       $step = 'write';
+      if ($pull !== NULL) {
+        // Recorded before writing, so a file written to the open pull request
+        // is put back by a later run even if a write below fails.
+        $this->tracker->setPaths($paths);
+      }
       foreach ($operations as $path => $operation) {
         $name = $paths[$path]['name'];
         if ($operation['op'] === 'delete') {

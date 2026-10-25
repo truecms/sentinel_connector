@@ -4,7 +4,6 @@ namespace Drupal\sentinel_connector_config_pr\Host;
 
 use Drupal\config_pr\RepoControllerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Builds the Git host for the configured provider.
@@ -34,17 +33,41 @@ class HostFactory {
   ];
 
   /**
+   * The available config_pr controllers keyed by service id.
+   *
+   * @var array<string, \Drupal\config_pr\RepoControllerInterface>
+   */
+  protected array $controllers = [];
+
+  /**
    * Constructs the factory.
    *
-   * @param \Symfony\Component\DependencyInjection\ContainerInterface $container
-   *   The service container, to look up the controller lazily.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
+   * @param \Drupal\config_pr\RepoControllerInterface|null $github
+   *   The GitHub controller, when config_pr_github is enabled.
+   * @param \Drupal\config_pr\RepoControllerInterface|null $githubEnterprise
+   *   The GitHub Enterprise controller, when config_pr_github is enabled.
+   * @param \Drupal\config_pr\RepoControllerInterface|null $gitlab
+   *   The GitLab controller, when config_pr_gitlab is enabled.
+   * @param \Drupal\config_pr\RepoControllerInterface|null $gitlabSelfManaged
+   *   The self-managed GitLab controller, when config_pr_gitlab is enabled.
    */
   public function __construct(
-    protected ContainerInterface $container,
     protected ConfigFactoryInterface $configFactory,
-  ) {}
+    ?RepoControllerInterface $github = NULL,
+    ?RepoControllerInterface $githubEnterprise = NULL,
+    ?RepoControllerInterface $gitlab = NULL,
+    ?RepoControllerInterface $gitlabSelfManaged = NULL,
+  ) {
+    $controllers = [
+      self::CONTROLLERS['github']['cloud'] => $github,
+      self::CONTROLLERS['github']['self_hosted'] => $githubEnterprise,
+      self::CONTROLLERS['gitlab']['cloud'] => $gitlab,
+      self::CONTROLLERS['gitlab']['self_hosted'] => $gitlabSelfManaged,
+    ];
+    $this->controllers = array_filter($controllers);
+  }
 
   /**
    * The controller service id for the current settings.
@@ -60,7 +83,7 @@ class HostFactory {
    */
   public function isAvailable(): bool {
     $id = $this->controllerId();
-    return $id !== NULL && $this->container->has($id);
+    return $id !== NULL && isset($this->controllers[$id]);
   }
 
   /**
@@ -73,16 +96,12 @@ class HostFactory {
     $settings = $this->configFactory->get('sentinel_connector_config_pr.settings');
     $provider = (string) $settings->get('provider');
     $id = $this->controllerId();
-    if ($id === NULL || !$this->container->has($id)) {
+    if ($id === NULL || !isset($this->controllers[$id])) {
       throw new HostException(sprintf('Enable the %s module for this Git host.', self::MODULES[$provider] ?? 'config_pr_github or config_pr_gitlab'));
-    }
-    $controller = $this->container->get($id);
-    if (!$controller instanceof RepoControllerInterface) {
-      throw new HostException('The config_pr controller is not usable.');
     }
     // The controller service is shared. A copy keeps the token and the
     // branch state of this run out of it.
-    $controller = clone $controller;
+    $controller = clone $this->controllers[$id];
     $owner = trim((string) $settings->get('repo_owner'));
     $name = trim((string) $settings->get('repo_name'));
     return $provider === 'gitlab'

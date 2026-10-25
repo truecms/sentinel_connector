@@ -9,7 +9,12 @@ services:
 
   Drupal\sentinel_connector_config_pr\Host\HostFactory:
     class: Drupal\sentinel_connector_config_pr\Host\HostFactory
-    arguments: ['@service_container', '@config.factory']
+    arguments:
+      - '@config.factory'
+      - '@?config_pr_github.repo_controller.github'
+      - '@?config_pr_github.repo_controller.github_enterprise'
+      - '@?config_pr_gitlab.repo_controller.gitlab'
+      - '@?config_pr_gitlab.repo_controller.gitlab_self_managed'
 
   Drupal\sentinel_connector_config_pr\PullRequestTracker:
     class: Drupal\sentinel_connector_config_pr\PullRequestTracker

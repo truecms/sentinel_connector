@@ -43,6 +43,11 @@ class FakeHost implements HostInterface {
   public ?string $failOn = NULL;
 
   /**
+   * Writes that succeed before writeFile() throws; negative never throws.
+   */
+  public int $failAfterWrites = -1;
+
+  /**
    * The token received.
    */
   public ?string $token = NULL;
@@ -99,6 +104,9 @@ class FakeHost implements HostInterface {
    */
   public function writeFile(string $path, string $content, string $message, string $branch, bool $exists): void {
     $this->call(__FUNCTION__);
+    if ($this->failAfterWrites-- === 0) {
+      throw new HostException('Fake failure.');
+    }
     $this->branches[$branch][$path] = $content;
     $this->commits++;
   }

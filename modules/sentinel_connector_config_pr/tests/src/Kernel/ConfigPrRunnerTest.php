@@ -180,6 +180,30 @@ class ConfigPrRunnerTest extends KernelTestBase {
   }
 
   /**
+   * A partly failed update still puts back what it wrote, on the next run.
+   */
+  public function testPartialUpdateIsPutBackLater(): void {
+    $this->config('system.site')->set('slogan', 'Drifted')->save();
+    $this->runner()->run(FALSE, TRUE);
+
+    // The first write (system.performance) lands, the second fails.
+    $this->config('system.performance')->set('cache.page.max_age', 300)->save();
+    $this->config('system.site')->set('slogan', 'Drifted again')->save();
+    $this->host->failAfterWrites = 1;
+    $this->assertSame('failed', $this->runner()->run(FALSE, TRUE)->status);
+    $this->assertStringContainsString('max_age: 300', $this->host->branches['sentinel/config-export']['config/sync/system.performance.yml']);
+    // The open pull request's branch is not deleted after a failure.
+    $this->assertCount(1, $this->host->pulls);
+
+    // The object returns to the code value before the next run.
+    $this->config('system.performance')->set('cache.page.max_age', 0)->save();
+    $this->host->failAfterWrites = -1;
+    $this->assertSame('updated', $this->runner()->run(FALSE, TRUE)->status);
+    $this->assertStringContainsString('max_age: 0', $this->host->branches['sentinel/config-export']['config/sync/system.performance.yml']);
+    $this->assertStringContainsString('Drifted again', $this->host->branches['sentinel/config-export']['config/sync/system.site.yml']);
+  }
+
+  /**
    * Objects left out by export transformations are not exported.
    */
   public function testExportTransformationsAreRespected(): void {
