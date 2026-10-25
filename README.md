@@ -1,6 +1,6 @@
 # Sentinel Connector
 
-A Drupal 10/11 module that reports a site's installed extensions and environment
+A Drupal 10/11/12 module that reports a site's installed extensions and environment
 to the [Sentinel Connector](https://sentinelconnector.io/) monitoring platform.
 Sentinel computes update and security status; this module only collects an
 authoritative snapshot and submits it.
@@ -61,8 +61,12 @@ against Drupal.org; see [CHANGELOG.md](CHANGELOG.md).
 
 ## Requirements
 
-- Drupal `^10.3 || ^11`
-- PHP `>= 8.3`
+- Drupal `^10.3 || ^11 || ^12`
+- PHP `>= 8.3`, subject to the minimum PHP version required by Drupal core.
+  Drupal 12 requires PHP 8.5. Drupal 12 compatibility is tested against the
+  current prerelease; rerun the test matrix when updating core.
+
+Drush 12.5 or later is required to use the optional command-line commands.
 
 ## What it sends
 
@@ -621,10 +625,12 @@ many commits.
 
 The Drupal.org GitLab pipeline is configured in `.gitlab-ci.yml` using the
 [Drupal Association templates](https://project.pages.drupalcode.org/gitlab_templates/).
-It runs the unit, payload contract and Kernel tests on Drupal 11 and Drupal 10,
-with PHP 8.3 for both. Both test jobs must pass. The templates provide a database
+It runs the unit, payload contract and Kernel tests on Drupal 10, 11 and 12.
+Drupal 10 and 11 use PHP 8.3; Drupal 12 uses its required PHP version.
+All three Composer and test jobs must pass. The templates provide a database
 for Kernel tests. No Sentinel account or API key is needed for these tests.
-The GitHub workflow also tests Drupal 10/PHP 8.3 and Drupal 11/PHP 8.4.
+The GitHub workflow also tests Drupal 10/PHP 8.3, Drupal 11/PHP 8.4 and
+Drupal 12 beta/PHP 8.5.
 
 To run the tests in a development Drupal checkout that contains this module and
 has the matching `drupal/core-dev` and `justinrainbow/json-schema` installed:
@@ -637,6 +643,9 @@ SIMPLETEST_DB='sqlite://localhost/:memory:' ../vendor/bin/phpunit -c core/phpuni
 
 The Kernel command needs the SQLite PHP extension. Installing this module's
 Composer dependencies alone does not install the Drupal test framework.
+Drupal 12 release archives omit the core tests. Use a core source checkout
+at the exact installed revision; the GitHub workflow restores these files
+before running the tests.
 
 Connection failures return an actionable transport error and record the last attempt when Drupal state storage is available. Other payload/configuration errors return an internal error; cron catches remaining failures and attempts to record and log them without exposing request secrets. Storage failures may prevent persistence and return a state error.
 Cron waits an hour after each attempt, including failures, and after each check that found no change.

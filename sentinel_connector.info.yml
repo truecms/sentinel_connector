@@ -2,5 +2,5 @@ name: Sentinel Connector
 type: module
 description: 'Reports installed extensions and environment to the Sentinel monitoring platform.'
 package: Monitoring
-core_version_requirement: ^10.3 || ^11
+core_version_requirement: ^10.3 || ^11 || ^12
 configure: sentinel_connector.settings

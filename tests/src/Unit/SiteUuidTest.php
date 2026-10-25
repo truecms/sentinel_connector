@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
@@ -24,8 +26,12 @@ use Psr\Log\LogLevel;
 /**
  * Tests that the Site UUID is sent in the one form Sentinel accepts.
  *
+ * Fixtures use mocks as stubs and assert the returned payload or result.
+ *
  * @group sentinel_connector
  */
+#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[Group('sentinel_connector')]
 class SiteUuidTest extends TestCase {
 
   /**
@@ -59,6 +65,7 @@ class SiteUuidTest extends TestCase {
    *
    * @dataProvider notations
    */
+  #[DataProvider('notations')]
   public function testNormalize(string $value, ?string $expected): void {
     $this->assertSame($expected, SiteUuid::normalize($value));
   }
@@ -98,6 +105,7 @@ class SiteUuidTest extends TestCase {
    *
    * @dataProvider storedNotations
    */
+  #[DataProvider('storedNotations')]
   public function testStoredUuidIsSentInCanonicalForm(string $stored): void {
     $result = $this->push($stored, [new Response(200, [], '{"message": "ok"}')]);
 
@@ -130,6 +138,7 @@ class SiteUuidTest extends TestCase {
    *
    * @dataProvider storedValuesThatAreNoUuid
    */
+  #[DataProvider('storedValuesThatAreNoUuid')]
   public function testStoredValueThatIsNoUuidIsNotSent(string $stored, string $trigger, string $level): void {
     $result = $this->push($stored, [], $trigger);
 

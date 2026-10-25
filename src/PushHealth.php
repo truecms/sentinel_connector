@@ -4,6 +4,7 @@ namespace Drupal\sentinel_connector;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\Core\Routing\UrlGeneratorInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
@@ -97,7 +98,7 @@ class PushHealth {
       'title' => $this->t('Sentinel Connector'),
       'value' => $value,
       'description' => $description,
-      'severity' => $severity,
+      'severity' => class_exists(RequirementSeverity::class) ? RequirementSeverity::from($severity) : $severity,
     ];
 
     if (!$this->syncService->isConfigured()) {

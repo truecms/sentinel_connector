@@ -40,6 +40,7 @@ jobs:
         include:
           - { drupal: '^10.3', php: '8.3' }
           - { drupal: '^11', php: '8.4' }
+          - { drupal: '^12@beta', php: '8.5' }
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -60,6 +61,16 @@ jobs:
           composer require --dev drupal/core-dev:${{ matrix.drupal }} justinrainbow/json-schema drupal/config_ignore:^3.3 drupal/config_split:^2.0 -W --no-interaction
           # The configuration pull request submodule and its Git host clients.
           composer require --dev drupal/config_pr:^3.0 drupal/key:^1.18 m4tthumphrey/php-gitlab-api:^12.0 php-http/guzzle7-adapter:^1.0 http-interop/http-factory-guzzle:^1.2 -W --no-interaction
+          # Drupal 12 release archives omit core's test framework.
+          # Fetch the exact installed source revision when it is absent.
+          if [ ! -f web/core/tests/bootstrap.php ]; then
+            core_ref=$(composer show drupal/core --format=json | jq -r '.source.reference')
+            git init "$RUNNER_TEMP/drupal-core-tests"
+            git -C "$RUNNER_TEMP/drupal-core-tests" remote add origin https://github.com/drupal/core.git
+            git -C "$RUNNER_TEMP/drupal-core-tests" fetch --depth=1 origin "$core_ref"
+            git -C "$RUNNER_TEMP/drupal-core-tests" checkout --detach FETCH_HEAD
+            rsync -a --exclude .git "$RUNNER_TEMP/drupal-core-tests/" web/core/
+          fi
           mkdir -p web/modules/custom/sentinel_connector
           rsync -a --exclude web --exclude .git "$GITHUB_WORKSPACE"/ web/modules/custom/sentinel_connector/
       - name: PHPUnit (Unit + contract)

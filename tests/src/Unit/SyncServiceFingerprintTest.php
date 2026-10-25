@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
@@ -17,8 +19,12 @@ use Psr\Log\LoggerInterface;
 /**
  * Tests how the sync service detects a changed inventory for a deployment.
  *
+ * Fixtures use mocks as stubs and assert the returned payload or result.
+ *
  * @group sentinel_connector
  */
+#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[Group('sentinel_connector')]
 class SyncServiceFingerprintTest extends TestCase {
 
   /**
@@ -82,6 +88,7 @@ class SyncServiceFingerprintTest extends TestCase {
    *
    * @dataProvider acceptedResults
    */
+  #[DataProvider('acceptedResults')]
   public function testUnchangedAfterAcceptedPush(SyncResult $accepted): void {
     $this->responses = [$accepted];
     $service = $this->service();
@@ -109,6 +116,7 @@ class SyncServiceFingerprintTest extends TestCase {
    *
    * @dataProvider changes
    */
+  #[DataProvider('changes')]
   public function testDeploymentChangesAreDetected(callable $change): void {
     $this->responses = [SyncResult::success(200, 'ok')];
     $service = $this->service();
@@ -291,6 +299,7 @@ class SyncServiceFingerprintTest extends TestCase {
    *
    * @dataProvider refusedResults
    */
+  #[DataProvider('refusedResults')]
   public function testRefusedPushKeepsFingerprint(SyncResult $refused): void {
     $this->responses = [SyncResult::success(200, 'ok'), $refused];
     $service = $this->service();

@@ -2,13 +2,21 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\Group;
 use Drupal\sentinel_connector\ComposerProjectResolver;
 use PHPUnit\Framework\TestCase;
 
 /**
  * @coversDefaultClass \Drupal\sentinel_connector\ComposerProjectResolver
+ * @covers \Drupal\sentinel_connector\ComposerProjectResolver::__construct
+ * @covers \Drupal\sentinel_connector\ComposerProjectResolver::resolve
+ * @covers \Drupal\sentinel_connector\ComposerProjectResolver::fromInstalledVersions
  * @group sentinel_connector
  */
+#[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, '__construct')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, 'resolve')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, 'fromInstalledVersions')]
+#[Group('sentinel_connector')]
 class ComposerProjectResolverTest extends TestCase {
 
   /**
@@ -85,8 +93,7 @@ class ComposerProjectResolverTest extends TestCase {
   }
 
   /**
-   * @covers ::__construct
-   * @covers ::resolve
+   * Tests resolves containing drupal package.
    */
   public function testResolvesContainingDrupalPackage(): void {
     $resolver = $this->resolver();
@@ -101,8 +108,7 @@ class ComposerProjectResolverTest extends TestCase {
   }
 
   /**
-   * @covers ::__construct
-   * @covers ::resolve
+   * Tests ignores non project packages.
    */
   public function testIgnoresNonProjectPackages(): void {
     $resolver = $this->resolver();
@@ -118,7 +124,7 @@ class ComposerProjectResolverTest extends TestCase {
   }
 
   /**
-   * @covers ::fromInstalledVersions
+   * Tests builds from installed versions.
    */
   public function testBuildsFromInstalledVersions(): void {
     $resolver = ComposerProjectResolver::fromInstalledVersions($this->root . '/web');
