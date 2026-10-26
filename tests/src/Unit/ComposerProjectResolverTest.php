@@ -83,8 +83,16 @@ class ComposerProjectResolverTest extends TestCase {
         'install_path' => $web . '/modules/contrib/../contrib/admin_toolbar',
         'pretty_version' => '3.5.0',
       ],
-      'drupal/hyphen-name' => ['type' => 'drupal-module', 'install_path' => $web . '/modules/contrib/hyphen'],
-      'drupal/linked' => ['type' => 'drupal-module', 'install_path' => $this->root . '/vendor/drupal/linked'],
+      'drupal/linked' => [
+        'type' => 'drupal-module',
+        'install_path' => $web . '/modules/contrib/linked',
+        'pretty_version' => '2.3.0',
+      ],
+      'drupal/hyphen-name' => [
+        'type' => 'drupal-module',
+        'install_path' => $web . '/modules/contrib/hyphen',
+        'pretty_version' => ['not', 'a', 'string'],
+      ],
       'drupal/lightning' => [
         'type' => 'drupal-profile',
         'install_path' => $web . '/profiles/contrib/lightning',
@@ -136,9 +144,14 @@ class ComposerProjectResolverTest extends TestCase {
   public function testVersionOfContainingPackage(): void {
     $resolver = $this->resolver();
     $this->assertSame('3.5.0', $resolver->version('modules/contrib/admin_toolbar'));
-    $this->assertSame('3.5.0', $resolver->version('modules/contrib/admin_toolbar/admin_toolbar_links_access_filter'));
-    $this->assertSame('5.0.0-rc1', $resolver->version('profiles/contrib/lightning/modules/lightning_core'));
-    // A package without a version, and paths outside any package.
+    // Only the package root gets a version: a nested module may be another
+    // project, such as a module shipped inside a profile.
+    $this->assertNull($resolver->version('modules/contrib/admin_toolbar/admin_toolbar_links_access_filter'));
+    $this->assertNull($resolver->version('profiles/contrib/lightning/modules/lightning_core'));
+    // A symlinked path-repository install has no trusted version.
+    $this->assertSame('linked', $resolver->resolve('modules/contrib/linked'));
+    $this->assertNull($resolver->version('modules/contrib/linked'));
+    // A non-string version, and paths outside any package.
     $this->assertNull($resolver->version('modules/contrib/hyphen'));
     $this->assertNull($resolver->version('modules/custom/my_custom'));
     $this->assertNull($resolver->version('modules/contrib/does_not_exist'));

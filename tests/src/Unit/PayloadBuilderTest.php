@@ -278,6 +278,8 @@ class PayloadBuilderTest extends TestCase {
       'long' => $this->ext('long', [], 1, 'modules/contrib/long'),
       // Custom code is never given a Composer version.
       'my_custom' => $this->ext('my_custom', [], 1, 'modules/custom/my_custom'),
+      // A blank info.yml version falls through to Composer.
+      'blank' => $this->ext('blank', ['project' => 'blank', 'version' => ' '], 1, 'modules/contrib/blank'),
     ];
     $packages = [
       'modules/contrib/token' => 'token',
@@ -287,6 +289,7 @@ class PayloadBuilderTest extends TestCase {
       'modules/contrib/bundle' => 'bundle',
       'modules/contrib/audit' => 'audit',
       'modules/contrib/long' => 'long',
+      'modules/contrib/blank' => 'blank',
     ];
     $versions = [
       'modules/contrib/token' => '1.16.0',
@@ -296,6 +299,7 @@ class PayloadBuilderTest extends TestCase {
       'modules/contrib/bundle' => '3.0.0',
       'modules/contrib/long' => str_repeat('9', 51),
       'modules/custom/my_custom' => '1.0.0',
+      'modules/contrib/blank' => 'dev-main',
     ];
     $byName = array_column($this->builder($extensions, $packages, $versions)->build('all')['modules'], NULL, 'machine_name');
     $version = fn(string $name): array => [$byName[$name]['version'], $byName[$name]['version_known']];
@@ -307,6 +311,7 @@ class PayloadBuilderTest extends TestCase {
     $this->assertSame(['0.0.0', FALSE], $version('audit'));
     $this->assertSame(['0.0.0', FALSE], $version('long'));
     $this->assertSame(['0.0.0', FALSE], $version('my_custom'));
+    $this->assertSame(['dev-main', TRUE], $version('blank'));
   }
 
   /**

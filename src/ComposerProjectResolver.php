@@ -63,7 +63,9 @@ class ComposerProjectResolver {
       $key = rtrim($real, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
       $this->paths[$key] = substr($name, strlen('drupal/'));
       $version = $package['pretty_version'] ?? NULL;
-      if (is_string($version) && trim($version) !== '') {
+      // A symlinked install is a path repository, whose version Composer may
+      // guess from the site's own repository, so it is not trusted.
+      if (is_string($version) && trim($version) !== '' && !is_link(rtrim($path, '/\\'))) {
         $this->versions[$key] = trim($version);
       }
     }
@@ -107,16 +109,31 @@ class ComposerProjectResolver {
    *   Extension directory, relative to the app root.
    *
    * @return string|null
-   *   Composer's pretty version, such as '2.1.1' or '1.x-dev', or NULL when
-   *   no drupal/* package contains the extension or it has no version.
+   *   Composer's recorded pretty version, such as '2.1.1' or '1.x-dev', or
+   *   NULL unless the extension is the root of a drupal/* package with a
+   *   trusted version. A module nested elsewhere in a package, such as inside
+   *   a profile, may belong to another project and gets no version.
    */
   public function version(string $extensionPath): ?string {
     $key = $this->match($extensionPath);
-    return $key === NULL ? NULL : ($this->versions[$key] ?? NULL);
+    if ($key === NULL) {
+      return NULL;
+    }
+    $real = realpath($this->appRoot . DIRECTORY_SEPARATOR . $extensionPath);
+    return rtrim((string) $real, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR === $key
+      ? ($this->versions[$key] ?? NULL)
+      : NULL;
   }
 
   /**
    * Finds the install path key of the package that contains an extension.
+   *
+   * @param string $extensionPath
+   *   Extension directory, relative to the app root.
+   *
+   * @return string|null
+   *   The deepest containing package's real install path with a trailing
+   *   slash, or NULL.
    */
   protected function match(string $extensionPath): ?string {
     $real = realpath($this->appRoot . DIRECTORY_SEPARATOR . $extensionPath);
