@@ -56,8 +56,10 @@ class PayloadBuilderTest extends TestCase {
    *   Discovered modules.
    * @param array<string, string> $packages
    *   Composer package short names keyed by extension path prefix.
+   * @param array<string, string> $versions
+   *   Composer pretty versions keyed by extension path prefix.
    */
-  private function builder(array $extensions, array $packages = []): PayloadBuilder {
+  private function builder(array $extensions, array $packages = [], array $versions = []): PayloadBuilder {
     $list = $this->createMock(ModuleExtensionList::class);
     $list->method('reset')->willReturnSelf();
     $list->method('getList')->willReturn($extensions);
@@ -66,6 +68,14 @@ class PayloadBuilderTest extends TestCase {
       foreach ($packages as $prefix => $package) {
         if ($path === $prefix || str_starts_with($path, $prefix . '/')) {
           return $package;
+        }
+      }
+      return NULL;
+    });
+    $resolver->method('version')->willReturnCallback(function (string $path) use ($versions): ?string {
+      foreach ($versions as $prefix => $version) {
+        if ($path === $prefix || str_starts_with($path, $prefix . '/')) {
+          return $version;
         }
       }
       return NULL;
@@ -246,6 +256,57 @@ class PayloadBuilderTest extends TestCase {
     // The 'contrib' scope now keeps Composer-identified modules.
     $names = array_column($this->builder($extensions, $packages)->build('contrib')['modules'], 'machine_name');
     $this->assertEqualsCanonicalizing(['token', 'admin_toolbar', 'odd'], $names);
+  }
+
+  /**
+   * Composer supplies the version when info.yml has none.
+   */
+  public function testComposerVersionFillsMissingVersion(): void {
+    $extensions = [
+      // Packaged release: info.yml wins.
+      'token' => $this->ext('token', ['project' => 'token', 'version' => '8.x-1.15'], 1, 'modules/contrib/token'),
+      // Git checkout identified by Composer.
+      'metatag' => $this->ext('metatag', ['name' => 'Metatag'], 1, 'modules/contrib/metatag'),
+      // info.yml names the project but has no version.
+      'redis' => $this->ext('redis', ['project' => 'redis'], 1, 'modules/contrib/redis'),
+      // Branch install: reported as a development version.
+      'glightbox' => $this->ext('glightbox', [], 1, 'modules/contrib/glightbox'),
+      // The containing package is another project: its version is not used.
+      'mask' => $this->ext('mask', ['project' => 'mask'], 1, 'modules/contrib/bundle/mask'),
+      // Composer has no version, or one too long to send.
+      'audit' => $this->ext('audit', [], 1, 'modules/contrib/audit'),
+      'long' => $this->ext('long', [], 1, 'modules/contrib/long'),
+      // Custom code is never given a Composer version.
+      'my_custom' => $this->ext('my_custom', [], 1, 'modules/custom/my_custom'),
+    ];
+    $packages = [
+      'modules/contrib/token' => 'token',
+      'modules/contrib/metatag' => 'metatag',
+      'modules/contrib/redis' => 'redis',
+      'modules/contrib/glightbox' => 'glightbox',
+      'modules/contrib/bundle' => 'bundle',
+      'modules/contrib/audit' => 'audit',
+      'modules/contrib/long' => 'long',
+    ];
+    $versions = [
+      'modules/contrib/token' => '1.16.0',
+      'modules/contrib/metatag' => '2.1.1',
+      'modules/contrib/redis' => '1.9.0',
+      'modules/contrib/glightbox' => '1.x-dev',
+      'modules/contrib/bundle' => '3.0.0',
+      'modules/contrib/long' => str_repeat('9', 51),
+      'modules/custom/my_custom' => '1.0.0',
+    ];
+    $byName = array_column($this->builder($extensions, $packages, $versions)->build('all')['modules'], NULL, 'machine_name');
+    $version = fn(string $name): array => [$byName[$name]['version'], $byName[$name]['version_known']];
+    $this->assertSame(['8.x-1.15', TRUE], $version('token'));
+    $this->assertSame(['2.1.1', TRUE], $version('metatag'));
+    $this->assertSame(['1.9.0', TRUE], $version('redis'));
+    $this->assertSame(['1.x-dev', TRUE], $version('glightbox'));
+    $this->assertSame(['0.0.0', FALSE], $version('mask'));
+    $this->assertSame(['0.0.0', FALSE], $version('audit'));
+    $this->assertSame(['0.0.0', FALSE], $version('long'));
+    $this->assertSame(['0.0.0', FALSE], $version('my_custom'));
   }
 
   /**
