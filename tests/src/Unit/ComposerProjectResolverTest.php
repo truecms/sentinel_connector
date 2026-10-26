@@ -10,11 +10,13 @@ use PHPUnit\Framework\TestCase;
  * @coversDefaultClass \Drupal\sentinel_connector\ComposerProjectResolver
  * @covers \Drupal\sentinel_connector\ComposerProjectResolver::__construct
  * @covers \Drupal\sentinel_connector\ComposerProjectResolver::resolve
+ * @covers \Drupal\sentinel_connector\ComposerProjectResolver::version
  * @covers \Drupal\sentinel_connector\ComposerProjectResolver::fromInstalledVersions
  * @group sentinel_connector
  */
 #[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, '__construct')]
 #[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, 'resolve')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, 'version')]
 #[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, 'fromInstalledVersions')]
 #[Group('sentinel_connector')]
 class ComposerProjectResolverTest extends TestCase {
@@ -79,10 +81,23 @@ class ComposerProjectResolverTest extends TestCase {
       'Drupal/Admin_Toolbar' => [
         'type' => 'drupal-module',
         'install_path' => $web . '/modules/contrib/../contrib/admin_toolbar',
+        'pretty_version' => '3.5.0',
       ],
-      'drupal/hyphen-name' => ['type' => 'drupal-module', 'install_path' => $web . '/modules/contrib/hyphen'],
-      'drupal/linked' => ['type' => 'drupal-module', 'install_path' => $this->root . '/vendor/drupal/linked'],
-      'drupal/lightning' => ['type' => 'drupal-profile', 'install_path' => $web . '/profiles/contrib/lightning'],
+      'drupal/linked' => [
+        'type' => 'drupal-module',
+        'install_path' => $web . '/modules/contrib/linked',
+        'pretty_version' => '2.3.0',
+      ],
+      'drupal/hyphen-name' => [
+        'type' => 'drupal-module',
+        'install_path' => $web . '/modules/contrib/hyphen',
+        'pretty_version' => ['not', 'a', 'string'],
+      ],
+      'drupal/lightning' => [
+        'type' => 'drupal-profile',
+        'install_path' => $web . '/profiles/contrib/lightning',
+        'pretty_version' => ' 5.0.0-rc1 ',
+      ],
       'drupal/site_feature' => [
         'type' => 'drupal-custom-module',
         'install_path' => $web . '/modules/custom/site_feature',
@@ -121,6 +136,25 @@ class ComposerProjectResolverTest extends TestCase {
     // A sibling whose name shares a prefix is not inside the package.
     mkdir($this->root . '/web/modules/contrib/admin_toolbar_extra');
     $this->assertNull($resolver->resolve('modules/contrib/admin_toolbar_extra'));
+  }
+
+  /**
+   * Tests the installed version of the containing package.
+   */
+  public function testVersionOfContainingPackage(): void {
+    $resolver = $this->resolver();
+    $this->assertSame('3.5.0', $resolver->version('modules/contrib/admin_toolbar'));
+    // Only the package root gets a version: a nested module may be another
+    // project, such as a module shipped inside a profile.
+    $this->assertNull($resolver->version('modules/contrib/admin_toolbar/admin_toolbar_links_access_filter'));
+    $this->assertNull($resolver->version('profiles/contrib/lightning/modules/lightning_core'));
+    // A symlinked path-repository install has no trusted version.
+    $this->assertSame('linked', $resolver->resolve('modules/contrib/linked'));
+    $this->assertNull($resolver->version('modules/contrib/linked'));
+    // A non-string version, and paths outside any package.
+    $this->assertNull($resolver->version('modules/contrib/hyphen'));
+    $this->assertNull($resolver->version('modules/custom/my_custom'));
+    $this->assertNull($resolver->version('modules/contrib/does_not_exist'));
   }
 
   /**

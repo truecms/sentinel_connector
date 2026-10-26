@@ -110,6 +110,15 @@ class PayloadBuilder {
       }
       $version = $info['version'] ?? NULL;
       $versionKnown = is_string($version) && trim($version) !== '';
+      if (!$versionKnown && $project !== NULL && $this->composerProjects) {
+        // A git or source install has no version in info.yml. Composer's
+        // version is used only when its package is the same project.
+        $path = $extension->getPath();
+        if ($this->normaliseProject($this->composerProjects->resolve($path)) === $project) {
+          $version = $this->composerProjects->version($path);
+          $versionKnown = is_string($version) && strlen($version) <= 50;
+        }
+      }
       $modules[] = [
         'machine_name' => $name,
         'display_name' => $info['name'] ?? $name,

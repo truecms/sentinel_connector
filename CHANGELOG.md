@@ -29,6 +29,17 @@ All notable changes to this project are documented here. Versions follow
   merges. Its open pull request is added to the drift block as
   `export_pull_request`.
 
+### Fixed
+
+- A contrib module installed from git or a source checkout has no `version`
+  in its info.yml and was reported as `0.0.0`, so Sentinel could not assess
+  it. The connector now reports the version Composer recorded for the
+  package, when the module is the root of a Composer package of the same
+  project. It is Composer's record, not a reading of the files: a checkout
+  moved by hand after `composer install` still reports the installed version.
+  Symlinked path-repository packages and modules nested in another package,
+  such as inside a profile, still report no version.
+
 ### Requires
 
 - A Sentinel server that accepts payload `schema_version: 3`, deployed before
