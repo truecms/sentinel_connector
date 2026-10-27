@@ -42,7 +42,11 @@ services:
 
   Drupal\sentinel_connector\ApiKeyResolver:
     class: Drupal\sentinel_connector\ApiKeyResolver
-    arguments: ['@settings', '@state']
+    arguments: ['@settings', '@state', '@config.factory', '@?key.repository']
+
+  Drupal\sentinel_connector\ApiKeyMigrator:
+    class: Drupal\sentinel_connector\ApiKeyMigrator
+    arguments: ['@state', '@config.factory', '@entity_type.manager', '@module_handler']
 
   Drupal\sentinel_connector\SentinelClient:
     class: Drupal\sentinel_connector\SentinelClient

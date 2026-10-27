@@ -15,3 +15,14 @@ use Drupal\sentinel_connector\Hook\SentinelHooks;
 function sentinel_connector_cron(): void {
   (new SentinelHooks(\Drupal::getContainer()))->cron();
 }
+
+/**
+ * Implements hook_modules_installed() for Drupal versions without OOP hooks.
+ *
+ * @param string[] $modules
+ *   The modules just installed.
+ */
+#[LegacyHook]
+function sentinel_connector_modules_installed(array $modules): void {
+  (new SentinelHooks(\Drupal::getContainer()))->modulesInstalled($modules);
+}

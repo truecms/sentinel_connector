@@ -40,6 +40,30 @@ Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
+## Upgrading to 1.4.0
+
+Release `1.4.0` adds the Key module as the recommended API key source. The
+payload is unchanged. Run `drush updb` after updating.
+
+If the key was saved on the settings form (Drupal State) and the Key module is
+enabled, update `10004` moves it into a new key `sentinel_connector_api_key`
+(`sentinel_connector_api_key_2` and so on if that id is taken), selects it, and
+deletes the State value. Without the Key module the key stays in State until
+the module is enabled, which runs the same move. A site that already selected
+a key, or uses `settings.php` or the environment variable, is not changed.
+
+The moved key uses Key's State provider, so the value is still in the
+database. Edit the key, change its provider to a file, an environment variable
+or a vault, then delete the State variable named in its description:
+
+```bash
+drush state:delete sentinel_connector.key_value.sentinel_connector_api_key
+```
+
+Export configuration afterwards (`drush cex`) to keep `api_key_id` and the
+key entity. The key entity holds no value for file, environment or vault
+providers, so it is safe to export.
+
 ## Upgrading to 1.3.0
 
 Release `1.3.0` introduces payload v3, configuration drift and the optional
@@ -216,15 +240,29 @@ with a message that names the Site UUID.
 
 Resolved in this order:
 
-1. `$settings['sentinel_connector.api_key']` in `settings.php` (recommended for production)
-2. Environment variable `SENTINEL_CONNECTOR_API_KEY` (host-set, never in code)
-3. Drupal state (set via the settings form), for simple setups
+1. `$settings['sentinel_connector.api_key']` in `settings.php`
+2. A key from the [Key](https://www.drupal.org/project/key) module, selected on
+   the settings form (recommended)
+3. Environment variable `SENTINEL_CONNECTOR_API_KEY` (host-set, never in code)
+4. Drupal State, saved by the settings form when the Key module is not
+   enabled (deprecated)
 
-The API key is the only credential. There is no site token: paste the key from
-the Sentinel dashboard into **API key** on the settings form, or set it in one
-of the first two places. The form never shows a saved key; it shows where the
-active key comes from, and a blank field keeps the current key. Drupal state is
-not encrypted.
+The API key is the only credential. There is no site token. The form never
+shows the key; it shows where the active key comes from.
+
+To use the Key module, enable it, add a key of type *Authentication* whose
+provider reads a file, an environment variable or a vault (**Configuration >
+System > Keys**), paste the key from the Sentinel dashboard into it, and select
+it under **API key** on the settings form. Only the key id is stored in
+`sentinel_connector.settings` (`api_key_id`), so it can be exported. A key
+whose provider keeps the value in configuration is refused, because it would
+be exported. A selected key that is missing, empty or refused is skipped, and
+the next source is used; the settings form says why.
+
+Without the Key module, the form saves the key in Drupal State, which is
+stored in plain text in the database and its backups. A blank field keeps the
+current key. This is deprecated: enabling the Key module moves the saved key
+into a new key (see [Upgrading to 1.4.0](#upgrading-to-140)).
 
 ### Send reports from production only
 
@@ -258,7 +296,8 @@ HTTP request. The status report can show the connector as not configured there.
 
 Keep the API key in production's private settings or secret environment only.
 Do not export it with configuration. The URL and Site UUID overrides above also
-block sending if a database copy includes an old key in Drupal state.
+block sending if a database copy includes an old key in Drupal State or a
+State-provider key.
 
 These overrides do not change stored or exported configuration. The settings
 form can show the stored values; check effective values with Drush:
