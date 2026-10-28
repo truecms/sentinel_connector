@@ -11,6 +11,10 @@ use Symfony\Component\HttpFoundation\RequestStack;
 /**
  * Reads the PHP, web server, database and OS versions for the payload.
  *
+ * On Debian and Ubuntu it also reads the package database for the stack's
+ * own source packages, so Sentinel can tell whether the vendor's security
+ * fixes are installed (truecms/sentinel#1409).
+ *
  * Every value is best effort: one that cannot be read is left out, and no
  * collector throws. Sentinel shows a missing part as unknown.
  */
@@ -36,6 +40,27 @@ class PlatformCollector {
    * Files read for the OS distribution, first readable one wins.
    */
   public const OS_RELEASE_FILES = ['/etc/os-release', '/usr/lib/os-release'];
+
+  /**
+   * Package databases read for the stack's packages, first readable one wins.
+   */
+  public const DPKG_STATUS_FILES = ['/var/lib/dpkg/status'];
+
+  /**
+   * Bytes of the package database read at most.
+   */
+  public const DPKG_STATUS_LIMIT = 32 * 1024 * 1024;
+
+  /**
+   * Source packages sent, at most; Sentinel ignores the rest.
+   */
+  public const PACKAGES_LIMIT = 20;
+
+  /**
+   * The only source packages sent: PHP, Apache, Nginx, MySQL, MariaDB and
+   * PostgreSQL as Debian and Ubuntu name them. Nothing else leaves the site.
+   */
+  public const PACKAGE_PATTERN = '/^(php\d+\.\d+|apache2|nginx|mysql-\d+\.\d+|mariadb(-\d+\.\d+)?|postgresql-\d+(\.\d+)?)$/';
 
   /**
    * Length Sentinel keeps of a platform value.
@@ -69,6 +94,8 @@ class PlatformCollector {
    *   The time service.
    * @param string[] $osReleaseFiles
    *   The os-release files to read, first readable one wins.
+   * @param string[] $dpkgStatusFiles
+   *   The package databases to read, first readable one wins.
    */
   public function __construct(
     protected StateInterface $state,
@@ -76,13 +103,14 @@ class PlatformCollector {
     protected Connection $database,
     protected TimeInterface $time,
     protected array $osReleaseFiles = self::OS_RELEASE_FILES,
+    protected array $dpkgStatusFiles = self::DPKG_STATUS_FILES,
   ) {}
 
   /**
    * Returns the payload's platform block, without the parts it cannot read.
    *
-   * @return array<string, array<string, string>>
-   *   Parts keyed php, web_server, database and os.
+   * @return array<string, array<mixed>>
+   *   Parts keyed php, web_server, database, os and packages.
    */
   public function collect(): array {
     $platform = [
@@ -90,6 +118,7 @@ class PlatformCollector {
       'web_server' => $this->webServer(),
       'database' => $this->database(),
       'os' => $this->os(),
+      'packages' => $this->packages(),
     ];
     return array_filter($platform);
   }
@@ -212,7 +241,8 @@ class PlatformCollector {
    * The operating system family, and its distribution from os-release.
    *
    * @return array<string, string>
-   *   The family, distribution and release keys, each only when known.
+   *   The family, distribution, release and codename keys, each only when
+   *   known.
    */
   public function os(): array {
     $release = $this->osRelease();
@@ -220,7 +250,97 @@ class PlatformCollector {
       'family' => PHP_OS_FAMILY === 'Unknown' ? NULL : PHP_OS_FAMILY,
       'distribution' => $release['ID'] ?? NULL,
       'release' => $release['VERSION_ID'] ?? NULL,
+      'codename' => $release['VERSION_CODENAME'] ?? NULL,
     ]);
+  }
+
+  /**
+   * The installed builds of the stack's source packages, from dpkg.
+   *
+   * Only source packages that PACKAGE_PATTERN names are read, and only those
+   * installed. The version is the source package's, which is what Ubuntu and
+   * Debian publish fixes against. A source whose installed binaries disagree
+   * (an upgrade half done) is left out rather than guessed.
+   *
+   * @return list<array{source: string, version: string}>
+   *   One entry per source package, empty without a readable database.
+   */
+  public function packages(): array {
+    $versions = [];
+    foreach ($this->dpkgStanzas() as $fields) {
+      if (!str_ends_with($fields['Status'] ?? '', ' installed')) {
+        continue;
+      }
+      // "Source: php8.3 (8.3.6-0ubuntu0.24.04.3)" when the source version
+      // differs from the binary's; just "Source: php8.3", or no Source at
+      // all, when it is the same.
+      $source = $fields['Package'] ?? '';
+      $version = $fields['Version'] ?? '';
+      if (isset($fields['Source']) && preg_match('/^(\S+)(?:\s+\((\S+)\))?$/', $fields['Source'], $match)) {
+        $source = $match[1];
+        $version = $match[2] ?? $version;
+      }
+      if (!preg_match(self::PACKAGE_PATTERN, $source) || $version === '') {
+        continue;
+      }
+      $versions[$source][$version] = TRUE;
+    }
+    $packages = [];
+    foreach ($versions as $source => $seen) {
+      if (count($seen) !== 1) {
+        continue;
+      }
+      $package = $this->clean(['source' => $source, 'version' => array_key_first($seen)]);
+      if (count($package) === 2) {
+        $packages[] = $package;
+      }
+      if (count($packages) === self::PACKAGES_LIMIT) {
+        break;
+      }
+    }
+    return $packages;
+  }
+
+  /**
+   * Reads the first readable package database, one stanza at a time.
+   *
+   * Only the Package, Status, Source and Version fields are kept.
+   *
+   * @return \Generator<array<string, string>>
+   *   Each stanza's fields keyed by name.
+   */
+  protected function dpkgStanzas(): \Generator {
+    foreach ($this->dpkgStatusFiles as $file) {
+      // open_basedir or a missing file makes these warn; neither is an error.
+      $handle = @is_readable($file) ? @fopen($file, 'rb') : FALSE;
+      if ($handle === FALSE) {
+        continue;
+      }
+      try {
+        $fields = [];
+        $read = 0;
+        while (($line = fgets($handle)) !== FALSE && $read < self::DPKG_STATUS_LIMIT) {
+          $read += strlen($line);
+          $line = rtrim($line, "\r\n");
+          if ($line === '') {
+            if ($fields) {
+              yield $fields;
+            }
+            $fields = [];
+          }
+          elseif (preg_match('/^(Package|Status|Source|Version):\s*(.*)$/', $line, $match)) {
+            $fields[$match[1]] = trim($match[2]);
+          }
+        }
+        if ($fields) {
+          yield $fields;
+        }
+      }
+      finally {
+        fclose($handle);
+      }
+      return;
+    }
   }
 
   /**

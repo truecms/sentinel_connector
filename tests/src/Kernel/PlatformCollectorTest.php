@@ -55,13 +55,14 @@ class PlatformCollectorTest extends KernelTestBase {
    * @param \Drupal\Core\Database\Connection|null $database
    *   A database connection, the default one when NULL.
    */
-  protected function collector(array $osReleaseFiles = [], ?Connection $database = NULL): PlatformCollector {
+  protected function collector(array $osReleaseFiles = [], ?Connection $database = NULL, array $dpkgStatusFiles = []): PlatformCollector {
     return new PlatformCollector(
       $this->container->get('state'),
       $this->container->get('request_stack'),
       $database ?? $this->container->get('database'),
       $this->container->get('datetime.time'),
       $osReleaseFiles,
+      $dpkgStatusFiles,
     );
   }
 
@@ -242,7 +243,7 @@ class PlatformCollectorTest extends KernelTestBase {
    */
   public function testOsPresent(): void {
     $os = $this->collector([$this->fixtures . '/missing', $this->fixtures . '/debian'])->os();
-    $this->assertSame(['family' => PHP_OS_FAMILY, 'distribution' => 'debian', 'release' => '12'], $os);
+    $this->assertSame(['family' => PHP_OS_FAMILY, 'distribution' => 'debian', 'release' => '12', 'codename' => 'bookworm'], $os);
 
     // A rolling distribution has no release.
     $os = $this->collector([$this->fixtures . '/arch'])->os();
@@ -254,6 +255,30 @@ class PlatformCollectorTest extends KernelTestBase {
    */
   public function testOsMissing(): void {
     $this->assertSame(['family' => PHP_OS_FAMILY], $this->collector([$this->fixtures . '/missing'])->os());
+  }
+
+  /**
+   * Only the stack's installed source packages are read from dpkg.
+   */
+  public function testPackagesFromDpkg(): void {
+    $dpkg = dirname(__DIR__, 2) . '/fixtures/dpkg';
+    $packages = $this->collector([], NULL, [$dpkg . '/missing', $dpkg . '/status'])->packages();
+    $this->assertSame([
+      // The source version, from the Source field or the binary's Version.
+      ['source' => 'php8.3', 'version' => '8.3.6-0ubuntu0.24.04.3'],
+      ['source' => 'apache2', 'version' => '2.4.58-1ubuntu8.5'],
+      ['source' => 'mariadb', 'version' => '1:10.11.8-0ubuntu0.24.04.1'],
+    ], $packages);
+    // Removed nginx, mysql-8.0 half upgraded, and every package outside the
+    // stack (php-defaults, openssl) are left out.
+  }
+
+  /**
+   * Without a package database there is no packages part.
+   */
+  public function testPackagesMissing(): void {
+    $this->assertSame([], $this->collector([], NULL, ['/nonexistent/dpkg/status'])->packages());
+    $this->assertSame([], $this->collector()->packages());
   }
 
   /**

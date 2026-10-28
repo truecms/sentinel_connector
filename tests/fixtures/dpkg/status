@@ -1,0 +1,72 @@
+Package: php8.3-cli
+Status: install ok installed
+Priority: optional
+Section: php
+Installed-Size: 5011
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Architecture: amd64
+Source: php8.3
+Version: 8.3.6-0ubuntu0.24.04.3
+Description: command-line interpreter for the PHP scripting language
+ This package provides the PHP command-line interpreter.
+
+Package: php8.3-common
+Status: install ok installed
+Architecture: amd64
+Source: php8.3
+Version: 8.3.6-0ubuntu0.24.04.3
+Description: documentation, examples and common module for PHP
+
+Package: php-common
+Status: install ok installed
+Architecture: all
+Source: php-defaults (93ubuntu2)
+Version: 2:93ubuntu2
+Description: Common files for PHP packages
+
+Package: apache2-bin
+Status: install ok installed
+Architecture: amd64
+Source: apache2
+Version: 2.4.58-1ubuntu8.5
+Description: Apache HTTP Server (modules and other binary files)
+
+Package: apache2-data
+Status: install ok installed
+Architecture: all
+Source: apache2
+Version: 2.4.58-1ubuntu8.5
+Description: Apache HTTP Server (common files)
+
+Package: nginx
+Status: deinstall ok config-files
+Architecture: amd64
+Version: 1.24.0-2ubuntu7.1
+Description: small, powerful, scalable web/proxy server
+
+Package: mysql-client-core-8.0
+Status: install ok installed
+Architecture: amd64
+Source: mysql-8.0
+Version: 8.0.39-0ubuntu0.24.04.2
+Description: MySQL database core client binaries
+
+Package: mysql-server-core-8.0
+Status: install ok installed
+Architecture: amd64
+Source: mysql-8.0
+Version: 8.0.39-0ubuntu0.24.04.1
+Description: MySQL database server binaries
+
+Package: libmariadb3
+Status: install ok installed
+Architecture: amd64
+Source: mariadb (1:10.11.8-0ubuntu0.24.04.1)
+Version: 1:10.11.8-0ubuntu0.24.04.1
+Description: MariaDB database client library
+
+Package: openssl
+Status: install ok installed
+Architecture: amd64
+Version: 3.0.13-0ubuntu3.4
+Description: Secure Sockets Layer toolkit

@@ -3,6 +3,23 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.4.0 - Unreleased
+
+### Added
+
+- The `os` part sends `codename` (`VERSION_CODENAME` from os-release, such
+  as `noble` or `bookworm`).
+- A new `packages` part lists the installed builds of the stack's own
+  source packages, read from the Debian and Ubuntu package database
+  (`/var/lib/dpkg/status`): PHP (`php8.3`), Apache (`apache2`), Nginx,
+  MySQL (`mysql-8.0`), MariaDB and PostgreSQL (`postgresql-16`), as
+  `{"source", "version"}`, at most 20. Nothing else from the database is
+  sent. Sentinel uses them to tell whether Ubuntu's or Debian's security
+  fixes are installed (truecms/sentinel#1409). A source whose installed
+  packages disagree on the version is left out, and a server without a
+  readable package database sends no `packages` part. Sentinel releases
+  before #1409 ignore both fields.
+
 ## 1.3.2 - 2026-10-28
 
 ### Fixed
