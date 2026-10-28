@@ -23,3 +23,6 @@ sentinel_connector.settings:
     report_config_drift:
       type: boolean
       label: 'Report configuration drift'
+    api_key_id:
+      type: string
+      label: 'Key module key holding the API key'

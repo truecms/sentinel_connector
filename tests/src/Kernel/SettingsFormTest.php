@@ -7,6 +7,7 @@ use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Form\FormState;
 use Drupal\Core\Site\Settings;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\sentinel_connector\ApiKeyMigrator;
 use Drupal\sentinel_connector\ApiKeyResolver;
 use Drupal\sentinel_connector\Form\SettingsForm;
 use Drupal\Tests\user\Traits\UserCreationTrait;
@@ -246,6 +247,24 @@ class SettingsFormTest extends KernelTestBase {
     // A second run changes nothing.
     sentinel_connector_update_10002();
     $this->assertSame($before, $this->config('sentinel_connector.settings')->getRawData());
+  }
+
+  /**
+   * Enabling the Key module moves a State key into a key.
+   */
+  public function testEnablingKeyMovesStateKey(): void {
+    \Drupal::state()->set(ApiKeyResolver::STATE_KEY, self::SAVED_KEY);
+    $this->container->get('module_handler')->loadInclude('sentinel_connector', 'install');
+    $this->assertStringContainsString('Enable the Key module', sentinel_connector_update_10004());
+    $this->assertSame(self::SAVED_KEY, \Drupal::state()->get(ApiKeyResolver::STATE_KEY));
+
+    $this->container->get('module_installer')->install(['key']);
+
+    $this->assertSame(ApiKeyMigrator::KEY_ID, $this->config('sentinel_connector.settings')->get('api_key_id'));
+    $this->assertNull(\Drupal::state()->get(ApiKeyResolver::STATE_KEY));
+    $resolver = $this->container->get(ApiKeyResolver::class);
+    $this->assertSame(self::SAVED_KEY, $resolver->getKey());
+    $this->assertSame('key', $resolver->getSource());
   }
 
   /**

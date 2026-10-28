@@ -24,7 +24,7 @@
     },
     "suggest": {
         "drupal/config_pr": "Required by the sentinel_connector_config_pr submodule, which opens configuration pull requests (^3.0).",
-        "drupal/key": "Lets the sentinel_connector_config_pr submodule read its Git host token from a Key.",
+        "drupal/key": "Recommended: stores the Sentinel API key in a file, an environment variable or a vault, and lets the sentinel_connector_config_pr submodule read its Git host token from a Key.",
         "m4tthumphrey/php-gitlab-api": "Required with config_pr_gitlab for GitLab merge requests (^12.0); Drupal core supplies the PSR HTTP client and factories."
     },
     "config": {
