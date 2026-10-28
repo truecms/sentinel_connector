@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.3.2 - Unreleased
+
+### Fixed
+
+- A module installed from a numeric Composer branch, such as `dev-3.x` or
+  `dev-3.2.x`, is reported in Drupal's syntax, `3.x-dev` or `3.2.x-dev`.
+  Sentinel can read these versions. Releases, pre-releases such as
+  `1.0.0-rc1`, and other branch names such as `dev-main` are sent unchanged.
+
 ## 1.3.1 - 2026-10-28
 
 ### Changed
