@@ -40,9 +40,9 @@ Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
-## Upgrading to 1.4.0
+## Upgrading to 1.3.3
 
-Release `1.4.0` adds two optional platform fields and keeps payload v3: the
+Release `1.3.3` adds two optional platform fields and keeps payload v3: the
 operating system's `codename`, and a `packages` list of the installed builds
 of PHP, Apache, Nginx, MySQL, MariaDB and PostgreSQL from the Debian and
 Ubuntu package database. Sentinel uses them to check Ubuntu's and Debian's
