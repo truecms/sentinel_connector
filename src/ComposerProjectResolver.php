@@ -66,7 +66,13 @@ class ComposerProjectResolver {
       // A symlinked install is a path repository, whose version Composer may
       // guess from the site's own repository, so it is not trusted.
       if (is_string($version) && trim($version) !== '' && !is_link(rtrim($path, '/\\'))) {
-        $this->versions[$key] = trim($version);
+        $version = trim($version);
+        // Composer names a numeric branch 'dev-3.x'; Sentinel reads Drupal's
+        // '3.x-dev'. Other branch names and releases are sent unchanged.
+        if (preg_match('/^dev-(\d+(?:\.\d+)?\.x)$/D', $version, $matches)) {
+          $version = $matches[1] . '-dev';
+        }
+        $this->versions[$key] = $version;
       }
     }
   }
