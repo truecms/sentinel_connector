@@ -183,6 +183,26 @@ class ApiKeyKeyModuleTest extends KernelTestBase {
   }
 
   /**
+   * Migrating an unused State key must not replace an external credential.
+   */
+  public function testMigrationKeepsExternalKey(): void {
+    \Drupal::state()->set(ApiKeyResolver::STATE_KEY, self::STATE_VALUE);
+    $migrator = $this->container->get(ApiKeyMigrator::class);
+
+    putenv(ApiKeyResolver::ENV_VAR . '=sk_env_abcdef');
+    $this->assertNull($migrator->migrate());
+    $this->assertSame(['sk_env_abcdef', 'environment'], $this->resolved());
+
+    putenv(ApiKeyResolver::ENV_VAR);
+    new Settings([ApiKeyResolver::SETTINGS_KEY => 'sk_settings_abcdef'] + Settings::getAll());
+    $this->assertNull($migrator->migrate());
+    $this->assertSame(['sk_settings_abcdef', 'settings.php'], $this->resolved());
+    $this->assertSame(self::STATE_VALUE, \Drupal::state()->get(ApiKeyResolver::STATE_KEY));
+    $this->assertEmpty($this->config('sentinel_connector.settings')->get('api_key_id'));
+    $this->assertNull(Key::load(ApiKeyMigrator::KEY_ID));
+  }
+
+  /**
    * The resolved key and its source.
    *
    * @return array{0: string|null, 1: string|null}

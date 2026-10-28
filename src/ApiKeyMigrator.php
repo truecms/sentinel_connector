@@ -37,19 +37,22 @@ class ApiKeyMigrator {
    *   The entity type manager.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
    *   The module handler.
+   * @param \Drupal\sentinel_connector\ApiKeyResolver $apiKeyResolver
+   *   Resolves the active credential source.
    */
   public function __construct(
     protected StateInterface $state,
     protected ConfigFactoryInterface $configFactory,
     protected EntityTypeManagerInterface $entityTypeManager,
     protected ModuleHandlerInterface $moduleHandler,
+    protected ApiKeyResolver $apiKeyResolver,
   ) {}
 
   /**
    * Moves a State key into a new Key module key and selects it.
    *
    * Does nothing without the Key module, without a State key, or when a key
-   * is already selected.
+   * is already selected, or when settings.php or the environment supplies it.
    *
    * @return string|null
    *   The id of the new key, or NULL when nothing was migrated.
@@ -64,6 +67,12 @@ class ApiKeyMigrator {
     }
     $config = $this->configFactory->getEditable('sentinel_connector.settings');
     if (trim((string) $config->get('api_key_id')) !== '') {
+      return NULL;
+    }
+
+    // Selecting a migrated State key would outrank an environment key.
+    // Preserve external secret management and leave unused State untouched.
+    if (in_array($this->apiKeyResolver->getSource(), ['settings.php', 'environment'], TRUE)) {
       return NULL;
     }
 
