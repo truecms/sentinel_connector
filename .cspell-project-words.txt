@@ -1,6 +1,7 @@
 acquia
 behaviour
 fixdate
+glightbox
 glpat
 normalise
 normalised

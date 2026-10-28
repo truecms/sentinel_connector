@@ -238,6 +238,9 @@ class SyncService {
       if ($result->isSubscriptionInactive()) {
         $details[] = 'reason ' . ($result->reason ?? 'unknown');
       }
+      if ($result->isOk() && $result->modules !== []) {
+        $details[] = 'unresolved versions (' . count($result->modules) . ') ' . SyncResult::listModules($result->modules);
+      }
       foreach ($result->diagnostics + $extra as $name => $value) {
         $details[] = $name . ' ' . $value;
       }
@@ -257,14 +260,15 @@ class SyncService {
   /**
    * The log level of an outcome.
    *
-   * Info for an accepted push, debug for a push held back on this site,
+   * Info for an accepted push, warning for an accepted push with versions
+   * Sentinel could not read, debug for a push held back on this site,
    * notice for expected throttling, warning for a refusal an administrator
    * can fix, and error for everything else. Cron on a site that is not
    * configured logs at debug: it would otherwise warn every hour.
    */
   protected function logLevel(SyncResult $result, string $trigger): string {
     if ($result->isOk()) {
-      return LogLevel::INFO;
+      return $result->modules !== [] ? LogLevel::WARNING : LogLevel::INFO;
     }
     if ($result->deferred || ($result->status === 'unconfigured' && $trigger === self::TRIGGER_CRON)) {
       return LogLevel::DEBUG;
