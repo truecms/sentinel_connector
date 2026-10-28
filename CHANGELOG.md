@@ -3,6 +3,29 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.4.0 - Unreleased
+
+### Added
+
+- The API key can be stored with the [Key](https://www.drupal.org/project/key)
+  module (optional): when Key is enabled, the settings form has a key selector
+  with links to add and manage keys, and stores only the key id
+  (`api_key_id`). Keys whose provider keeps the value in configuration are
+  refused. Sources are resolved in this order: `settings.php`, the selected
+  key, the `SENTINEL_CONNECTOR_API_KEY` environment variable, then the key
+  saved in State.
+- Update `10004`, and enabling the Key module later, move a key saved in State
+  into a new key `sentinel_connector_api_key` and select it. That key uses
+  Key's State provider, so the value is still in the database; its label says
+  this is not recommended. Change its provider to a file, an environment
+  variable or a vault. Export configuration afterwards (`drush cex`).
+
+### Deprecated
+
+- Saving the API key in State. Without the Key module the form still offers
+  the field, marked as deprecated. Selecting a usable key deletes the State
+  value.
+
 ## 1.3.3 - 2026-10-29
 
 ### Added

@@ -6,6 +6,8 @@
  */
 
 use Drupal\Core\Hook\Attribute\LegacyRequirementsHook;
+use Drupal\sentinel_connector\ApiKeyMigrator;
+use Drupal\sentinel_connector\ApiKeyResolver;
 use Drupal\sentinel_connector\Hook\SentinelHooks;
 use Drupal\sentinel_connector\SyncService;
 
@@ -72,4 +74,25 @@ function sentinel_connector_update_10003(): string {
   }
 
   return (string) t('Sentinel Connector now reports configuration drift: the names of changed configuration objects, never their values. Turn it off on the settings form.');
+}
+
+/**
+ * Move an API key saved in State into a Key module key.
+ */
+function sentinel_connector_update_10004(): string {
+  $config = \Drupal::configFactory()->getEditable('sentinel_connector.settings');
+  if ($config->get('api_key_id') === NULL) {
+    $config->set('api_key_id', '')->save();
+  }
+
+  /** @var \Drupal\sentinel_connector\ApiKeyMigrator $migrator */
+  $migrator = \Drupal::service(ApiKeyMigrator::class);
+  $id = $migrator->migrate();
+  if ($id !== NULL) {
+    return (string) t('Moved the Sentinel API key from State into the key "@id", which still stores it in the database. Change that key to a file, environment variable or vault provider. Export configuration afterwards (drush cex).', ['@id' => $id]);
+  }
+  if (is_string(\Drupal::state()->get(ApiKeyResolver::STATE_KEY))) {
+    return (string) t('The Sentinel API key is still saved in State, which is deprecated. Enable the Key module to move it into a key, or select a key on the settings form.');
+  }
+  return (string) t('No Sentinel API key was saved in State. Nothing to move.');
 }
