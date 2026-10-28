@@ -41,7 +41,8 @@ class PayloadContractTest extends TestCase {
       'php' => ['version' => '8.3.12', 'sapi' => 'fpm-fcgi'],
       'web_server' => ['software' => 'nginx', 'version' => '1.24.0', 'raw' => 'nginx/1.24.0'],
       'database' => ['driver' => 'mysql', 'product' => 'mariadb', 'version' => '10.11.6-MariaDB'],
-      'os' => ['family' => 'Linux', 'distribution' => 'debian', 'release' => '12'],
+      'os' => ['family' => 'Linux', 'distribution' => 'debian', 'release' => '12', 'codename' => 'bookworm'],
+      'packages' => [['source' => 'php8.3', 'version' => '8.3.6-0ubuntu0.24.04.3']],
     ];
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform, fn () => self::drift()))->build('all');
     // Add the 'site' block the caller normally supplies.
@@ -134,6 +135,37 @@ class PayloadContractTest extends TestCase {
       'unavailable without a reason' => [['status' => 'unavailable', 'total' => 0, 'objects' => []] + self::drift()],
       'unavailable with objects' => [['status' => 'unavailable', 'reason' => 'error'] + self::drift()],
       'missing config_pr flag' => [array_diff_key(self::drift(), ['config_pr_enabled' => TRUE])],
+    ];
+  }
+
+  /**
+   * The schema refuses package lists Sentinel would not keep.
+   *
+   * @param list<mixed> $packages
+   *   The platform packages part.
+   *
+   * @dataProvider invalidPackages
+   */
+  #[DataProvider('invalidPackages')]
+  public function testPackagesSchemaRefusesBadLists(array $packages): void {
+    $payload = $this->payload(self::drift());
+    $payload['platform'] = ['packages' => $packages];
+    $this->assertNotSame([], $this->errors($payload));
+  }
+
+  /**
+   * Package lists the schema refuses.
+   *
+   * @return array<string, array{list<mixed>}>
+   *   Package lists keyed by case.
+   */
+  public static function invalidPackages(): array {
+    $package = ['source' => 'php8.3', 'version' => '8.3.6-0ubuntu0.24.04.3'];
+    return [
+      'more than 20' => [array_fill(0, 21, $package)],
+      'another field' => [[$package + ['architecture' => 'amd64']]],
+      'empty version' => [[['version' => ''] + $package]],
+      'no source' => [[['version' => '8.3.6-1']]],
     ];
   }
 

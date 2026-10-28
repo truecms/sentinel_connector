@@ -64,6 +64,29 @@ Export configuration afterwards (`drush cex`) to keep `api_key_id` and the
 key entity. The key entity holds no value for file, environment or vault
 providers, so it is safe to export.
 
+## Upgrading to 1.3.3
+
+Release `1.3.3` adds two optional platform fields and keeps payload v3: the
+operating system's `codename`, and a `packages` list of the installed builds
+of PHP, Apache, Nginx, MySQL, MariaDB and PostgreSQL from the Debian and
+Ubuntu package database. Sentinel uses them to check Ubuntu's and Debian's
+own security fixes; older Sentinel releases ignore them. Update the module
+with Composer; no database update or configuration export is needed.
+
+## Upgrading to 1.3.2
+
+Release `1.3.2` is a patch release with no payload, schema or configuration
+change. It reports numeric Composer branches, such as `dev-3.x`, as Drupal
+branch versions, such as `3.x-dev`. Update the module with Composer; no
+database update or configuration export is needed.
+
+## Upgrading to 1.3.1
+
+Release `1.3.1` is a patch release with no payload, schema or configuration
+change. It trims module versions, names each module Sentinel rejected and
+warns about versions Sentinel could not read. Update the module with Composer;
+no database update or configuration export is needed.
+
 ## Upgrading to 1.3.0
 
 Release `1.3.0` introduces payload v3, configuration drift and the optional
@@ -135,7 +158,8 @@ Sentinel matches against known vulnerabilities:
 | `php` | `version`, `sapi` | `PHP_VERSION`, `PHP_SAPI` |
 | `web_server` | `software`, `version`, `raw` | `SERVER_SOFTWARE` of a web request |
 | `database` | `driver`, `product`, `version` | The Drupal database connection; `product` is `mariadb` when the version says MariaDB |
-| `os` | `family`, `distribution`, `release` | `PHP_OS_FAMILY`; `ID` and `VERSION_ID` from `/etc/os-release` |
+| `os` | `family`, `distribution`, `release`, `codename` | `PHP_OS_FAMILY`; `ID`, `VERSION_ID` and `VERSION_CODENAME` from `/etc/os-release` |
+| `packages` | list of `source`, `version` | Installed source packages from `/var/lib/dpkg/status`, only PHP (`php8.3`), `apache2`, `nginx`, MySQL (`mysql-8.0`), MariaDB (`mariadb`, `mariadb-10.11`) and PostgreSQL (`postgresql-16`); at most 20 |
 
 Cron and Drush have no web server, so the module keeps the `SERVER_SOFTWARE`
 of the last web request in state (`sentinel_connector.web_server_software`)
@@ -144,7 +168,9 @@ that report different values do not write state on every request. With the
 version hidden (`server_tokens off`) `version` is left out. The `php` and `os`
 parts describe the process that sends the push: on cron or Drush that is the
 command-line PHP. A value the module cannot read is left out and never fails
-the sync; Sentinel shows it as unknown.
+the sync; Sentinel shows it as unknown. `packages` is read only on Debian and
+Ubuntu (a readable `/var/lib/dpkg/status`); the version is the source
+package's, and a source whose installed packages disagree is left out.
 
 ### Configuration drift
 
@@ -536,14 +562,14 @@ lower-case letters, digits or underscores is ignored.
 
 | Outcome | HTTP | `error_code` | Level | Meaning |
 |---------|------|--------------|-------|---------|
-| `success` | 200 | | info | The inventory was stored. The message is Sentinel's own when it sends one. |
-| `accepted` | 202 | | info | The inventory was queued; the entry has the task ID. |
+| `success` | 200 | | info; warning with unresolved versions | The inventory was stored. The message is Sentinel's own when it sends one. Modules whose version Sentinel could not read are listed as a warning (see below). |
+| `accepted` | 202 | | info; warning with unresolved versions | The inventory was queued; the entry has the task ID. Unresolved versions are listed as for `success`. |
 | `push_deferred` | none | | debug | A stored plan limit held the push back; no request was sent. |
 | `push_limited` | 429 | `push_limit_reached` | notice | The plan's push limit was reached. |
 | `rate_limited` | 429 | `site_rate_limited`, `auth_rate_limited` | notice | Sentinel's general rate limit, or its limit on authentication attempts, was reached. The message is Sentinel's own, with the `Retry-After` wait. |
 | `subscription_inactive` | 402 | `subscription_inactive` | warning | The subscription is overdue, unpaid or paused. |
 | `site_mismatch` | 400 | `site_url_mismatch`, `site_uuid_mismatch` | warning | The site URL or UUID differs from the site registered in Sentinel. |
-| `validation_failed` | 400 | `module_validation_failed`, `module_not_on_drupal_org` | warning | Sentinel rejected module names or versions, or a module that is not on drupal.org. The message has the count and the first five names when Sentinel lists them. |
+| `validation_failed` | 400 | `module_validation_failed`, `module_not_on_drupal_org` | warning | Sentinel rejected module names or versions, or a module that is not on drupal.org. The message has the count and up to five entries when Sentinel lists them, each with its result and the version sent, then "and N more". `drush sentinel_connector:sync` lists every entry. |
 | `not_found` | 404 | `site_unavailable` | warning | Sentinel does not know the site, the site or its organisation is inactive, or the API base URL is wrong. |
 | `conflict` | 409 | `catalog_conflict`, `catalog_entry_unavailable` | warning | Sentinel could not store a reported module. |
 | `unconfigured` | none | | warning; debug on cron | The API URL, site UUID or API key is missing, or the site UUID is not a UUID; no request was sent. |
@@ -556,6 +582,16 @@ lower-case letters, digits or underscores is ignored.
 | `invalid_response` | any | | error | The response was not the JSON the connector expects. |
 | `rejected` | other | | error | Any other refusal. |
 | `internal_error`, `state_error` | none | | error | The push failed on this site; the entry has the error class. Not to be confused with Sentinel's `internal_error` code, which is a `server_error`. |
+
+Sentinel stores a module whose version it cannot read, such as a Composer
+branch name like `dev-main`, as an unknown version instead of refusing the
+push, and lists it in `unresolved_versions` of the `200` or `202` response.
+The connector then shows a warning on the settings page after "Sync now",
+lists every such module in the Drush output and writes the log entry at
+warning level with `unresolved versions (N)` and the first entries. Module
+names and versions from Sentinel are shown without control characters, with
+angle brackets as `‹ ›`, and cut to 64 and 50 characters. A Sentinel that does not send the list shows no
+warning.
 
 A 403 without an `error_code` is also reported as `auth_error`. Such a
 response can come from in front of Sentinel, for example a network-level
@@ -748,7 +784,8 @@ dev checkout have no such key, so the connector then looks for the installed
 
 The root package, `drupal/core*` packages and `drupal-custom-*` package types
 are ignored, so site-specific code in a path repository stays `custom`. A missing version
-keeps the legacy `0.0.0` placeholder with `version_known: false`.
+keeps the legacy `0.0.0` placeholder with `version_known: false`. Whitespace
+around a version is trimmed before it is sent.
 Sentinel uses this site-scoped identity to assess the persisted inventory
 asynchronously. Inventory acceptance and upstream assessment are distinct;
 narrow scopes, custom modules and missing metadata cannot establish whole-site

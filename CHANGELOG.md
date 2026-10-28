@@ -26,6 +26,50 @@ All notable changes to this project are documented here. Versions follow
   the field, marked as deprecated. Selecting a usable key deletes the State
   value.
 
+## 1.3.3 - 2026-10-29
+
+### Added
+
+- The `os` part sends `codename` (`VERSION_CODENAME` from os-release, such
+  as `noble` or `bookworm`).
+- A new `packages` part lists the installed builds of the stack's own
+  source packages, read from the Debian and Ubuntu package database
+  (`/var/lib/dpkg/status`): PHP (`php8.3`), Apache (`apache2`), Nginx,
+  MySQL (`mysql-8.0`), MariaDB and PostgreSQL (`postgresql-16`), as
+  `{"source", "version"}`, at most 20. Nothing else from the database is
+  sent. Sentinel uses them to tell whether Ubuntu's or Debian's security
+  fixes are installed (truecms/sentinel#1409). A source whose installed
+  packages disagree on the version is left out, and a server without a
+  readable package database sends no `packages` part. Sentinel releases
+  before #1409 ignore both fields.
+
+## 1.3.2 - 2026-10-28
+
+### Fixed
+
+- A module installed from a numeric Composer branch, such as `dev-3.x` or
+  `dev-3.2.x`, is reported in Drupal's syntax, `3.x-dev` or `3.2.x-dev`.
+  Sentinel can read these versions. Releases, pre-releases such as
+  `1.0.0-rc1`, and other branch names such as `dev-main` are sent unchanged.
+
+## 1.3.1 - 2026-10-28
+
+### Changed
+
+- A module version is sent without surrounding whitespace.
+- A refusal over invalid modules (`validation_failed`) names each rejected
+  entry with its result, such as `invalid_name`, and the version sent, up to
+  five entries and "and N more" in the message and log.
+  `drush sentinel_connector:sync` lists every entry.
+
+### Added
+
+- Sentinel stores a version it cannot read as an unknown version and lists the
+  module in `unresolved_versions` (truecms/sentinel#1521). The connector now
+  shows these modules as a warning after "Sync now", in the Drush output and
+  in the log entry, which is written at warning level. A Sentinel without the
+  list shows nothing new.
+
 ## 1.3.0 - 2026-10-27
 
 ### Added

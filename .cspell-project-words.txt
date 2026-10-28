@@ -1,6 +1,7 @@
 acquia
 behaviour
 fixdate
+glightbox
 glpat
 normalise
 normalised
@@ -16,3 +17,6 @@ tthumphrey
 unconfigured
 updb
 webform
+deinstall
+dpkg
+libmariadb

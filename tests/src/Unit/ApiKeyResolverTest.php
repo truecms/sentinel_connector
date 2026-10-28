@@ -131,6 +131,8 @@ class ApiKeyResolverTest extends TestCase {
    *   Keys by id, or NULL without the Key module.
    * @param string $problem
    *   The expected problem.
+   *
+   * @dataProvider unusableKeys
    */
   #[\PHPUnit\Framework\Attributes\DataProvider('unusableKeys')]
   public function testUnusableKeyFallsThrough(string $keyId, ?array $keys, string $problem): void {

@@ -39,7 +39,7 @@ class PayloadBuilder {
    *   The server IP address.
    * @param \Drupal\sentinel_connector\ComposerProjectResolver|null $composerProjects
    *   Resolves the Composer package of an extension without packaging data.
-   * @param array<string, array<string, string>> $platform
+   * @param array{php?: array<string, string>, web_server?: array<string, string>, database?: array<string, string>, os?: array<string, string>, packages?: list<array{source: string, version: string}>} $platform
    *   The platform block, without the parts that could not be read.
    * @param \Closure|null $configDrift
    *   Returns the config_drift block, or NULL to leave it out. Called on the
@@ -116,7 +116,7 @@ class PayloadBuilder {
         $path = $extension->getPath();
         if ($this->normaliseProject($this->composerProjects->resolve($path)) === $project) {
           $version = $this->composerProjects->version($path);
-          $versionKnown = is_string($version) && strlen($version) <= 50;
+          $versionKnown = is_string($version) && trim($version) !== '' && strlen($version) <= 50;
         }
       }
       $modules[] = [
@@ -124,7 +124,8 @@ class PayloadBuilder {
         'display_name' => $info['name'] ?? $name,
         'module_type' => $type,
         'enabled' => isset($enabled[$name]),
-        'version' => $versionKnown ? $version : self::VERSION_PLACEHOLDER,
+        // Whitespace around a version is never part of it.
+        'version' => $versionKnown ? trim($version) : self::VERSION_PLACEHOLDER,
         'version_known' => $versionKnown,
         'reported_project' => $project,
         'description' => $info['description'] ?? NULL,

@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\sentinel_connector\ComposerProjectResolver;
 use PHPUnit\Framework\TestCase;
@@ -155,6 +156,48 @@ class ComposerProjectResolverTest extends TestCase {
     $this->assertNull($resolver->version('modules/contrib/hyphen'));
     $this->assertNull($resolver->version('modules/custom/my_custom'));
     $this->assertNull($resolver->version('modules/contrib/does_not_exist'));
+  }
+
+  /**
+   * Composer's numeric branch syntax is sent in Drupal's syntax.
+   *
+   * @dataProvider branchVersions
+   */
+  #[DataProvider('branchVersions')]
+  public function testNumericBranchUsesDrupalSyntax(string $installed, string $expected): void {
+    $web = $this->root . '/web';
+    $resolver = new ComposerProjectResolver($web, [
+      'drupal/hyphen' => [
+        'type' => 'drupal-module',
+        'install_path' => $web . '/modules/contrib/hyphen',
+        'pretty_version' => $installed,
+      ],
+    ]);
+    $this->assertSame($expected, $resolver->version('modules/contrib/hyphen'));
+  }
+
+  /**
+   * Numeric branches, releases, pre-releases and other branch names.
+   *
+   * @return array<string, array{string, string}>
+   *   Composer's recorded version and the version that must be reported.
+   */
+  public static function branchVersions(): array {
+    return [
+      'numeric branch' => ['dev-3.x', '3.x-dev'],
+      'minor branch' => ['dev-3.2.x', '3.2.x-dev'],
+      'padded numeric branch' => [' dev-3.x ', '3.x-dev'],
+      'already Drupal syntax' => ['3.x-dev', '3.x-dev'],
+      'stable release' => ['3.2.1', '3.2.1'],
+      'release candidate' => ['1.0.0-rc1', '1.0.0-rc1'],
+      'alpha' => ['2.1.0-alpha2', '2.1.0-alpha2'],
+      'beta' => ['3.0.0-beta1', '3.0.0-beta1'],
+      'named branch' => ['dev-main', 'dev-main'],
+      'feature branch' => ['dev-feature-3.x', 'dev-feature-3.x'],
+      'numeric name without wildcard' => ['dev-3', 'dev-3'],
+      'unsupported long branch' => ['dev-3.2.1.x', 'dev-3.2.1.x'],
+      'branch suffix' => ['dev-3.x-extra', 'dev-3.x-extra'],
+    ];
   }
 
   /**

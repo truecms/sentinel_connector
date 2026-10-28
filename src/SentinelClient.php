@@ -98,11 +98,6 @@ class SentinelClient {
   public const PUSH_LIMIT_FALLBACK_MESSAGE = 'The push limit for this site has been reached.';
 
   /**
-   * How many rejected module names a validation message lists.
-   */
-  protected const MAX_LISTED_MODULES = 5;
-
-  /**
    * Constructs the client.
    *
    * @param \GuzzleHttp\ClientInterface $httpClient
@@ -241,7 +236,8 @@ class SentinelClient {
       // Punctuation alone says nothing: it counts as no message.
       $message = NULL;
     }
-    return SyncResult::failure($outcome, $code, $this->codedText($outcome, $code, $detail, $message, $wait), $diagnostics);
+    $result = SyncResult::failure($outcome, $code, $this->codedText($outcome, $code, $detail, $message, $wait), $diagnostics);
+    return $outcome === 'validation_failed' && is_array($detail) ? $result->withModules($this->rejectedEntries($detail)) : $result;
   }
 
   /**
@@ -341,15 +337,18 @@ class SentinelClient {
       return SyncResult::failure('invalid_response', $code, 'Sentinel returned an invalid JSON response. Check the API base URL and retry.');
     }
 
+    // Modules whose version Sentinel could not read are stored as unknown
+    // version. An older Sentinel does not send the list.
+    $unresolved = $this->moduleEntries($decoded['unresolved_versions'] ?? NULL, FALSE);
     if ($code === 200) {
-      return SyncResult::success(200, $this->cleanMessage($decoded['message'] ?? NULL) ?? 'Sync completed.');
+      return SyncResult::success(200, $this->cleanMessage($decoded['message'] ?? NULL) ?? 'Sync completed.')->withModules($unresolved);
     }
     if ($code === 202) {
       $taskId = $decoded['task_id'] ?? NULL;
       if (!is_string($taskId) || !preg_match('/^[A-Za-z0-9_.:\-]{1,128}$/D', $taskId)) {
         return SyncResult::failure('invalid_response', 202, 'Sentinel accepted the sync without a task ID.');
       }
-      return SyncResult::accepted($taskId);
+      return SyncResult::accepted($taskId)->withModules($unresolved);
     }
 
     return $this->refusalResult('rejected', $code, $detail);
@@ -375,7 +374,7 @@ class SentinelClient {
     }
     if ($code === 400) {
       if (is_array($detail) && (isset($detail['invalid_modules']) || isset($detail['error']))) {
-        return $this->refusalResult('validation_failed', 400, $detail);
+        return $this->refusalResult('validation_failed', 400, $detail)->withModules($this->rejectedEntries($detail));
       }
       if (is_string($detail) && preg_match('/mismatch|does not match/i', $detail)) {
         return $this->refusalResult('site_mismatch', 400, $detail);
@@ -505,11 +504,16 @@ class SentinelClient {
       ?? $this->cleanMessage($detail['error'] ?? NULL)
       ?? 'Sentinel rejected one or more modules.';
     $modules = $this->rejectedModules($detail);
-    return $modules !== '' ? (string) $this->cleanMessage(rtrim($message, '.') . '. ' . $modules) : $message;
+    if ($modules === '') {
+      return $message;
+    }
+    // The message is shortened to make room, so the list keeps its end.
+    $message = $this->shorten(rtrim($message, '.') . '.', max(1, self::MAX_MESSAGE_LENGTH - 1 - mb_strlen($modules)));
+    return (string) $this->cleanMessage($message . ' ' . $modules);
   }
 
   /**
-   * Lists the modules Sentinel rejected: how many, and the first few names.
+   * Lists the modules Sentinel rejected: how many, and the first few entries.
    *
    * @param array<array-key, mixed> $detail
    *   The "detail" object of the response.
@@ -518,18 +522,74 @@ class SentinelClient {
    *   A sentence, or an empty string when the detail lists no modules.
    */
   protected function rejectedModules(array $detail): string {
-    $invalid = is_array($detail['invalid_modules'] ?? NULL) ? $detail['invalid_modules'] : [];
-    if ($invalid === []) {
+    $entries = $this->rejectedEntries($detail);
+    if ($entries === []) {
       return '';
     }
-    $names = [];
-    foreach (array_slice($invalid, 0, self::MAX_LISTED_MODULES) as $module) {
-      $name = $this->cleanMessage(is_array($module) ? ($module['module_name'] ?? NULL) : $module);
-      $names[] = $name !== NULL ? mb_substr($name, 0, 64) : 'unnamed';
+    return 'Rejected modules (' . count($entries) . '): ' . SyncResult::listModules($entries) . '.';
+  }
+
+  /**
+   * Returns every module entry of a validation refusal, cleaned.
+   *
+   * @param array<array-key, mixed> $detail
+   *   The "detail" object of the response.
+   *
+   * @return list<array{module_name: string, version: string|null, result: string|null}>
+   *   The entries, or an empty list when the detail lists no modules.
+   */
+  protected function rejectedEntries(array $detail): array {
+    return $this->moduleEntries($detail['invalid_modules'] ?? NULL, TRUE);
+  }
+
+  /**
+   * Cleans a list of module entries sent by Sentinel.
+   *
+   * The name, version and result are server text that is shown and logged,
+   * so each is reduced to one bounded line. Angle brackets become look-alike
+   * quotes: Drush prints log entries as console markup. A version is kept as
+   * it was sent otherwise: it shows what Sentinel could not read.
+   *
+   * @param mixed $list
+   *   The list from the response body.
+   * @param bool $withResult
+   *   TRUE to keep each entry's "result", such as invalid_name.
+   *
+   * @return list<array{module_name: string, version: string|null, result: string|null}>
+   *   The entries, or an empty list when there is no list.
+   */
+  protected function moduleEntries(mixed $list, bool $withResult): array {
+    if (!is_array($list)) {
+      return [];
     }
-    $count = count($invalid);
-    $more = $count - count($names);
-    return 'Rejected modules (' . $count . '): ' . implode(', ', $names) . ($more > 0 ? ' and ' . $more . ' more.' : '.');
+    $entries = [];
+    foreach ($list as $module) {
+      $name = $this->entryText(is_array($module) ? ($module['module_name'] ?? NULL) : $module);
+      $version = is_array($module) && is_string($module['version'] ?? NULL)
+        ? mb_substr($this->entryText($module['version']) ?? '', 0, 50)
+        : NULL;
+      $result = $withResult && is_array($module) ? ($module['result'] ?? NULL) : NULL;
+      $entries[] = [
+        'module_name' => $name !== NULL ? mb_substr($name, 0, 64) : 'unnamed',
+        'version' => $version,
+        'result' => is_string($result) && preg_match('/\A[a-z0-9_]{1,32}\z/', $result) ? $result : NULL,
+      ];
+    }
+    return $entries;
+  }
+
+  /**
+   * Cleans one field of a module entry.
+   *
+   * @param mixed $text
+   *   The field from the response body.
+   *
+   * @return string|null
+   *   The cleaned text, or NULL when there is no usable text.
+   */
+  protected function entryText(mixed $text): ?string {
+    $clean = $this->cleanMessage($text);
+    return $clean !== NULL ? strtr($clean, ['<' => "\u{2039}", '>' => "\u{203A}"]) : NULL;
   }
 
   /**

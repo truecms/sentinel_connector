@@ -18,6 +18,19 @@ final class SyncResult {
   public const SUBSCRIPTION_INACTIVE = 'subscription_inactive';
 
   /**
+   * How many module entries a short list names.
+   */
+  public const MAX_LISTED_MODULES = 5;
+
+  /**
+   * After how many characters a short list of module entries stops.
+   *
+   * It keeps the list, and the "and N more" after it, within the length of a
+   * message.
+   */
+  protected const LISTED_MODULES_LENGTH = 300;
+
+  /**
    * Constructs a SyncResult.
    *
    * @param string $status
@@ -44,6 +57,10 @@ final class SyncResult {
    * @param array<string, int|string> $diagnostics
    *   Facts for the log entry only, e.g. a curl error number. Never holds the
    *   API key, the request URL, headers, the payload or an exception message.
+   * @param list<array{module_name: string, version: string|null, result: string|null}> $modules
+   *   The module entries Sentinel reported, cleaned: every rejected entry of a
+   *   validation refusal, or every module of an accepted push whose version
+   *   Sentinel could not read.
    */
   public function __construct(
     public readonly string $status,
@@ -57,6 +74,7 @@ final class SyncResult {
     public readonly bool $deferred = FALSE,
     public readonly ?string $reason = NULL,
     public readonly array $diagnostics = [],
+    public readonly array $modules = [],
   ) {}
 
   /**
@@ -138,7 +156,7 @@ final class SyncResult {
    *   Unix timestamp after which the next push is accepted, or NULL.
    */
   public function withNextAllowedAt(?int $nextAllowedAt): self {
-    return new self($this->status, $this->httpCode, $this->message, $this->taskId, $nextAllowedAt, $this->retryAfterSeconds, $this->plan, $this->limit, $this->deferred, $this->reason, $this->diagnostics);
+    return new self($this->status, $this->httpCode, $this->message, $this->taskId, $nextAllowedAt, $this->retryAfterSeconds, $this->plan, $this->limit, $this->deferred, $this->reason, $this->diagnostics, $this->modules);
   }
 
   /**
@@ -149,7 +167,55 @@ final class SyncResult {
    *   kept.
    */
   public function withDiagnostics(array $diagnostics): self {
-    return new self($this->status, $this->httpCode, $this->message, $this->taskId, $this->nextAllowedAt, $this->retryAfterSeconds, $this->plan, $this->limit, $this->deferred, $this->reason, $this->diagnostics + $diagnostics);
+    return new self($this->status, $this->httpCode, $this->message, $this->taskId, $this->nextAllowedAt, $this->retryAfterSeconds, $this->plan, $this->limit, $this->deferred, $this->reason, $this->diagnostics + $diagnostics, $this->modules);
+  }
+
+  /**
+   * Returns a copy with the module entries Sentinel reported.
+   *
+   * @param list<array{module_name: string, version: string|null, result: string|null}> $modules
+   *   The cleaned entries.
+   */
+  public function withModules(array $modules): self {
+    return new self($this->status, $this->httpCode, $this->message, $this->taskId, $this->nextAllowedAt, $this->retryAfterSeconds, $this->plan, $this->limit, $this->deferred, $this->reason, $this->diagnostics, $modules);
+  }
+
+  /**
+   * Describes one module entry, e.g. 'foo (invalid_name, version "1.x")'.
+   *
+   * @param array{module_name: string, version: string|null, result: string|null} $module
+   *   A cleaned entry.
+   */
+  public static function describeModule(array $module): string {
+    $parts = $module['result'] !== NULL ? [$module['result']] : [];
+    if ($module['version'] !== NULL) {
+      $parts[] = 'version "' . $module['version'] . '"';
+    }
+    return $module['module_name'] . ($parts !== [] ? ' (' . implode(', ', $parts) . ')' : '');
+  }
+
+  /**
+   * Lists the first few module entries and how many more there are.
+   *
+   * @param list<array{module_name: string, version: string|null, result: string|null}> $modules
+   *   The cleaned entries.
+   *
+   * @return string
+   *   E.g. 'a (invalid_name), b and 3 more', or an empty string when there
+   *   are no entries.
+   */
+  public static function listModules(array $modules): string {
+    $listed = [];
+    $length = 0;
+    foreach (array_slice($modules, 0, self::MAX_LISTED_MODULES) as $module) {
+      if ($listed !== [] && $length >= self::LISTED_MODULES_LENGTH) {
+        break;
+      }
+      $listed[] = self::describeModule($module);
+      $length += mb_strlen(end($listed)) + 2;
+    }
+    $more = count($modules) - count($listed);
+    return implode(', ', $listed) . ($more > 0 ? ' and ' . $more . ' more' : '');
   }
 
   /**

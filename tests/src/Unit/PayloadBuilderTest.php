@@ -315,6 +315,24 @@ class PayloadBuilderTest extends TestCase {
   }
 
   /**
+   * Whitespace around a version is trimmed before it is sent.
+   */
+  public function testVersionIsTrimmed(): void {
+    $extensions = [
+      'token' => $this->ext('token', ['project' => 'token', 'version' => " 8.x-1.15\n"], 1, 'modules/contrib/token'),
+      'redis' => $this->ext('redis', ['project' => 'redis'], 1, 'modules/contrib/redis'),
+      'blank' => $this->ext('blank', ['project' => 'blank'], 1, 'modules/contrib/blank'),
+    ];
+    $packages = ['modules/contrib/redis' => 'redis', 'modules/contrib/blank' => 'blank'];
+    $versions = ['modules/contrib/redis' => "\t1.9.0 ", 'modules/contrib/blank' => '  '];
+    $byName = array_column($this->builder($extensions, $packages, $versions)->build('all')['modules'], NULL, 'machine_name');
+    $this->assertSame(['8.x-1.15', TRUE], [$byName['token']['version'], $byName['token']['version_known']]);
+    $this->assertSame(['1.9.0', TRUE], [$byName['redis']['version'], $byName['redis']['version_known']]);
+    // A blank Composer version keeps the placeholder.
+    $this->assertSame(['0.0.0', FALSE], [$byName['blank']['version'], $byName['blank']['version_known']]);
+  }
+
+  /**
    * Without Composer metadata the builder falls back to info.yml only.
    */
   public function testWorksWithoutResolver(): void {
