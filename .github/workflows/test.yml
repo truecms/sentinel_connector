@@ -77,7 +77,10 @@ jobs:
             ln -s "$GITHUB_WORKSPACE/patches" patches
             composer config --no-plugins allow-plugins.cweagans/composer-patches true
             composer config extra.composer-patches.patches-file patches/drupal12/patches.json
-            composer require --dev cweagans/composer-patches:^2 --no-interaction
+            # Drupal 12 beta2's debug class loader assumes Symfony's old
+            # return-type metadata shape. Newer ErrorHandler 8.1.10 breaks
+            # every Kernel bootstrap; keep its core-recommended version here.
+            composer require --dev cweagans/composer-patches:^2 symfony/error-handler:8.1.8 --no-interaction
             composer config --no-plugins allow-plugins.mglaman/composer-drupal-lenient true
             composer require --dev mglaman/composer-drupal-lenient:^2 --no-interaction
             composer config --merge --json extra.drupal-lenient.allowed-list '["drupal/config_ignore", "drupal/config_split", "drupal/key"]'

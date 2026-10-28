@@ -332,7 +332,15 @@ class PlatformCollector {
         $stanzas = [];
         $fields = [];
         $read = 0;
-        while (($line = @fgets($handle, self::DPKG_LINE_LIMIT)) !== FALSE) {
+        while (!feof($handle)) {
+          $line = @fgets($handle, self::DPKG_LINE_LIMIT);
+          if ($line === FALSE) {
+            // A read failure must not make a partial upgrade look complete.
+            if (!feof($handle)) {
+              return [];
+            }
+            break;
+          }
           $read += strlen($line);
           if ($read > self::DPKG_STATUS_LIMIT) {
             return [];

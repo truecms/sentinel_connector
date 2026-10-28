@@ -298,6 +298,10 @@ class PlatformCollectorTest extends KernelTestBase {
     $this->assertSame(['source' => 'postgresql-1', 'version' => '1.1-1'], $packages[0]);
     $this->assertNotContains('php8.4', array_column($packages, 'source'));
 
+    // The last stanza counts without a final newline or blank separator.
+    file_put_contents($file, "Package: nginx\nStatus: install ok installed\nVersion: 1.24.0-1");
+    $this->assertSame([['source' => 'nginx', 'version' => '1.24.0-1']], $this->collector([], NULL, [$file])->packages());
+
     // A directory is not a package database.
     $this->assertSame([], $this->collector([], NULL, [dirname($file)])->packages());
     unlink($file);
