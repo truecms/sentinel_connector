@@ -40,6 +40,13 @@ Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
+## Upgrading to 1.3.1
+
+Release `1.3.1` is a patch release with no payload, schema or configuration
+change. It trims module versions, names each module Sentinel rejected and
+warns about versions Sentinel could not read. Update the module with Composer;
+no database update or configuration export is needed.
+
 ## Upgrading to 1.3.0
 
 Release `1.3.0` introduces payload v3, configuration drift and the optional
