@@ -17,7 +17,7 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '1.3.2';
+  public const CONNECTOR_VERSION = '1.3.3';
 
   /**
    * Sync payload contract version.
@@ -39,7 +39,7 @@ class PayloadBuilder {
    *   The server IP address.
    * @param \Drupal\sentinel_connector\ComposerProjectResolver|null $composerProjects
    *   Resolves the Composer package of an extension without packaging data.
-   * @param array<string, array<string, string>> $platform
+   * @param array{php?: array<string, string>, web_server?: array<string, string>, database?: array<string, string>, os?: array<string, string>, packages?: list<array{source: string, version: string}>} $platform
    *   The platform block, without the parts that could not be read.
    * @param \Closure|null $configDrift
    *   Returns the config_drift block, or NULL to leave it out. Called on the
