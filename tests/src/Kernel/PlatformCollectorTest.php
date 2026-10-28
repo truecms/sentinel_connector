@@ -54,6 +54,8 @@ class PlatformCollectorTest extends KernelTestBase {
    *   The os-release files to read.
    * @param \Drupal\Core\Database\Connection|null $database
    *   A database connection, the default one when NULL.
+   * @param string[] $dpkgStatusFiles
+   *   The package databases to read.
    */
   protected function collector(array $osReleaseFiles = [], ?Connection $database = NULL, array $dpkgStatusFiles = []): PlatformCollector {
     return new PlatformCollector(
@@ -243,7 +245,12 @@ class PlatformCollectorTest extends KernelTestBase {
    */
   public function testOsPresent(): void {
     $os = $this->collector([$this->fixtures . '/missing', $this->fixtures . '/debian'])->os();
-    $this->assertSame(['family' => PHP_OS_FAMILY, 'distribution' => 'debian', 'release' => '12', 'codename' => 'bookworm'], $os);
+    $this->assertSame([
+      'family' => PHP_OS_FAMILY,
+      'distribution' => 'debian',
+      'release' => '12',
+      'codename' => 'bookworm',
+    ], $os);
 
     // A rolling distribution has no release.
     $os = $this->collector([$this->fixtures . '/arch'])->os();

@@ -62,8 +62,10 @@ class PlatformCollector {
   public const PACKAGES_LIMIT = 20;
 
   /**
-   * The only source packages sent: PHP, Apache, Nginx, MySQL, MariaDB and
-   * PostgreSQL as Debian and Ubuntu name them. Nothing else leaves the site.
+   * The only source packages sent, as Debian and Ubuntu name them.
+   *
+   * PHP, Apache, Nginx, MySQL, MariaDB and PostgreSQL. Nothing else leaves
+   * the site.
    */
   public const PACKAGE_PATTERN = '/^(php\d+\.\d+|apache2|nginx|mysql-\d+\.\d+|mariadb(-\d+\.\d+)?|postgresql-\d+(\.\d+)?)$/';
 
