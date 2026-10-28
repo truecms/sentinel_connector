@@ -10,6 +10,13 @@ Version: 8.3.6-0ubuntu0.24.04.3
 Description: command-line interpreter for the PHP scripting language
  This package provides the PHP command-line interpreter.
 
+Package: php8.3-cli
+Status: install ok installed
+Architecture: i386
+Source: php8.3
+Version: 8.3.6-0ubuntu0.24.04.3
+Description: the same package for another architecture
+
 Package: php8.3-common
 Status: install ok installed
 Architecture: amd64
@@ -32,7 +39,7 @@ Version: 2.4.58-1ubuntu8.5
 Description: Apache HTTP Server (modules and other binary files)
 
 Package: apache2-data
-Status: install ok installed
+Status: hold ok installed
 Architecture: all
 Source: apache2
 Version: 2.4.58-1ubuntu8.5
@@ -43,6 +50,13 @@ Status: deinstall ok config-files
 Architecture: amd64
 Version: 1.24.0-2ubuntu7.1
 Description: small, powerful, scalable web/proxy server
+
+Package: nginx-core
+Status: install ok half-configured
+Architecture: amd64
+Source: nginx
+Version: 1.24.0-2ubuntu7.1
+Description: nginx web/proxy server, part way through an upgrade
 
 Package: mysql-client-core-8.0
 Status: install ok installed

@@ -269,8 +269,31 @@ class PlatformCollectorTest extends KernelTestBase {
       ['source' => 'apache2', 'version' => '2.4.58-1ubuntu8.5'],
       ['source' => 'mariadb', 'version' => '1:10.11.8-0ubuntu0.24.04.1'],
     ], $packages);
-    // Removed nginx, mysql-8.0 half upgraded, and every package outside the
-    // stack (php-defaults, openssl) are left out.
+    // A second architecture of php8.3 and a held apache2 package count once.
+    // nginx (one package removed, one half configured), mysql-8.0 (versions
+    // disagree), and every package outside the stack (php-defaults, openssl)
+    // are left out.
+  }
+
+  /**
+   * Windows line endings, the 20-entry cap and an oversized version.
+   */
+  public function testPackagesEdgeCases(): void {
+    $file = $this->container->get('file_system')->getTempDirectory() . '/sentinel-dpkg-status';
+    // Too long to keep whole: left out, not cut.
+    $stanzas = ["Package: php8.4-cli\nStatus: install ok installed\nSource: php8.4\nVersion: 8.4.1-" . str_repeat('1', 60) . "\n"];
+    foreach (range(1, 25) as $major) {
+      $stanzas[] = "Package: postgresql-$major\r\nStatus: install ok installed\r\nVersion: $major.1-1\r\n";
+    }
+    file_put_contents($file, implode("\r\n", $stanzas));
+    $packages = $this->collector([], NULL, [$file])->packages();
+    $this->assertCount(PlatformCollector::PACKAGES_LIMIT, $packages);
+    $this->assertSame(['source' => 'postgresql-1', 'version' => '1.1-1'], $packages[0]);
+    $this->assertNotContains('php8.4', array_column($packages, 'source'));
+
+    // A directory is not a package database.
+    $this->assertSame([], $this->collector([], NULL, [dirname($file)])->packages());
+    unlink($file);
   }
 
   /**

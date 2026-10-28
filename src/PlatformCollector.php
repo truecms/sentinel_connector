@@ -52,6 +52,11 @@ class PlatformCollector {
   public const DPKG_STATUS_LIMIT = 32 * 1024 * 1024;
 
   /**
+   * Bytes of one package database line read at a time.
+   */
+  public const DPKG_LINE_LIMIT = 65536;
+
+  /**
    * Source packages sent, at most; Sentinel ignores the rest.
    */
   public const PACKAGES_LIMIT = 20;
@@ -109,7 +114,7 @@ class PlatformCollector {
   /**
    * Returns the payload's platform block, without the parts it cannot read.
    *
-   * @return array<string, array<mixed>>
+   * @return array{php?: array<string, string>, web_server?: array<string, string>, database?: array<string, string>, os?: array<string, string>, packages?: list<array{source: string, version: string}>}
    *   Parts keyed php, web_server, database, os and packages.
    */
   public function collect(): array {
@@ -257,18 +262,22 @@ class PlatformCollector {
   /**
    * The installed builds of the stack's source packages, from dpkg.
    *
-   * Only source packages that PACKAGE_PATTERN names are read, and only those
-   * installed. The version is the source package's, which is what Ubuntu and
-   * Debian publish fixes against. A source whose installed binaries disagree
-   * (an upgrade half done) is left out rather than guessed.
+   * Only source packages that PACKAGE_PATTERN names are read. The version is
+   * the source package's, which is what Ubuntu and Debian publish fixes
+   * against. A source is left out rather than guessed when one of its
+   * packages is not fully installed or their versions disagree (an upgrade
+   * half done), or when its version is longer than Sentinel keeps.
    *
    * @return list<array{source: string, version: string}>
    *   One entry per source package, empty without a readable database.
    */
   public function packages(): array {
     $versions = [];
+    $complete = [];
     foreach ($this->dpkgStanzas() as $fields) {
-      if (!str_ends_with($fields['Status'] ?? '', ' installed')) {
+      $status = $fields['Status'] ?? '';
+      // Removed packages, or only their configuration left: not there.
+      if (str_ends_with($status, ' not-installed') || str_ends_with($status, ' config-files')) {
         continue;
       }
       // "Source: php8.3 (8.3.6-0ubuntu0.24.04.3)" when the source version
@@ -284,16 +293,15 @@ class PlatformCollector {
         continue;
       }
       $versions[$source][$version] = TRUE;
+      $complete[$source] = ($complete[$source] ?? TRUE) && str_ends_with($status, ' installed');
     }
     $packages = [];
     foreach ($versions as $source => $seen) {
-      if (count($seen) !== 1) {
+      $version = (string) array_key_first($seen);
+      if (count($seen) !== 1 || !$complete[$source] || strlen($version) > self::TEXT_LIMIT || !mb_check_encoding($version, 'UTF-8')) {
         continue;
       }
-      $package = $this->clean(['source' => $source, 'version' => array_key_first($seen)]);
-      if (count($package) === 2) {
-        $packages[] = $package;
-      }
+      $packages[] = ['source' => $source, 'version' => $version];
       if (count($packages) === self::PACKAGES_LIMIT) {
         break;
       }
@@ -302,29 +310,35 @@ class PlatformCollector {
   }
 
   /**
-   * Reads the first readable package database, one stanza at a time.
+   * Reads the first readable package database.
    *
-   * Only the Package, Status, Source and Version fields are kept.
+   * Only the Package, Status, Source and Version fields are kept. A database
+   * larger than DPKG_STATUS_LIMIT gives nothing: a partial read could make a
+   * half-done upgrade look complete.
    *
-   * @return \Generator<array<string, string>>
-   *   Each stanza's fields keyed by name.
+   * @return list<array<string, string>>
+   *   Each stanza's fields keyed by name, empty when none can be read whole.
    */
-  protected function dpkgStanzas(): \Generator {
+  protected function dpkgStanzas(): array {
     foreach ($this->dpkgStatusFiles as $file) {
       // open_basedir or a missing file makes these warn; neither is an error.
-      $handle = @is_readable($file) ? @fopen($file, 'rb') : FALSE;
+      $handle = @is_file($file) && @is_readable($file) ? @fopen($file, 'rb') : FALSE;
       if ($handle === FALSE) {
         continue;
       }
       try {
+        $stanzas = [];
         $fields = [];
         $read = 0;
-        while (($line = fgets($handle)) !== FALSE && $read < self::DPKG_STATUS_LIMIT) {
+        while (($line = @fgets($handle, self::DPKG_LINE_LIMIT)) !== FALSE) {
           $read += strlen($line);
+          if ($read > self::DPKG_STATUS_LIMIT) {
+            return [];
+          }
           $line = rtrim($line, "\r\n");
           if ($line === '') {
             if ($fields) {
-              yield $fields;
+              $stanzas[] = $fields;
             }
             $fields = [];
           }
@@ -333,14 +347,15 @@ class PlatformCollector {
           }
         }
         if ($fields) {
-          yield $fields;
+          $stanzas[] = $fields;
         }
+        return $stanzas;
       }
       finally {
         fclose($handle);
       }
-      return;
     }
+    return [];
   }
 
   /**
