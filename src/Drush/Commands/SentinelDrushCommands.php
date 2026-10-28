@@ -75,6 +75,11 @@ class SentinelDrushCommands extends DrushCommands {
   protected function report(SyncResult $result): void {
     if ($result->isOk()) {
       $this->logger()->success(dt('Sentinel sync: @msg', ['@msg' => $result->message]));
+      if ($result->modules !== []) {
+        $this->logger()->warning(dt('Sentinel could not read the version of these modules and shows them as unknown version (@count):', [
+          '@count' => count($result->modules),
+        ]) . $this->moduleLines($result));
+      }
     }
     elseif ($result->isPushLimited()) {
       // Expected outcome of a plan limit: warn, but do not fail the command.
@@ -85,11 +90,28 @@ class SentinelDrushCommands extends DrushCommands {
       throw new \RuntimeException((string) $this->pushLimitFormatter->subscriptionError($result->reason, $result->message));
     }
     else {
+      if ($result->modules !== []) {
+        // The message names the first few; the command lists every one.
+        $this->logger()->error(dt('Rejected modules (@count):', ['@count' => count($result->modules)]) . $this->moduleLines($result));
+      }
       throw new \RuntimeException(dt('Sentinel sync failed (@status): @msg', [
         '@status' => $result->status,
         '@msg' => $result->message,
       ]));
     }
+  }
+
+  /**
+   * Lists every module entry of a result, one per line.
+   *
+   * The entries are cleaned server text without angle brackets.
+   */
+  protected function moduleLines(SyncResult $result): string {
+    $lines = '';
+    foreach ($result->modules as $module) {
+      $lines .= "\n  - " . SyncResult::describeModule($module);
+    }
+    return $lines;
   }
 
 }
