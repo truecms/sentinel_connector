@@ -47,8 +47,12 @@ class SentinelErrorCodeTest extends TestCase {
   private const EXPECTED = [
     'site_url_mismatch' => ['site_mismatch', LogLevel::WARNING, ''],
     'site_uuid_mismatch' => ['site_mismatch', LogLevel::WARNING, ''],
-    'module_validation_failed' => ['validation_failed', LogLevel::WARNING, ' Rejected modules (1): Capital_Name.'],
-    'module_not_on_drupal_org' => ['validation_failed', LogLevel::WARNING, ' Rejected modules (1): not_on_drupal_org.'],
+    'module_validation_failed' => [
+      'validation_failed', LogLevel::WARNING, ' Rejected modules (1): Capital_Name (invalid, version "1.0.0").',
+    ],
+    'module_not_on_drupal_org' => [
+      'validation_failed', LogLevel::WARNING, ' Rejected modules (1): not_on_drupal_org (invalid, version "1.0.0").',
+    ],
     'body_unreadable' => ['invalid_payload', LogLevel::ERROR, ''],
     'authentication_required' => ['auth_error', LogLevel::ERROR, ''],
     'api_key_invalid' => ['auth_error', LogLevel::ERROR, ''],

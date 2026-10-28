@@ -3,6 +3,24 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- A module version is sent without surrounding whitespace.
+- A refusal over invalid modules (`validation_failed`) names each rejected
+  entry with its result, such as `invalid_name`, and the version sent, up to
+  five entries and "and N more" in the message and log.
+  `drush sentinel_connector:sync` lists every entry.
+
+### Added
+
+- Sentinel stores a version it cannot read as an unknown version and lists the
+  module in `unresolved_versions` (truecms/sentinel#1521). The connector now
+  shows these modules as a warning after "Sync now", in the Drush output and
+  in the log entry, which is written at warning level. A Sentinel without the
+  list shows nothing new.
+
 ## 1.3.0 - 2026-10-27
 
 ### Added

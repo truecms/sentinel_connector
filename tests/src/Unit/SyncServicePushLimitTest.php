@@ -439,6 +439,12 @@ class SyncServicePushLimitTest extends TestCase {
     return [
       'success' => [SyncResult::success(200, 'ok'), SyncService::TRIGGER_FORM, LogLevel::INFO, 'no details'],
       'accepted' => [SyncResult::accepted('task-123'), SyncService::TRIGGER_DRUSH, LogLevel::INFO, 'task ID task-123'],
+      'unresolved versions' => [
+        SyncResult::success(200, 'ok')->withModules([
+          ['module_name' => 'foo', 'version' => 'dev-main', 'result' => NULL],
+        ]),
+        SyncService::TRIGGER_CRON, LogLevel::WARNING, 'unresolved versions (1) foo (version "dev-main")',
+      ],
       'rate limited' => [
         SyncResult::failure('rate_limited', 429, 'Slow down.'), SyncService::TRIGGER_CRON, LogLevel::NOTICE, 'no details',
       ],

@@ -116,7 +116,7 @@ class PayloadBuilder {
         $path = $extension->getPath();
         if ($this->normaliseProject($this->composerProjects->resolve($path)) === $project) {
           $version = $this->composerProjects->version($path);
-          $versionKnown = is_string($version) && strlen($version) <= 50;
+          $versionKnown = is_string($version) && trim($version) !== '' && strlen($version) <= 50;
         }
       }
       $modules[] = [
@@ -124,7 +124,8 @@ class PayloadBuilder {
         'display_name' => $info['name'] ?? $name,
         'module_type' => $type,
         'enabled' => isset($enabled[$name]),
-        'version' => $versionKnown ? $version : self::VERSION_PLACEHOLDER,
+        // Whitespace around a version is never part of it.
+        'version' => $versionKnown ? trim($version) : self::VERSION_PLACEHOLDER,
         'version_known' => $versionKnown,
         'reported_project' => $project,
         'description' => $info['description'] ?? NULL,
