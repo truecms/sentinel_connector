@@ -40,6 +40,15 @@ Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
+## Upgrading to 1.3.3
+
+Release `1.3.3` adds two optional platform fields and keeps payload v3: the
+operating system's `codename`, and a `packages` list of the installed builds
+of PHP, Apache, Nginx, MySQL, MariaDB and PostgreSQL from the Debian and
+Ubuntu package database. Sentinel uses them to check Ubuntu's and Debian's
+own security fixes; older Sentinel releases ignore them. Update the module
+with Composer; no database update or configuration export is needed.
+
 ## Upgrading to 1.3.2
 
 Release `1.3.2` is a patch release with no payload, schema or configuration
@@ -125,7 +134,8 @@ Sentinel matches against known vulnerabilities:
 | `php` | `version`, `sapi` | `PHP_VERSION`, `PHP_SAPI` |
 | `web_server` | `software`, `version`, `raw` | `SERVER_SOFTWARE` of a web request |
 | `database` | `driver`, `product`, `version` | The Drupal database connection; `product` is `mariadb` when the version says MariaDB |
-| `os` | `family`, `distribution`, `release` | `PHP_OS_FAMILY`; `ID` and `VERSION_ID` from `/etc/os-release` |
+| `os` | `family`, `distribution`, `release`, `codename` | `PHP_OS_FAMILY`; `ID`, `VERSION_ID` and `VERSION_CODENAME` from `/etc/os-release` |
+| `packages` | list of `source`, `version` | Installed source packages from `/var/lib/dpkg/status`, only PHP (`php8.3`), `apache2`, `nginx`, MySQL (`mysql-8.0`), MariaDB (`mariadb`, `mariadb-10.11`) and PostgreSQL (`postgresql-16`); at most 20 |
 
 Cron and Drush have no web server, so the module keeps the `SERVER_SOFTWARE`
 of the last web request in state (`sentinel_connector.web_server_software`)
@@ -134,7 +144,9 @@ that report different values do not write state on every request. With the
 version hidden (`server_tokens off`) `version` is left out. The `php` and `os`
 parts describe the process that sends the push: on cron or Drush that is the
 command-line PHP. A value the module cannot read is left out and never fails
-the sync; Sentinel shows it as unknown.
+the sync; Sentinel shows it as unknown. `packages` is read only on Debian and
+Ubuntu (a readable `/var/lib/dpkg/status`); the version is the source
+package's, and a source whose installed packages disagree is left out.
 
 ### Configuration drift
 

@@ -54,14 +54,17 @@ class PlatformCollectorTest extends KernelTestBase {
    *   The os-release files to read.
    * @param \Drupal\Core\Database\Connection|null $database
    *   A database connection, the default one when NULL.
+   * @param string[] $dpkgStatusFiles
+   *   The package databases to read.
    */
-  protected function collector(array $osReleaseFiles = [], ?Connection $database = NULL): PlatformCollector {
+  protected function collector(array $osReleaseFiles = [], ?Connection $database = NULL, array $dpkgStatusFiles = []): PlatformCollector {
     return new PlatformCollector(
       $this->container->get('state'),
       $this->container->get('request_stack'),
       $database ?? $this->container->get('database'),
       $this->container->get('datetime.time'),
       $osReleaseFiles,
+      $dpkgStatusFiles,
     );
   }
 
@@ -242,7 +245,12 @@ class PlatformCollectorTest extends KernelTestBase {
    */
   public function testOsPresent(): void {
     $os = $this->collector([$this->fixtures . '/missing', $this->fixtures . '/debian'])->os();
-    $this->assertSame(['family' => PHP_OS_FAMILY, 'distribution' => 'debian', 'release' => '12'], $os);
+    $this->assertSame([
+      'family' => PHP_OS_FAMILY,
+      'distribution' => 'debian',
+      'release' => '12',
+      'codename' => 'bookworm',
+    ], $os);
 
     // A rolling distribution has no release.
     $os = $this->collector([$this->fixtures . '/arch'])->os();
@@ -254,6 +262,57 @@ class PlatformCollectorTest extends KernelTestBase {
    */
   public function testOsMissing(): void {
     $this->assertSame(['family' => PHP_OS_FAMILY], $this->collector([$this->fixtures . '/missing'])->os());
+  }
+
+  /**
+   * Only the stack's installed source packages are read from dpkg.
+   */
+  public function testPackagesFromDpkg(): void {
+    $dpkg = dirname(__DIR__, 2) . '/fixtures/dpkg';
+    $packages = $this->collector([], NULL, [$dpkg . '/missing', $dpkg . '/status'])->packages();
+    $this->assertSame([
+      // The source version, from the Source field or the binary's Version.
+      ['source' => 'php8.3', 'version' => '8.3.6-0ubuntu0.24.04.3'],
+      ['source' => 'apache2', 'version' => '2.4.58-1ubuntu8.5'],
+      ['source' => 'mariadb', 'version' => '1:10.11.8-0ubuntu0.24.04.1'],
+    ], $packages);
+    // A second architecture of php8.3 and a held apache2 package count once.
+    // nginx (one package removed, one half configured), mysql-8.0 (versions
+    // disagree), and every package outside the stack (php-defaults, openssl)
+    // are left out.
+  }
+
+  /**
+   * Windows line endings, the 20-entry cap and an oversized version.
+   */
+  public function testPackagesEdgeCases(): void {
+    $file = $this->container->get('file_system')->getTempDirectory() . '/sentinel-dpkg-status';
+    // Too long to keep whole: left out, not cut.
+    $stanzas = ["Package: php8.4-cli\nStatus: install ok installed\nSource: php8.4\nVersion: 8.4.1-" . str_repeat('1', 60) . "\n"];
+    foreach (range(1, 25) as $major) {
+      $stanzas[] = "Package: postgresql-$major\r\nStatus: install ok installed\r\nVersion: $major.1-1\r\n";
+    }
+    file_put_contents($file, implode("\r\n", $stanzas));
+    $packages = $this->collector([], NULL, [$file])->packages();
+    $this->assertCount(PlatformCollector::PACKAGES_LIMIT, $packages);
+    $this->assertSame(['source' => 'postgresql-1', 'version' => '1.1-1'], $packages[0]);
+    $this->assertNotContains('php8.4', array_column($packages, 'source'));
+
+    // The last stanza counts without a final newline or blank separator.
+    file_put_contents($file, "Package: nginx\nStatus: install ok installed\nVersion: 1.24.0-1");
+    $this->assertSame([['source' => 'nginx', 'version' => '1.24.0-1']], $this->collector([], NULL, [$file])->packages());
+
+    // A directory is not a package database.
+    $this->assertSame([], $this->collector([], NULL, [dirname($file)])->packages());
+    unlink($file);
+  }
+
+  /**
+   * Without a package database there is no packages part.
+   */
+  public function testPackagesMissing(): void {
+    $this->assertSame([], $this->collector([], NULL, ['/nonexistent/dpkg/status'])->packages());
+    $this->assertSame([], $this->collector()->packages());
   }
 
   /**
