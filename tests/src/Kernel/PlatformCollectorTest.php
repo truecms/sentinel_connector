@@ -6,7 +6,9 @@ use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Database\Connection;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\EventSubscriber\WebServerSubscriber;
+use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\sentinel_connector\PlatformCollector;
+use Drupal\sentinel_connector\SyncService;
 use GuzzleHttp\Client;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Handler\MockHandler;
@@ -44,6 +46,7 @@ class PlatformCollectorTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->setSetting('sentinel_connector.api_base_url', 'https://sentinel.example.com');
     $this->fixtures = dirname(__DIR__, 2) . '/fixtures/os-release';
   }
 
@@ -332,10 +335,7 @@ class PlatformCollectorTest extends KernelTestBase {
    */
   public function testSyncSendsPlatform(): void {
     $this->config('sentinel_connector.settings')
-      ->set('api_base_url', 'https://sentinel.example.com')
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
-      ->set('site_url', 'https://example.com')
-      ->set('site_name', 'Example')
       ->set('report_scope', 'all')
       ->set('enabled', TRUE)
       ->save();
@@ -351,10 +351,40 @@ class PlatformCollectorTest extends KernelTestBase {
     $result = $this->container->get('Drupal\sentinel_connector\SyncService')->sync();
     $this->assertTrue($result->isOk());
     $body = json_decode((string) $transactions[0]['request']->getBody(), TRUE);
-    $this->assertSame(3, $body['schema_version']);
+    $this->assertSame(4, $body['schema_version']);
+    $this->assertSame('enabled', $body['platform_reporting']);
     $this->assertSame(['version' => PHP_VERSION, 'sapi' => PHP_SAPI], $body['platform']['php']);
     $this->assertSame('nginx/1.24.0', $body['platform']['web_server']['raw']);
     $this->assertSame($this->container->get('database')->driver(), $body['platform']['database']['driver']);
+  }
+
+  /**
+   * Platform reporting off: the stack is not read and no block is sent.
+   */
+  public function testPlatformReportingOff(): void {
+    $this->config('sentinel_connector.settings')
+      ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
+      ->set('report_platform', FALSE)
+      ->save();
+    $this->container->get('state')->set('sentinel_connector.api_key', 'sk_test');
+    $collector = $this->createMock(PlatformCollector::class);
+    $collector->expects($this->never())->method('collect');
+    $this->container->set(PlatformCollector::class, $collector);
+    // Built again, with the setting and the collector above.
+    $this->container->set('sentinel_connector.payload_builder_factory', NULL);
+    $this->container->set(PayloadBuilder::class, NULL);
+    $this->container->set(SyncService::class, NULL);
+
+    $transactions = [];
+    $stack = HandlerStack::create(new MockHandler([new HttpResponse(200, [], '{"message":"ok"}')]));
+    $stack->push(Middleware::history($transactions));
+    $this->container->set('http_client', new Client(['handler' => $stack]));
+
+    $this->assertTrue($this->container->get(SyncService::class)->sync()->isOk());
+    $body = json_decode((string) $transactions[0]['request']->getBody(), TRUE);
+    $this->assertArrayNotHasKey('platform', $body);
+    $this->assertSame('disabled', $body['platform_reporting']);
+    $this->assertSame(PHP_VERSION, $body['drupal_info']['php_version']);
   }
 
 }

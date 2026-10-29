@@ -44,12 +44,10 @@ class ConfigDriftCollectorTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->setSetting('sentinel_connector.api_base_url', 'https://sentinel.example.com');
     $this->installConfig(['system', 'sentinel_connector']);
     $this->config('sentinel_connector.settings')
-      ->set('api_base_url', 'https://sentinel.example.com')
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
-      ->set('site_url', 'https://example.com')
-      ->set('site_name', 'Example')
       ->save();
     $this->container->get('state')->set('sentinel_connector.api_key', 'sk_test');
     $this->syncDirectory = (string) Settings::get('config_sync_directory');
@@ -410,7 +408,7 @@ class ConfigDriftCollectorTest extends KernelTestBase {
     $raw = $this->push(TRUE);
     $this->assertStringNotContainsString('secret_value_marker', $raw);
     $body = json_decode($raw, TRUE);
-    $this->assertSame(3, $body['schema_version']);
+    $this->assertSame(4, $body['schema_version']);
     $this->assertSame('complete', $body['config_drift']['status']);
     $this->assertSame(
       ['system.action.code_only', 'system.action.planted', 'system.site'],

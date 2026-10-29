@@ -146,10 +146,27 @@ class PayloadBuilderTest extends TestCase {
 
     $this->assertEqualsCanonicalizing(['token', 'my_custom'], $names($this->builder($extensions)->build('all')));
     $this->assertSame('all', $this->builder($extensions)->build('all')['inventory_scope']);
-    $this->assertEqualsCanonicalizing(['token', 'my_custom'], $names($this->builder($extensions)->build('contrib_custom')));
-    $this->assertEqualsCanonicalizing(['token'], $names($this->builder($extensions)->build('contrib')));
-    $this->assertSame('contrib', $this->builder($extensions)->build('contrib')['inventory_scope']);
-    $this->assertSame('contrib_custom', $this->builder($extensions)->build('contrib_custom')['inventory_scope']);
+    $this->assertEqualsCanonicalizing(['token'], $names($this->builder($extensions)->build('core_contrib')));
+    $this->assertSame('core_contrib', $this->builder($extensions)->build('core_contrib')['inventory_scope']);
+    // Unknown values, the legacy ones too, count as 'all'.
+    foreach (['contrib_custom', 'contrib', 'nonsense', ''] as $scope) {
+      $payload = $this->builder($extensions)->build($scope);
+      $this->assertSame('all', $payload['inventory_scope'], $scope);
+      $this->assertEqualsCanonicalizing(['token', 'my_custom'], $names($payload), $scope);
+    }
+  }
+
+  /**
+   * Saved scopes from before payload v4 map to their replacements.
+   */
+  public function testLegacyScopesAreMapped(): void {
+    $this->assertSame('all', PayloadBuilder::normaliseScope('contrib_custom'));
+    $this->assertSame('core_contrib', PayloadBuilder::normaliseScope('contrib'));
+    $this->assertSame('all', PayloadBuilder::normaliseScope('all'));
+    $this->assertSame('core_contrib', PayloadBuilder::normaliseScope('core_contrib'));
+    $this->assertSame('all', PayloadBuilder::normaliseScope(NULL));
+    $this->assertSame('all', PayloadBuilder::normaliseScope('CONTRIB'));
+    $this->assertSame('all', PayloadBuilder::normaliseScope(['contrib']));
   }
 
   /**
@@ -253,8 +270,8 @@ class PayloadBuilderTest extends TestCase {
     $this->assertSame(['contrib', NULL], $identity('odd'));
     $this->assertSame(['custom', NULL], $identity('pathauto'));
 
-    // The 'contrib' scope now keeps Composer-identified modules.
-    $names = array_column($this->builder($extensions, $packages)->build('contrib')['modules'], 'machine_name');
+    // The 'core_contrib' scope keeps Composer-identified modules.
+    $names = array_column($this->builder($extensions, $packages)->build('core_contrib')['modules'], 'machine_name');
     $this->assertEqualsCanonicalizing(['token', 'admin_toolbar', 'odd'], $names);
   }
 
@@ -355,12 +372,29 @@ class PayloadBuilderTest extends TestCase {
     $list->method('getList')->willReturn([]);
 
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4'))->build('all');
-    $this->assertSame(3, $payload['schema_version']);
+    $this->assertSame(4, $payload['schema_version']);
     $this->assertArrayNotHasKey('platform', $payload);
+    $this->assertSame('enabled', $payload['platform_reporting']);
 
     $platform = ['php' => ['version' => '8.3.0', 'sapi' => 'fpm-fcgi']];
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform))->build('all');
     $this->assertSame($platform, $payload['platform']);
+    $this->assertSame('enabled', $payload['platform_reporting']);
+  }
+
+  /**
+   * Platform reporting turned off: no platform block, PHP still sent.
+   */
+  public function testPlatformReportingOff(): void {
+    $list = $this->createMock(ModuleExtensionList::class);
+    $list->method('reset')->willReturnSelf();
+    $list->method('getList')->willReturn([]);
+
+    $platform = ['php' => ['version' => '8.3.0', 'sapi' => 'fpm-fcgi'], 'os' => ['id' => 'debian']];
+    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform, NULL, FALSE))->build('all');
+    $this->assertArrayNotHasKey('platform', $payload);
+    $this->assertSame('disabled', $payload['platform_reporting']);
+    $this->assertSame('8.3.0', $payload['drupal_info']['php_version']);
   }
 
   /**
@@ -394,9 +428,9 @@ class PayloadBuilderTest extends TestCase {
     $this->assertCount(0, $calls);
     $payload = $builder->build('all');
     $this->assertSame($drift, $payload['config_drift']);
-    $this->assertSame(3, $payload['schema_version']);
+    $this->assertSame(4, $payload['schema_version']);
     // The sync and its change check see the same drift, compared once.
-    $this->assertSame($drift, $builder->build('contrib')['config_drift']);
+    $this->assertSame($drift, $builder->build('core_contrib')['config_drift']);
     $this->assertCount(1, $calls);
 
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, [], fn () => NULL))->build('all');

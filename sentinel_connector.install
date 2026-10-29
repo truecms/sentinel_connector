@@ -6,9 +6,11 @@
  */
 
 use Drupal\Core\Hook\Attribute\LegacyRequirementsHook;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyMigrator;
 use Drupal\sentinel_connector\ApiKeyResolver;
 use Drupal\sentinel_connector\Hook\SentinelHooks;
+use Drupal\sentinel_connector\SettingsUpgrade;
 use Drupal\sentinel_connector\SyncService;
 
 /**
@@ -95,4 +97,33 @@ function sentinel_connector_update_10004(): string {
     return (string) t('The Sentinel API key is still saved in State, which is deprecated. Enable the Key module to move it into a key, or select a key on the settings form.');
   }
   return (string) t('No Sentinel API key was saved in State. Nothing to move.');
+}
+
+/**
+ * Remove the API base URL, site URL and site name; map the report scope.
+ */
+function sentinel_connector_update_10005(): string {
+  $config = \Drupal::configFactory()->getEditable('sentinel_connector.settings');
+  [$data, $customUrl] = SettingsUpgrade::apply($config->getRawData());
+  $config->setData($data)->save();
+
+  $messages = [(string) t('Sentinel Connector settings now hold the Site UUID, API key, report scope, configuration drift and platform versions only. Platform versions are still reported; turn this off on the settings form. The report scope is now "@scope".', ['@scope' => $data['report_scope']])];
+  if ($customUrl !== NULL) {
+    // Nothing is sent until the URL is set again for this environment; only
+    // the host is kept, for the message that says so.
+    $host = parse_url($customUrl, PHP_URL_HOST);
+    \Drupal::state()->set(ApiBaseUrlResolver::STATE_LEGACY_HOST, is_string($host) && $host !== '' ? strtolower($host) : 'an unknown host');
+    // The URL may carry a user name or password: it is not repeated.
+    \Drupal::logger('sentinel_connector')->warning('The saved Sentinel API base URL was not the production default and was removed. Nothing is sent until the @settings setting in settings.php or the @env environment variable sets the URL on this environment; set @default there to use production.', [
+      '@settings' => ApiBaseUrlResolver::SETTINGS_KEY,
+      '@env' => ApiBaseUrlResolver::ENV_VAR,
+      '@default' => ApiBaseUrlResolver::DEFAULT_URL,
+    ]);
+    $messages[] = (string) t('The saved Sentinel API base URL was not the production default and was removed. Nothing is sent until the @settings setting in settings.php or the @env environment variable sets the URL on this environment; set @default there to use production.', [
+      '@settings' => ApiBaseUrlResolver::SETTINGS_KEY,
+      '@env' => ApiBaseUrlResolver::ENV_VAR,
+      '@default' => ApiBaseUrlResolver::DEFAULT_URL,
+    ]);
+  }
+  return implode(' ', $messages);
 }

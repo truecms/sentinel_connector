@@ -69,6 +69,10 @@ class PushHealth {
    *   The time service.
    * @param \Drupal\Core\Routing\UrlGeneratorInterface $urlGenerator
    *   The URL generator, for the link to the settings form.
+   * @param \Drupal\sentinel_connector\ApiBaseUrlResolver $urlResolver
+   *   Resolves the API base URL.
+   * @param \Drupal\sentinel_connector\ConnectionChecker $connectionChecker
+   *   Words an invalid URL and holds the last connection check.
    * @param \Drupal\Core\StringTranslation\TranslationInterface $stringTranslation
    *   The string translation service.
    */
@@ -79,6 +83,8 @@ class PushHealth {
     protected StateInterface $state,
     protected TimeInterface $time,
     protected UrlGeneratorInterface $urlGenerator,
+    protected ApiBaseUrlResolver $urlResolver,
+    protected ConnectionChecker $connectionChecker,
     TranslationInterface $stringTranslation,
   ) {
     $this->setStringTranslation($stringTranslation);
@@ -101,8 +107,15 @@ class PushHealth {
       'severity' => class_exists(RequirementSeverity::class) ? RequirementSeverity::from($severity) : $severity,
     ];
 
+    if ($this->syncService->isDisabled()) {
+      // Turned off on purpose, for example on local and CI: not a fault.
+      return $entry(self::SEVERITY_INFO, $this->t('Sending turned off'), $this->t('@message', ['@message' => $this->syncService->disabledMessage()]));
+    }
+    if ($this->urlResolver->getUrl() === NULL) {
+      return $entry(self::SEVERITY_ERROR, $this->t('API base URL not valid'), $this->connectionChecker->invalidUrlMessage());
+    }
     if (!$this->syncService->isConfigured()) {
-      return $entry(self::SEVERITY_ERROR, $this->t('Not configured'), $this->t('No data is sent to Sentinel. Set the API base URL, the site UUID and the API key on the <a href=":url">settings form</a>.', [':url' => $settingsUrl]));
+      return $entry(self::SEVERITY_ERROR, $this->t('Not configured'), $this->t('No data is sent to Sentinel. Set the site UUID and the API key on the <a href=":url">settings form</a>.', [':url' => $settingsUrl]));
     }
 
     $now = $this->time->getCurrentTime();
@@ -191,6 +204,35 @@ class PushHealth {
       ':url' => $settingsUrl,
       '@cron' => $this->cronNote($settingsUrl),
     ]));
+  }
+
+  /**
+   * Builds the status report entry of the last failed connection test.
+   *
+   * A test is reported only while it is the latest word on the connection:
+   * a push accepted after it shows the connection works.
+   *
+   * @return array<string, mixed>|null
+   *   A hook_requirements() warning, or NULL when there is nothing to report.
+   */
+  public function connectionRequirement(): ?array {
+    $last = $this->connectionChecker->lastCheck();
+    if ($last === NULL || $last['outcome'] === ConnectionCheckResult::CONNECTED || $last['outcome'] === ConnectionCheckResult::DISABLED || $this->syncService->isDisabled()) {
+      return NULL;
+    }
+    if ((int) $this->state->get(SyncService::STATE_LAST_ACCEPTED_TIME, 0) > $last['time']) {
+      return NULL;
+    }
+    return [
+      'title' => $this->t('Sentinel Connector connection test'),
+      'value' => $this->t('Last test failed'),
+      'description' => $this->t('@time: @message Use "Test connection" on the <a href=":url">settings form</a> after fixing it.', [
+        '@time' => $this->formatter->formatTime($last['time']),
+        '@message' => $last['message'],
+        ':url' => $this->urlGenerator->generateFromRoute('sentinel_connector.settings'),
+      ]),
+      'severity' => class_exists(RequirementSeverity::class) ? RequirementSeverity::from(self::SEVERITY_WARNING) : self::SEVERITY_WARNING,
+    ];
   }
 
   /**

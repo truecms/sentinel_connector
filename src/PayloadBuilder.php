@@ -23,8 +23,23 @@ class PayloadBuilder {
    * Sync payload contract version.
    *
    * Version 2 adds the platform block, version 3 the config_drift block.
+   * Version 4 sends the site block without url and name, adds the
+   * core_contrib scope and the platform_reporting field.
    */
-  public const SCHEMA_VERSION = 3;
+  public const SCHEMA_VERSION = 4;
+
+  /**
+   * The report scopes: everything, or core and contrib without custom.
+   */
+  public const SCOPES = ['all', 'core_contrib'];
+
+  /**
+   * Scopes saved before payload version 4, and the scope each became.
+   *
+   * Core is reported by version in every scope, so 'contrib_custom' always
+   * sent what 'all' sends.
+   */
+  public const LEGACY_SCOPES = ['contrib_custom' => 'all', 'contrib' => 'core_contrib'];
 
   /**
    * Constructs a PayloadBuilder.
@@ -44,6 +59,9 @@ class PayloadBuilder {
    * @param \Closure|null $configDrift
    *   Returns the config_drift block, or NULL to leave it out. Called on the
    *   first build only: the comparison exports the whole configuration.
+   * @param bool $platformReporting
+   *   FALSE when the site owner turned off platform reporting: no platform
+   *   block is sent, and the payload says so.
    */
   public function __construct(
     protected ModuleExtensionList $moduleList,
@@ -53,7 +71,22 @@ class PayloadBuilder {
     protected ?ComposerProjectResolver $composerProjects = NULL,
     protected array $platform = [],
     protected ?\Closure $configDrift = NULL,
+    protected bool $platformReporting = TRUE,
   ) {}
+
+  /**
+   * Brings a saved report scope into one of SCOPES.
+   *
+   * A scope saved before payload version 4 becomes its replacement, so a
+   * site that left out custom modules never starts sending them. Anything
+   * else becomes 'all'.
+   */
+  public static function normaliseScope(mixed $scope): string {
+    if (is_string($scope) && isset(self::LEGACY_SCOPES[$scope])) {
+      return self::LEGACY_SCOPES[$scope];
+    }
+    return is_string($scope) && in_array($scope, self::SCOPES, TRUE) ? $scope : 'all';
+  }
 
   /**
    * The config_drift block of the first build, FALSE before it.
@@ -69,14 +102,15 @@ class PayloadBuilder {
    * Sub-modules are folded into the module whose directory contains them.
    *
    * @param string $scope
-   *   One of 'all', 'contrib_custom', 'contrib'.
+   *   'all', or 'core_contrib' to leave out custom modules. Any other value
+   *   counts as 'all'.
    *
    * @return array<string, mixed>
    *   The full DrupalSiteSync-shaped payload, minus the 'site' block which the
    *   caller fills from config.
    */
   public function build(string $scope): array {
-    $scope = in_array($scope, ['all', 'contrib_custom', 'contrib'], TRUE) ? $scope : 'all';
+    $scope = in_array($scope, self::SCOPES, TRUE) ? $scope : 'all';
     $extensions = array_filter(
       $this->moduleList->reset()->getList(),
       fn(Extension $extension): bool => !$this->isCore($extension),
@@ -105,7 +139,7 @@ class PayloadBuilder {
         $project = $this->normaliseProject($package);
       }
       $type = $packaged ? 'contrib' : 'custom';
-      if ($scope === 'contrib' && $type !== 'contrib') {
+      if ($scope === 'core_contrib' && $type !== 'contrib') {
         continue;
       }
       $version = $info['version'] ?? NULL;
@@ -143,9 +177,10 @@ class PayloadBuilder {
       'inventory_scope' => $scope,
       'connector_version' => self::CONNECTOR_VERSION,
       'schema_version' => self::SCHEMA_VERSION,
+      'platform_reporting' => $this->platformReporting ? 'enabled' : 'disabled',
     ];
     // PHP encodes an empty array as a list, which is not an object.
-    if ($this->platform !== []) {
+    if ($this->platformReporting && $this->platform !== []) {
       $payload['platform'] = $this->platform;
     }
     if ($this->drift === FALSE) {

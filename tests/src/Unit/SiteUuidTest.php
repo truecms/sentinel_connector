@@ -7,8 +7,12 @@ use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\SendingSwitch;
+use Drupal\sentinel_connector\SiteUuidResolver;
 use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\sentinel_connector\SentinelClient;
 use Drupal\sentinel_connector\SiteUuid;
@@ -190,10 +194,7 @@ class SiteUuidTest extends TestCase {
    */
   private function push(string $stored, array $responses, string $trigger = SyncService::TRIGGER_FORM): SyncResult {
     $settings = [
-      'api_base_url' => 'https://sentinel.example.com',
       'site_uuid' => $stored,
-      'site_url' => 'https://example.com',
-      'site_name' => 'Example',
       'report_scope' => 'all',
       'enabled' => TRUE,
     ];
@@ -224,7 +225,7 @@ class SiteUuidTest extends TestCase {
     $stack->push(Middleware::history($this->transactions));
     $client = new SentinelClient(new Client(['handler' => $stack]), $time);
 
-    return (new SyncService($configFactory, $state, $builder, $resolver, $client, $time, $logger))->sync($trigger);
+    return (new SyncService($configFactory, $state, $builder, $resolver, $client, $time, $logger, new ApiBaseUrlResolver($siteSettings = new Settings([ApiBaseUrlResolver::SETTINGS_KEY => 'https://sentinel.example.com'])), new SiteUuidResolver($siteSettings, $configFactory), new SendingSwitch($siteSettings)))->sync($trigger);
   }
 
 }

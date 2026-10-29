@@ -42,6 +42,10 @@ final class SyncController extends ControllerBase {
    * Run a sync and redirect back to the settings form with a status message.
    */
   public function syncNow(): RedirectResponse {
+    if ($this->syncService->isDisabled()) {
+      $this->messenger()->addStatus($this->syncService->disabledMessage());
+      return new RedirectResponse(Url::fromRoute('sentinel_connector.settings')->toString());
+    }
     $result = $this->syncService->sync(SyncService::TRIGGER_FORM);
     if ($result->isOk()) {
       $this->messenger()->addStatus($this->t('Sentinel sync: @msg', ['@msg' => $result->message]));
