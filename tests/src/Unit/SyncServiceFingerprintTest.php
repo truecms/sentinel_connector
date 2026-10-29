@@ -7,8 +7,12 @@ use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\SendingSwitch;
+use Drupal\sentinel_connector\SiteUuidResolver;
 use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\sentinel_connector\SentinelClient;
 use Drupal\sentinel_connector\SyncResult;
@@ -40,11 +44,6 @@ class SyncServiceFingerprintTest extends TestCase {
    * @var array<string, mixed>|null
    */
   private ?array $payload = NULL;
-
-  /**
-   * The site name in config.
-   */
-  private string $siteName = 'Example';
 
   /**
    * The API base URL in config.
@@ -156,7 +155,7 @@ class SyncServiceFingerprintTest extends TestCase {
       'drift change type' => [fn (self $t) => $t->payload['config_drift']['objects'][0]['change'] = 'delete'],
       'drift status' => [fn (self $t) => $t->payload['config_drift']['status'] = 'unavailable'],
       'config_pr enabled' => [fn (self $t) => $t->payload['config_drift']['config_pr_enabled'] = TRUE],
-      'site name' => [fn (self $t) => $t->siteName = 'Renamed'],
+      'platform reporting' => [fn (self $t) => $t->payload['platform_reporting'] = 'disabled'],
       'api base url' => [fn (self $t) => $t->apiBaseUrl = 'https://sentinel.example.org'],
     ];
   }
@@ -397,10 +396,7 @@ class SyncServiceFingerprintTest extends TestCase {
   private function service(): SyncService {
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')->willReturnCallback(fn (string $key) => [
-      'api_base_url' => $this->apiBaseUrl,
       'site_uuid' => '11111111-1111-4111-8111-111111111111',
-      'site_url' => 'https://example.com',
-      'site_name' => $this->siteName,
       'report_scope' => 'all',
       'enabled' => TRUE,
     ][$key] ?? NULL);
@@ -442,7 +438,11 @@ class SyncServiceFingerprintTest extends TestCase {
       $this->errors++;
     });
 
-    return new SyncService($configFactory, $state, $builder, $resolver, $client, $time, $logger);
+    // The URL in use is read on every call, as settings.php is.
+    $urlResolver = $this->createMock(ApiBaseUrlResolver::class);
+    $urlResolver->method('getUrl')->willReturnCallback(fn (): ?string => ApiBaseUrlResolver::validate($this->apiBaseUrl)[0]);
+
+    return new SyncService($configFactory, $state, $builder, $resolver, $client, $time, $logger, $urlResolver, new SiteUuidResolver($settings = new Settings([]), $configFactory), new SendingSwitch($settings));
   }
 
 }

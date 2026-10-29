@@ -1,3 +1,27 @@
+# Release 1.4.0: minimal settings and several environments
+
+1.4.0 sends payload v4 (#45). It depends on Sentinel truecms/sentinel#1613:
+
+1. Deploy Sentinel #1613 Part A (payload v4 and
+   `POST /api/v1/sites/{site_uuid}/connection-check`) to production, and
+   publish the knowledge base article
+   `use-the-sentinel-connector-on-several-environments` that the settings
+   form links to.
+2. Confirm `https://ingest.sentinelconnector.io` serves both routes: it is
+   the connector's built-in default.
+3. Only then tag 1.4.0 and publish it on Drupal.org. Date the changelog first
+   and run `php scripts/check-release.php 1.4.0`.
+
+Before tagging, on a canary site with a UAT Sentinel:
+
+- `drush updb` runs update `10005`; a saved UAT base URL is logged as a
+  warning. Set `SENTINEL_CONNECTOR_API_BASE_URL` and run
+  `drush sentinel_connector:check`: it reports "Connected to Sentinel UAT".
+- An accepted push carries `schema_version: 4`, a `site` block with the UUID
+  only, and `platform_reporting`.
+- With `SENTINEL_CONNECTOR_DISABLED=1`, `drush sentinel_connector:deploy`
+  exits 0 and sends nothing.
+
 # Release 1.3.0: configuration drift
 
 1.2.0 is already published with Drupal 12 compatibility and payload v2.

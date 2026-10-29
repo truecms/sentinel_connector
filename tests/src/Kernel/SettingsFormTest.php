@@ -9,7 +9,15 @@ use Drupal\Core\Site\Settings;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\ApiKeyMigrator;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\ConnectionChecker;
+use Drupal\sentinel_connector\Controller\SyncController;
 use Drupal\sentinel_connector\Form\SettingsForm;
+use Drupal\sentinel_connector\SentinelClient;
+use GuzzleHttp\Client;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
+use GuzzleHttp\Psr7\Response;
 use Drupal\Tests\user\Traits\UserCreationTrait;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
@@ -39,12 +47,10 @@ class SettingsFormTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->setSetting('sentinel_connector.api_base_url', 'https://sentinel.example.com');
     $this->installConfig(['sentinel_connector']);
     $this->config('sentinel_connector.settings')
-      ->set('api_base_url', 'https://sentinel.example.com')
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
-      ->set('site_url', 'https://example.com')
-      ->set('site_name', 'Example')
       ->save();
     $this->container->get('router.builder')->rebuild();
   }
@@ -135,8 +141,8 @@ class SettingsFormTest extends KernelTestBase {
     $state = \Drupal::state();
     $state->set(ApiKeyResolver::STATE_KEY, self::SAVED_KEY);
 
-    $this->submitSettingsForm(['site_name' => 'Renamed', 'api_key_state' => '']);
-    $this->assertSame('Renamed', $this->config('sentinel_connector.settings')->get('site_name'));
+    $this->submitSettingsForm(['report_scope' => 'core_contrib', 'api_key_state' => '']);
+    $this->assertSame('core_contrib', $this->config('sentinel_connector.settings')->get('report_scope'));
     $this->assertSame(self::SAVED_KEY, $state->get(ApiKeyResolver::STATE_KEY));
 
     $this->submitSettingsForm(['api_key_state' => 'sk_new_9876543210']);
@@ -187,11 +193,8 @@ class SettingsFormTest extends KernelTestBase {
     $config = $this->config('sentinel_connector.settings');
     $form_state = (new FormState())->setValues([
       'enabled' => $config->get('enabled'),
-      'api_base_url' => $config->get('api_base_url'),
       'site_uuid' => $entered,
-      'site_url' => $config->get('site_url'),
-      'site_name' => 'Must not be saved',
-      'report_scope' => $config->get('report_scope'),
+      'report_scope' => 'core_contrib',
     ]);
     \Drupal::formBuilder()->submitForm(SettingsForm::class, $form_state);
 
@@ -201,7 +204,7 @@ class SettingsFormTest extends KernelTestBase {
     $this->assertStringContainsString('123e4567-e89b-42d3-a456-426614174000', (string) $errors['site_uuid']);
     $stored = $this->config('sentinel_connector.settings');
     $this->assertSame('11111111-1111-4111-8111-111111111111', $stored->get('site_uuid'));
-    $this->assertSame('Example', $stored->get('site_name'));
+    $this->assertSame('all', $stored->get('report_scope'));
   }
 
   /**
@@ -250,6 +253,42 @@ class SettingsFormTest extends KernelTestBase {
   }
 
   /**
+   * Update 10005 removes the connection settings and maps the scope.
+   */
+  public function testUpdateMinimisesSettings(): void {
+    // Written to storage directly: the schema no longer knows the keys.
+    $storage = $this->container->get('config.storage');
+    $old = $storage->read('sentinel_connector.settings');
+    unset($old['report_platform']);
+    $storage->write('sentinel_connector.settings', [
+      'api_base_url' => 'https://uat-ingest.sentinelconnector.io',
+      'site_url' => 'https://example.com',
+      'site_name' => 'Example',
+      'report_scope' => 'contrib',
+    ] + $old);
+    $this->container->get('config.factory')->reset('sentinel_connector.settings');
+
+    $this->container->get('module_handler')->loadInclude('sentinel_connector', 'install');
+    $message = sentinel_connector_update_10005();
+
+    $saved = $storage->read('sentinel_connector.settings');
+    foreach (['api_base_url', 'site_url', 'site_name'] as $removed) {
+      $this->assertArrayNotHasKey($removed, $saved);
+    }
+    $this->assertSame('core_contrib', $saved['report_scope']);
+    $this->assertTrue($saved['report_platform']);
+    $this->assertSame('11111111-1111-4111-8111-111111111111', $saved['site_uuid']);
+    // The site must move its non-production URL to settings.php.
+    $this->assertStringContainsString('was not the production default', $message);
+    $this->assertStringContainsString('the sentinel_connector.api_base_url setting in settings.php', $message);
+    $this->assertStringNotContainsString('uat-ingest', $message);
+
+    // A second run changes nothing and warns about nothing.
+    $this->assertStringNotContainsString('production default', sentinel_connector_update_10005());
+    $this->assertSame($saved, $storage->read('sentinel_connector.settings'));
+  }
+
+  /**
    * Enabling the Key module moves a State key into a key.
    */
   public function testEnablingKeyMovesStateKey(): void {
@@ -274,7 +313,6 @@ class SettingsFormTest extends KernelTestBase {
     $this->setUpSyncUser(['trigger sentinel sync']);
     // A fresh install: nothing saved yet.
     $this->config('sentinel_connector.settings')
-      ->set('api_base_url', '')
       ->set('site_uuid', '')
       ->save();
     $this->assertFalse($this->buildSettingsForm()['actions']['sync_now']['#access']);
@@ -282,10 +320,7 @@ class SettingsFormTest extends KernelTestBase {
     // A submission that fails validation saves nothing.
     $form_state = (new FormState())->setValues([
       'enabled' => FALSE,
-      'api_base_url' => 'https://sentinel.example.com',
       'site_uuid' => 'not-a-uuid',
-      'site_url' => 'https://example.com',
-      'site_name' => 'Example',
       'report_scope' => 'all',
       'api_key_state' => 'sk_new_9876543210',
     ]);
@@ -295,7 +330,6 @@ class SettingsFormTest extends KernelTestBase {
 
     // Saved without an API key: a push could not be sent yet.
     $this->submitSettingsForm([
-      'api_base_url' => 'https://sentinel.example.com',
       'site_uuid' => '11111111-1111-4111-8111-111111111111',
     ]);
     $this->assertFalse($this->buildSettingsForm()['actions']['sync_now']['#access']);
@@ -325,6 +359,195 @@ class SettingsFormTest extends KernelTestBase {
     \Drupal::state()->set(ApiKeyResolver::STATE_KEY, self::SAVED_KEY);
 
     $this->assertFalse($this->buildSettingsForm()['actions']['sync_now']['#access']);
+  }
+
+  /**
+   * The form saves only the settings it still has.
+   */
+  public function testFormSavesOnlyRemainingKeys(): void {
+    // A site updated without running update 10005 yet.
+    $this->config('sentinel_connector.settings')->set('report_scope', 'contrib')->save();
+    $form = $this->buildSettingsForm();
+    foreach (['site_url', 'site_name', 'api_key'] as $removed) {
+      $this->assertArrayNotHasKey($removed, $form);
+    }
+    $this->assertSame('item', $form['api_base_url']['#type']);
+    // The legacy scope shows as its replacement.
+    $this->assertSame('core_contrib', $form['report_scope']['#default_value']);
+    $this->assertSame(['all', 'core_contrib'], array_keys($form['report_scope']['#options']));
+    $this->assertTrue($form['report_platform']['#default_value']);
+    $this->assertStringContainsString('The PHP version is always sent', (string) $form['report_platform']['#description']);
+
+    // NULL unchecks a checkbox in a programmed submission.
+    $this->submitSettingsForm([
+      'report_scope' => 'core_contrib',
+      'report_platform' => NULL,
+      'api_base_url' => 'https://evil.example.com',
+    ]);
+    $saved = $this->config('sentinel_connector.settings')->getRawData();
+    unset($saved['_core']);
+    $this->assertSame([
+      'site_uuid' => '11111111-1111-4111-8111-111111111111',
+      'report_scope' => 'core_contrib',
+      'enabled' => FALSE,
+      'report_config_drift' => TRUE,
+      'report_platform' => FALSE,
+      'api_key_id' => '',
+    ], $saved);
+  }
+
+  /**
+   * The API base URL is shown read-only with its source.
+   */
+  public function testApiBaseUrlIsReadOnly(): void {
+    $markup = (string) $this->buildSettingsForm()['api_base_url']['#markup'];
+    $this->assertStringContainsString('https://sentinel.example.com', $markup);
+    $this->assertStringContainsString('from settings.php', $markup);
+
+    $this->setSetting('sentinel_connector.api_base_url', NULL);
+    $markup = (string) $this->buildSettingsForm()['api_base_url']['#markup'];
+    $this->assertStringContainsString('https://ingest.sentinelconnector.io', $markup);
+    $this->assertStringContainsString('Default', $markup);
+
+    // An invalid override: the form says why, and saving still works.
+    $this->setSetting('sentinel_connector.api_base_url', 'https://ingest.sentinelconnector.io/api/v1/sites/3f6c/modules/sync');
+    $form = $this->buildSettingsForm();
+    $this->assertStringContainsString('Not valid', (string) $form['api_base_url']['#markup']);
+    $this->assertStringContainsString('Use the base URL, not the sync endpoint', (string) $form['api_base_url_error']['#markup']);
+    $this->submitSettingsForm(['report_scope' => 'core_contrib']);
+    $this->assertSame('core_contrib', $this->config('sentinel_connector.settings')->get('report_scope'));
+    $warnings = \Drupal::messenger()->messagesByType('warning');
+    $this->assertStringContainsString('Nothing is sent until this is fixed', (string) end($warnings));
+  }
+
+  /**
+   * A Site UUID from settings.php is shown read-only and never overwritten.
+   */
+  public function testSiteUuidOverrideIsReadOnly(): void {
+    $this->setSetting('sentinel_connector.site_uuid', '22222222-2222-4222-8222-222222222222');
+    $form = $this->buildSettingsForm();
+    $this->assertSame('item', $form['site_uuid']['#type']);
+    $this->assertStringContainsString('22222222-2222-4222-8222-222222222222', (string) $form['site_uuid']['#markup']);
+    $this->assertStringContainsString('from settings.php', (string) $form['site_uuid']['#markup']);
+
+    $this->submitSettingsForm(['site_uuid' => 'ignored']);
+    $this->assertSame('11111111-1111-4111-8111-111111111111', $this->config('sentinel_connector.settings')->get('site_uuid'));
+  }
+
+  /**
+   * The off switch hides both buttons and says why.
+   */
+  public function testOffSwitchHidesButtons(): void {
+    $this->setUpSyncUser(['trigger sentinel sync']);
+    \Drupal::state()->set(ApiKeyResolver::STATE_KEY, self::SAVED_KEY);
+    $form = $this->buildSettingsForm();
+    $this->assertTrue($form['actions']['sync_now']['#access']);
+    $this->assertTrue($form['actions']['test_connection']['#access']);
+    $this->assertArrayNotHasKey('sending_disabled', $form);
+
+    $this->setSetting('sentinel_connector.disabled', TRUE);
+    $form = $this->buildSettingsForm();
+    $this->assertFalse($form['actions']['sync_now']['#access']);
+    $this->assertFalse($form['actions']['test_connection']['#access']);
+    $this->assertStringContainsString('Sending is turned off for this environment', (string) $form['sending_disabled']['#markup']);
+
+    // "Sync now" reached directly sends nothing.
+    $response = SyncController::create($this->container)->syncNow();
+    $this->assertStringContainsString('/admin/config/services/sentinel-connector', $response->getTargetUrl());
+    $this->assertNull(\Drupal::state()->get('sentinel_connector.last_attempt_time'));
+    $status = \Drupal::messenger()->messagesByType('status');
+    $this->assertStringContainsString('Sending is turned off', (string) end($status));
+  }
+
+  /**
+   * The "Test connection" button needs the "Sync now" permission.
+   */
+  public function testTestConnectionNeedsThePermission(): void {
+    $this->setUpSyncUser([]);
+    \Drupal::state()->set(ApiKeyResolver::STATE_KEY, self::SAVED_KEY);
+    $this->assertFalse($this->buildSettingsForm()['actions']['test_connection']['#access']);
+
+    $transactions = $this->fakeSentinel([new Response(200, [], '{"ok": true, "environment": "production"}')]);
+    $form = [];
+    SettingsForm::create($this->container)->testConnection($form, new FormState());
+    $this->assertCount(0, $transactions);
+    $this->assertNotEmpty(\Drupal::messenger()->messagesByType('error'));
+  }
+
+  /**
+   * The "Test connection" button gives one plain answer for each outcome.
+   *
+   * @dataProvider connectionAnswers
+   */
+  #[DataProvider('connectionAnswers')]
+  public function testConnectionOutcomes(int $code, string $body, string $type, string $expected): void {
+    $this->setUpSyncUser(['trigger sentinel sync']);
+    \Drupal::state()->set(ApiKeyResolver::STATE_KEY, self::SAVED_KEY);
+    $transactions = $this->fakeSentinel([new Response($code, [], $body)]);
+
+    $form = [];
+    SettingsForm::create($this->container)->testConnection($form, new FormState());
+
+    $this->assertCount(1, $transactions);
+    $this->assertStringEndsWith('/api/v1/sites/11111111-1111-4111-8111-111111111111/connection-check', (string) $transactions[0]['request']->getUri());
+    $messages = \Drupal::messenger()->messagesByType($type);
+    $this->assertNotEmpty($messages);
+    $this->assertStringContainsString($expected, (string) end($messages));
+    $this->assertStringNotContainsString(self::SAVED_KEY, (string) end($messages));
+    // Recorded for the status report.
+    $this->assertSame($type === 'status', \Drupal::state()->get(ConnectionChecker::STATE_LAST_CHECK)['outcome'] === 'connected');
+  }
+
+  /**
+   * Answers of Sentinel and of other servers.
+   *
+   * @return array<string, array{int, string, string, string}>
+   *   The status, the body, the message type and a part of the message.
+   */
+  public static function connectionAnswers(): array {
+    return [
+      'connected' => [
+        200,
+        '{"ok": true, "environment": "production"}',
+        'status',
+        'Connected to Sentinel production as this site. The API key and Site UUID are accepted.',
+      ],
+      'not sentinel' => [200, '<html>Hello</html>', 'error', 'No Sentinel API answered at https://sentinel.example.com'],
+      'unknown uuid' => [
+        404,
+        '{"error_code": "site_unavailable", "environment": "uat"}',
+        'warning',
+        'Sentinel UAT does not know this Site UUID. This environment sends to https://sentinel.example.com (set in settings.php).',
+      ],
+      'key refused' => [
+        401,
+        '{"error_code": "api_key_invalid"}',
+        'error',
+        'refused the API key, or the key belongs to another site',
+      ],
+      'subscription' => [402, '{"error_code": "subscription_inactive", "reason": "past_due"}', 'warning', 'payment'],
+      'push limit' => [429, '{"error_code": "push_limit_reached", "retry_after_seconds": 3600}', 'warning', 'push'],
+    ];
+  }
+
+  /**
+   * Replaces the HTTP client with one that gives the responses in order.
+   *
+   * @param \GuzzleHttp\Psr7\Response[] $responses
+   *   The responses.
+   *
+   * @return \ArrayObject<int, array<string, mixed>>
+   *   The requests sent, filled as they are sent.
+   */
+  protected function fakeSentinel(array $responses): \ArrayObject {
+    $transactions = new \ArrayObject();
+    $stack = HandlerStack::create(new MockHandler($responses));
+    $stack->push(Middleware::history($transactions));
+    $this->container->set('http_client', new Client(['handler' => $stack]));
+    // The client service holds the HTTP client it was built with.
+    $this->container->set(SentinelClient::class, NULL);
+    $this->container->set(ConnectionChecker::class, NULL);
+    return $transactions;
   }
 
   /**
@@ -360,10 +583,7 @@ class SettingsFormTest extends KernelTestBase {
     $config = $this->config('sentinel_connector.settings');
     $form_state = (new FormState())->setValues($values + [
       'enabled' => $config->get('enabled'),
-      'api_base_url' => $config->get('api_base_url'),
       'site_uuid' => $config->get('site_uuid'),
-      'site_url' => $config->get('site_url'),
-      'site_name' => $config->get('site_name'),
       'report_scope' => $config->get('report_scope'),
     ]);
     \Drupal::formBuilder()->submitForm(SettingsForm::class, $form_state);

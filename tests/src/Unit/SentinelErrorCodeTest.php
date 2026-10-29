@@ -7,8 +7,12 @@ use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\SendingSwitch;
+use Drupal\sentinel_connector\SiteUuidResolver;
 use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\sentinel_connector\SentinelClient;
 use Drupal\sentinel_connector\SyncResult;
@@ -538,7 +542,7 @@ class SentinelErrorCodeTest extends TestCase {
    * older server does not, so the advice still follows that.
    */
   public function testAdviceIsNotAddedToServerMessage(): void {
-    $advice = 'Check the site URL and site UUID against the site registered in Sentinel.';
+    $advice = 'Check the Site UUID against the site registered in Sentinel.';
     $this->assertSame(
       'The site URL differs. Check the site URL in Sentinel.',
       $this->respond(400, '{"error_code": "site_url_mismatch", "message": "The site URL differs. Check the site URL in Sentinel.", "detail": "Site URL mismatch"}')->message,
@@ -1020,10 +1024,7 @@ class SentinelErrorCodeTest extends TestCase {
     $this->stateValues = [];
     $this->logs = [];
     $settings = [
-      'api_base_url' => 'https://sentinel.example.com',
       'site_uuid' => '11111111-1111-4111-8111-111111111111',
-      'site_url' => 'https://example.com',
-      'site_name' => 'Example',
       'report_scope' => 'all',
       'enabled' => TRUE,
     ];
@@ -1046,7 +1047,7 @@ class SentinelErrorCodeTest extends TestCase {
       $this->logs[] = [$level, (string) $message, $context];
     });
 
-    return (new SyncService($configFactory, $this->state(), $builder, $resolver, $this->client($response), $time, $logger))->sync(SyncService::TRIGGER_CRON);
+    return (new SyncService($configFactory, $this->state(), $builder, $resolver, $this->client($response), $time, $logger, new ApiBaseUrlResolver($siteSettings = new Settings([ApiBaseUrlResolver::SETTINGS_KEY => 'https://sentinel.example.com'])), new SiteUuidResolver($siteSettings, $configFactory), new SendingSwitch($siteSettings)))->sync(SyncService::TRIGGER_CRON);
   }
 
   /**

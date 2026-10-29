@@ -13,8 +13,6 @@
         "site": {
             "type": "object",
             "required": [
-                "url",
-                "name",
                 "uuid"
             ],
             "additionalProperties": false,
@@ -122,6 +120,7 @@
             "type": "string",
             "enum": [
                 "all",
+                "core_contrib",
                 "contrib_custom",
                 "contrib"
             ]
@@ -413,7 +412,15 @@
             "enum": [
                 1,
                 2,
-                3
+                3,
+                4
+            ]
+        },
+        "platform_reporting": {
+            "type": "string",
+            "enum": [
+                "enabled",
+                "disabled"
             ]
         }
     }

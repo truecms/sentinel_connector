@@ -42,12 +42,10 @@ class ApiKeyKeyModuleTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->setSetting('sentinel_connector.api_base_url', 'https://sentinel.example.com');
     $this->installConfig(['sentinel_connector']);
     $this->config('sentinel_connector.settings')
-      ->set('api_base_url', 'https://sentinel.example.com')
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
-      ->set('site_url', 'https://example.com')
-      ->set('site_name', 'Example')
       ->save();
     $this->container->get('router.builder')->rebuild();
     putenv('SENTINEL_KEY_TEST=' . self::KEY_VALUE);
@@ -233,10 +231,7 @@ class ApiKeyKeyModuleTest extends KernelTestBase {
     $config = $this->config('sentinel_connector.settings');
     $form_state = (new FormState())->setValues($values + [
       'enabled' => $config->get('enabled'),
-      'api_base_url' => $config->get('api_base_url'),
       'site_uuid' => $config->get('site_uuid'),
-      'site_url' => $config->get('site_url'),
-      'site_name' => $config->get('site_name'),
       'report_scope' => $config->get('report_scope'),
     ]);
     \Drupal::formBuilder()->submitForm(SettingsForm::class, $form_state);

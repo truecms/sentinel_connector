@@ -62,7 +62,13 @@ class SentinelHooks {
    */
   #[Hook('runtime_requirements')]
   public function runtimeRequirements(): array {
-    return ['sentinel_connector' => $this->container->get(PushHealth::class)->requirement()];
+    $health = $this->container->get(PushHealth::class);
+    $requirements = ['sentinel_connector' => $health->requirement()];
+    $connection = $health->connectionRequirement();
+    if ($connection !== NULL) {
+      $requirements['sentinel_connector_connection'] = $connection;
+    }
+    return $requirements;
   }
 
   /**

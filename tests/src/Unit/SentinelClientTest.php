@@ -438,7 +438,7 @@ class SentinelClientTest extends TestCase {
    *   HTTP status, raw body, expected status and expected message.
    */
   public static function refusals(): array {
-    $check = '. Check the site URL and site UUID against the site registered in Sentinel.';
+    $check = '. Check the Site UUID against the site registered in Sentinel.';
     $modules = fn (int $count): array => array_map(fn (int $i): array => [
       'module_name' => 'bad_' . $i,
       'version' => '1.0',

@@ -53,13 +53,11 @@ class PushLimitTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->setSetting('sentinel_connector.api_base_url', 'https://sentinel.example.com');
     $this->installConfig(['sentinel_connector']);
     $this->config('system.date')->set('timezone.default', 'Australia/Sydney')->save();
     $this->config('sentinel_connector.settings')
-      ->set('api_base_url', 'https://sentinel.example.com')
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
-      ->set('site_url', 'https://example.com')
-      ->set('site_name', 'Example')
       ->set('enabled', TRUE)
       ->save();
     \Drupal::state()->set('sentinel_connector.api_key', 'sk_test');
@@ -318,7 +316,7 @@ class PushLimitTest extends KernelTestBase {
 
     // A changed inventory is pushed on the next due run.
     $state->set(SyncService::STATE_LAST_UNCHANGED_TIME, time() - 7200);
-    $this->config('sentinel_connector.settings')->set('site_name', 'Renamed')->save();
+    $this->config('sentinel_connector.settings')->set('report_scope', 'core_contrib')->save();
     $this->container->get('module_handler')->invoke('sentinel_connector', 'cron');
     $this->assertCount(2, $this->transactions);
 

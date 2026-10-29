@@ -18,6 +18,11 @@ final class SyncResult {
   public const SUBSCRIPTION_INACTIVE = 'subscription_inactive';
 
   /**
+   * Machine status of a push not sent because sending is turned off here.
+   */
+  public const DISABLED = 'disabled';
+
+  /**
    * How many module entries a short list names.
    */
   public const MAX_LISTED_MODULES = 5;

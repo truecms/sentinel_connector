@@ -7,8 +7,12 @@ use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\SendingSwitch;
+use Drupal\sentinel_connector\SiteUuidResolver;
 use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\sentinel_connector\SentinelClient;
 use Drupal\sentinel_connector\SyncResult;
@@ -536,10 +540,7 @@ class SyncServicePushLimitTest extends TestCase {
    */
   private function service(bool $enabled = TRUE): SyncService {
     $settings = [
-      'api_base_url' => 'https://sentinel.example.com',
       'site_uuid' => '11111111-1111-4111-8111-111111111111',
-      'site_url' => 'https://example.com',
-      'site_name' => 'Example',
       'report_scope' => 'all',
       'enabled' => $enabled,
     ];
@@ -602,7 +603,7 @@ class SyncServicePushLimitTest extends TestCase {
       }
     });
 
-    return new SyncService($configFactory, $state, $builder, $resolver, $client, $time, $logger);
+    return new SyncService($configFactory, $state, $builder, $resolver, $client, $time, $logger, new ApiBaseUrlResolver($siteSettings = new Settings([ApiBaseUrlResolver::SETTINGS_KEY => 'https://sentinel.example.com'])), new SiteUuidResolver($siteSettings, $configFactory), new SendingSwitch($siteSettings));
   }
 
 }

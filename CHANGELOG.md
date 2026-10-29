@@ -5,7 +5,39 @@ All notable changes to this project are documented here. Versions follow
 
 ## 1.4.0 - Unreleased
 
+Payload v4. Release only after Sentinel accepts payload v4 and serves the
+connection check route (truecms/sentinel#1613).
+
 ### Added
+
+- Settings for several environments (#45). The API base URL, the API key, the
+  Site UUID and a new off switch can come from `settings.php`
+  (`sentinel_connector.api_base_url`, `.api_key`, `.site_uuid`, `.disabled`)
+  or the environment (`SENTINEL_CONNECTOR_API_BASE_URL`, `_API_KEY`,
+  `_SITE_UUID`, `_DISABLED=1`). `settings.php` wins over the environment, the
+  environment over the form. The form shows overridden values read-only with
+  their source.
+- The API base URL defaults to `https://ingest.sentinelconnector.io` and is
+  validated: `https://` only (`http://` for `localhost` and `*.localhost`), no
+  path, query, fragment or credentials, and its own message for a pasted sync
+  endpoint. An invalid value is refused, never replaced by the default.
+- The off switch stops cron, `drush sentinel_connector:sync` and `:deploy`
+  (which exit 0) and "Sync now".
+- "Test connection" on the settings form and `drush sentinel_connector:check`
+  (alias `sc-check`) call Sentinel's connection check route and give one plain
+  answer: connected (with the Sentinel environment), not a Sentinel API, Site
+  UUID not known there, API key refused, or a subscription or push limit. The
+  status report warns while the last check failed.
+- **Report platform versions** (`report_platform`), on by default. Off, the
+  stack is not read and no `platform` block is sent; the PHP version is still
+  sent. The payload always says `platform_reporting: "enabled"` or
+  `"disabled"`.
+- `examples/settings.sentinel_connector.php`, a commented include file for
+  production, non-production, local and CI.
+- Update `10005` removes `api_base_url`, `site_url` and `site_name`, maps the
+  report scope (`contrib_custom` to `all`, `contrib` to `core_contrib`) and
+  turns on `report_platform`. A saved base URL that was not the production
+  default is logged as a warning: set it in `settings.php` or the environment.
 
 - The API key can be stored with the [Key](https://www.drupal.org/project/key)
   module (optional): when Key is enabled, the settings form has a key selector
@@ -19,6 +51,19 @@ All notable changes to this project are documented here. Versions follow
   Key's State provider, so the value is still in the database; its label says
   this is not recommended. Change its provider to a file, an environment
   variable or a vault. Export configuration afterwards (`drush cex`).
+
+### Changed
+
+- Payload `schema_version` 4. The `site` block holds only the `uuid`: the
+  site URL and name are no longer sent.
+- Report scope has two values: `all` (core, contrib and custom) and
+  `core_contrib` (custom modules left out).
+- The settings form asks only for the Site UUID, the API key, the report
+  scope and the two reporting checkboxes.
+
+### Removed
+
+- The API base URL, Site URL and Site name fields and settings.
 
 ### Deprecated
 

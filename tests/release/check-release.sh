@@ -53,7 +53,7 @@ cp "$root/README.md" "$fixture/README.md"
 replace "$fixture/README.md" "## Upgrading to $version" '## Upgrading'
 refuse 'README upgrade instructions must identify the current release.'
 cp "$root/README.md" "$fixture/README.md"
-replace "$fixture/src/PayloadBuilder.php" 'SCHEMA_VERSION = 3' 'SCHEMA_VERSION = 4'
+replace "$fixture/src/PayloadBuilder.php" 'SCHEMA_VERSION = 4' 'SCHEMA_VERSION = 5'
 refuse 'The payload contract fixture must match SCHEMA_VERSION.'
 cp "$root/src/PayloadBuilder.php" "$fixture/src/PayloadBuilder.php"
 printf "\nversion: '1.2.0'\n" >> "$fixture/modules/sentinel_connector_config_pr/sentinel_connector_config_pr.info.yml"

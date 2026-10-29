@@ -7,8 +7,12 @@ use PHPUnit\Framework\Attributes\Group;
 use GuzzleHttp\Middleware;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\Config\ConfigEvents;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\SendingSwitch;
+use Drupal\sentinel_connector\SiteUuidResolver;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
 use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\Core\State\StateInterface;
@@ -44,11 +48,9 @@ class SyncServiceTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->setSetting('sentinel_connector.api_base_url', 'https://sentinel.example.com');
     $this->config('sentinel_connector.settings')
-      ->set('api_base_url', 'https://sentinel.example.com')
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
-      ->set('site_url', 'https://example.com')
-      ->set('site_name', 'Example')
       ->set('report_scope', 'all')
       ->set('enabled', TRUE)
       ->save();
@@ -68,52 +70,78 @@ class SyncServiceTest extends KernelTestBase {
   }
 
   /**
-   * Runtime environment overrides block every push without changing storage.
+   * The off switch blocks every push without changing storage.
    */
-  public function testNonProductionOverridesPreventRequests(): void {
+  public function testOffSwitchPreventsRequests(): void {
     $name = 'sentinel_connector.settings';
     $factory = $this->container->get('config.factory');
+    $this->config($name)->set('enabled', TRUE)->save();
     $stored = $factory->getEditable($name)->getRawData();
-    $originalOverride = $GLOBALS['config'][$name] ?? NULL;
     $transactions = [];
     $stack = HandlerStack::create(new MockHandler([new Response(200, [], '{}')]));
     $stack->push(Middleware::history($transactions));
     $this->container->set('http_client', new Client(['handler' => $stack]));
     $sync = $this->container->get(SyncService::class);
 
-    try {
-      // Drupal reads settings.php $config values from this global array.
-      $GLOBALS['config'][$name] = [
-        'enabled' => FALSE,
-        'api_base_url' => '',
-        'site_uuid' => '',
-      ];
-      $factory->reset($name);
-      $this->assertFalse($sync->cronIsDue(\Drupal::time()->getRequestTime()));
-      $this->assertSame('unconfigured', $sync->sync(SyncService::TRIGGER_FORM)->status);
-      $this->assertSame('unconfigured', $sync->sync(SyncService::TRIGGER_DRUSH)->status);
-      $this->assertSame('unconfigured', $sync->syncIfChanged()->status);
-      $this->assertCount(0, $transactions);
-      $this->assertSame($stored, $factory->getEditable($name)->getRawData());
-      $this->assertSame('sk_test', \Drupal::state()->get(ApiKeyResolver::STATE_KEY));
+    $this->setSetting('sentinel_connector.disabled', TRUE);
+    $this->assertTrue($sync->isDisabled());
+    $this->assertFalse($sync->cronIsDue(\Drupal::time()->getRequestTime() + SyncService::MIN_PUSH_INTERVAL));
+    $this->assertSame(SyncResult::DISABLED, $sync->sync(SyncService::TRIGGER_FORM)->status);
+    $this->assertSame(SyncResult::DISABLED, $sync->sync(SyncService::TRIGGER_DRUSH)->status);
+    $this->assertSame(SyncResult::DISABLED, $sync->syncIfChanged()?->status);
+    \Drupal::service('cron')->run();
+    $this->assertCount(0, $transactions);
+    // Nothing is recorded: the switch is not the outcome of a push.
+    $this->assertNull(\Drupal::state()->get('sentinel_connector.last_attempt_time'));
+    $this->assertSame($stored, $factory->getEditable($name)->getRawData());
 
-      // Production uses the stored connection values and enables cron.
-      $GLOBALS['config'][$name] = ['enabled' => TRUE];
-      $factory->reset($name);
+    // The environment variable works the same; settings.php FALSE wins.
+    $this->setSetting('sentinel_connector.disabled', NULL);
+    putenv('SENTINEL_CONNECTOR_DISABLED=1');
+    try {
+      $this->assertSame(SyncResult::DISABLED, $sync->sync(SyncService::TRIGGER_DRUSH)->status);
+      $this->setSetting('sentinel_connector.disabled', FALSE);
       $this->assertTrue($sync->sync(SyncService::TRIGGER_DRUSH)->isOk());
-      $this->assertCount(1, $transactions);
-      $this->assertSame('sentinel.example.com', $transactions[0]['request']->getUri()->getHost());
-      $this->assertSame($stored, $factory->getEditable($name)->getRawData());
     }
     finally {
-      if ($originalOverride === NULL) {
-        unset($GLOBALS['config'][$name]);
-      }
-      else {
-        $GLOBALS['config'][$name] = $originalOverride;
-      }
-      $factory->reset($name);
+      putenv('SENTINEL_CONNECTOR_DISABLED');
     }
+    $this->assertCount(1, $transactions);
+    $this->assertSame('sentinel.example.com', $transactions[0]['request']->getUri()->getHost());
+  }
+
+  /**
+   * An invalid API base URL override is refused, never replaced.
+   */
+  public function testInvalidUrlOverrideIsRefused(): void {
+    $transactions = [];
+    $stack = HandlerStack::create(new MockHandler([new Response(200, [], '{}')]));
+    $stack->push(Middleware::history($transactions));
+    $this->container->set('http_client', new Client(['handler' => $stack]));
+    $sync = $this->container->get(SyncService::class);
+
+    $this->setSetting('sentinel_connector.api_base_url', 'https://sentinel.example.com/api/v1/sites/x/modules/sync');
+    $this->assertFalse($sync->isConfigured());
+    $result = $sync->sync(SyncService::TRIGGER_DRUSH);
+    $this->assertSame('invalid_url', $result->status);
+    $this->assertStringContainsString('not the sync endpoint', $result->message);
+    $this->assertCount(0, $transactions);
+  }
+
+  /**
+   * The Site UUID from settings.php is sent in place of the saved one.
+   */
+  public function testSiteUuidOverride(): void {
+    $transactions = [];
+    $stack = HandlerStack::create(new MockHandler([new Response(200, [], '{"message": "ok"}')]));
+    $stack->push(Middleware::history($transactions));
+    $this->container->set('http_client', new Client(['handler' => $stack]));
+    $this->setSetting('sentinel_connector.site_uuid', '22222222-2222-4222-8222-222222222222');
+
+    $this->assertTrue($this->container->get(SyncService::class)->sync()->isOk());
+    $request = $transactions[0]['request'];
+    $this->assertStringContainsString('/sites/22222222-2222-4222-8222-222222222222/', (string) $request->getUri());
+    $this->assertSame(['uuid' => '22222222-2222-4222-8222-222222222222'], json_decode((string) $request->getBody(), TRUE)['site']);
   }
 
   /**
@@ -142,8 +170,10 @@ class SyncServiceTest extends KernelTestBase {
     $this->assertSame('sk_test', $request->getHeaderLine('X-API-Key'));
     $body = json_decode((string) $request->getBody(), TRUE);
     $this->assertTrue($body['full_sync']);
-    $this->assertSame('11111111-1111-4111-8111-111111111111', $body['site']['uuid']);
-    $this->assertArrayNotHasKey('token', $body['site']);
+    // Since payload v4 the site is named by its UUID only.
+    $this->assertSame(['uuid' => '11111111-1111-4111-8111-111111111111'], $body['site']);
+    $this->assertSame(4, $body['schema_version']);
+    $this->assertSame('enabled', $body['platform_reporting']);
     $this->assertNotEmpty($body['modules']);
     $this->assertSame('success', \Drupal::state()->get('sentinel_connector.last_result'));
   }
@@ -161,7 +191,7 @@ class SyncServiceTest extends KernelTestBase {
     $this->assertFalse($sync->hasInventoryChanged());
 
     // A narrower report scope sends a different inventory.
-    $this->config('sentinel_connector.settings')->set('report_scope', 'contrib')->save();
+    $this->config('sentinel_connector.settings')->set('report_scope', 'core_contrib')->save();
     $this->assertTrue($sync->hasInventoryChanged());
   }
 
@@ -237,7 +267,7 @@ class SyncServiceTest extends KernelTestBase {
    * Real local refusal is recorded and Drupal cron completes successfully.
    */
   public function testRealConnectionRefusalDoesNotAbortCron(): void {
-    $this->config('sentinel_connector.settings')->set('api_base_url', 'http://127.0.0.1:9')->save();
+    $this->setSetting('sentinel_connector.api_base_url', 'http://localhost:9');
     $this->container->set('http_client', new Client(['connect_timeout' => 1]));
     \Drupal::state()->set('sentinel_connector.last_sync_time', 123);
     $this->assertTrue(\Drupal::service('cron')->run());
@@ -275,14 +305,14 @@ class SyncServiceTest extends KernelTestBase {
   }
 
   /**
-   * Imported malformed URI configuration is a recorded failure.
+   * A malformed URI override is a recorded failure, with no request.
    */
   public function testMalformedUriIsRecorded(): void {
-    $this->config('sentinel_connector.settings')->set('api_base_url', 'http://[broken')->save();
+    $this->setSetting('sentinel_connector.api_base_url', 'http://[broken');
     $this->container->set('http_client', new Client());
     $result = \Drupal::service(SyncService::class)->sync();
-    $this->assertSame('internal_error', $result->status);
-    $this->assertSame('internal_error', \Drupal::state()->get('sentinel_connector.last_result'));
+    $this->assertSame('invalid_url', $result->status);
+    $this->assertSame('invalid_url', \Drupal::state()->get('sentinel_connector.last_result'));
   }
 
   /**
@@ -298,6 +328,9 @@ class SyncServiceTest extends KernelTestBase {
       $this->container->get('Drupal\sentinel_connector\ApiKeyResolver'),
       $this->container->get('Drupal\sentinel_connector\SentinelClient'),
       $this->container->get('datetime.time'), new NullLogger(),
+      $this->container->get(ApiBaseUrlResolver::class),
+      $this->container->get(SiteUuidResolver::class),
+      $this->container->get(SendingSwitch::class),
     );
     $this->assertSame('state_error', $sync->sync()->status);
   }
@@ -420,10 +453,12 @@ class SyncServiceTest extends KernelTestBase {
       'SENTINEL_E2E_ALLOW' => '1',
       'SENTINEL_E2E_API_URL' => 'https://fixture.example.com',
       'SENTINEL_E2E_SITE_UUID' => '22222222-2222-4222-8222-222222222222',
-      'SENTINEL_E2E_SITE_URL' => 'https://fixture-site.example.com',
-      'SENTINEL_E2E_SITE_NAME' => 'Fixture site',
       'SENTINEL_E2E_API_KEY' => 'fixture-key',
     ];
+    // The fixture sets the API base URL through the environment.
+    $settings = Settings::getAll();
+    unset($settings['sentinel_connector.api_base_url']);
+    new Settings($settings);
     $original = [];
     foreach ($environment as $name => $value) {
       $original[$name] = getenv($name);
