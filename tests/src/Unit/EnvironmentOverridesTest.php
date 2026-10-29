@@ -88,6 +88,8 @@ class EnvironmentOverridesTest extends TestCase {
 
   /**
    * The off switch, from settings.php or the environment.
+   *
+   * @dataProvider switchValues
    */
   #[DataProvider('switchValues')]
   public function testSendingSwitch(mixed $setting, ?string $env, ?string $source): void {
@@ -134,6 +136,8 @@ class EnvironmentOverridesTest extends TestCase {
    *   The resulting $settings.
    * @param array<string, mixed> $expectedConfig
    *   The resulting $config.
+   *
+   * @dataProvider exampleEnvironments
    */
   #[DataProvider('exampleEnvironments')]
   public function testExampleFile(array $env, array $expected, array $expectedConfig = []): void {

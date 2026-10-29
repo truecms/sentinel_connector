@@ -56,6 +56,8 @@ class ConnectionCheckTest extends TestCase {
    *   The expected outcome.
    * @param string|null $environment
    *   The expected environment.
+   *
+   * @dataProvider answers
    */
   #[DataProvider('answers')]
   public function testAnswers(int $code, string|array $body, string $outcome, ?string $environment = NULL): void {

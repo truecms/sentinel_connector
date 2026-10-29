@@ -128,6 +128,8 @@ class ApiBaseUrlResolverTest extends TestCase {
 
   /**
    * Valid base URLs and their normalised form.
+   *
+   * @dataProvider validUrls
    */
   #[DataProvider('validUrls')]
   public function testValidUrls(string $value, string $expected): void {
@@ -155,6 +157,8 @@ class ApiBaseUrlResolverTest extends TestCase {
 
   /**
    * Invalid base URLs and the words of their message.
+   *
+   * @dataProvider invalidUrls
    */
   #[DataProvider('invalidUrls')]
   public function testInvalidUrls(string $value, string $message): void {
