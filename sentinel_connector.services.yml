@@ -47,7 +47,7 @@ services:
 
   Drupal\sentinel_connector\ApiBaseUrlResolver:
     class: Drupal\sentinel_connector\ApiBaseUrlResolver
-    arguments: ['@settings']
+    arguments: ['@settings', '@config.factory', '@state']
 
   Drupal\sentinel_connector\SiteUuidResolver:
     class: Drupal\sentinel_connector\SiteUuidResolver

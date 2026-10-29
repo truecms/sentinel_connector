@@ -402,9 +402,9 @@ class SentinelErrorCodeTest extends TestCase {
     foreach (['site_unavailable', 'push_limit_reached', 'brand_new_code'] as $errorCode) {
       $body = ['error_code' => $errorCode, 'message' => 'Moved.'];
       $redirect = $this->push(new Response(302, [], (string) json_encode($body)));
-      $this->assertSame('rejected', $redirect->status);
+      $this->assertSame('invalid_response', $redirect->status);
       $this->assertSame(302, $redirect->httpCode);
-      $this->assertSame('Sentinel rejected the sync.', $redirect->message);
+      $this->assertSame('The Sentinel API base URL redirects elsewhere. Set the final address as the base URL.', $redirect->message);
       $this->assertSame([], $redirect->diagnostics);
       $this->assertSame('no details', $this->logs[0][2]['@details']);
       foreach (self::HOLD_STATE as $key) {

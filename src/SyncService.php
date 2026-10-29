@@ -176,6 +176,20 @@ class SyncService {
   }
 
   /**
+   * Whether a valid Site UUID and an API key are set, whatever the URL.
+   */
+  public function hasSiteCredentials(): bool {
+    return $this->uuidResolver->getUuid() !== NULL && $this->apiKeyResolver->getKey() !== NULL;
+  }
+
+  /**
+   * Whether the API base URL in use is refused.
+   */
+  public function hasInvalidUrl(): bool {
+    return $this->urlResolver->getUrl() === NULL;
+  }
+
+  /**
    * The line that says sending is turned off, and by what.
    */
   public function disabledMessage(): string {
@@ -587,6 +601,9 @@ class SyncService {
    *   The outcome of the push, or NULL when there was nothing to push.
    */
   public function syncIfChanged(): ?SyncResult {
+    if ($this->isDisabled()) {
+      return $this->sync(self::TRIGGER_CRON);
+    }
     if ($this->hasInventoryChanged()) {
       return $this->sync(self::TRIGGER_CRON);
     }

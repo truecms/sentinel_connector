@@ -98,7 +98,8 @@ class ConnectionChecker {
         $result = new ConnectionCheckResult(ConnectionCheckResult::NOT_SENTINEL);
       }
     }
-    $message = (string) $this->message($result);
+    // Plain text: the status report escapes it again.
+    $message = trim(strip_tags(html_entity_decode((string) $this->message($result), ENT_QUOTES | ENT_HTML5)));
     $this->state->set(self::STATE_LAST_CHECK, [
       'outcome' => $result->outcome,
       'message' => $message,
@@ -216,6 +217,9 @@ class ConnectionChecker {
       '@env' => ApiBaseUrlResolver::ENV_VAR,
       '@settings' => "\$settings['" . ApiBaseUrlResolver::SETTINGS_KEY . "']",
     ];
+    if ($this->urlResolver->getLegacyHost() !== NULL) {
+      return $this->t('The Sentinel API base URL is not set for this environment. @reason Nothing is sent until this is fixed.', $arguments);
+    }
     return $this->urlResolver->getSource() === ApiBaseUrlResolver::SOURCE_ENVIRONMENT
       ? $this->t('The Sentinel API base URL is not valid. The @env environment variable is set to @value. @reason Nothing is sent until this is fixed.', $arguments)
       : $this->t('The Sentinel API base URL is not valid. @settings in settings.php is set to @value. @reason Nothing is sent until this is fixed.', $arguments);

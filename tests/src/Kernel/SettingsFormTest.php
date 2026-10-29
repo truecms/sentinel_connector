@@ -9,6 +9,7 @@ use Drupal\Core\Site\Settings;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\ApiKeyMigrator;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ConnectionChecker;
 use Drupal\sentinel_connector\Controller\SyncController;
 use Drupal\sentinel_connector\Form\SettingsForm;
@@ -282,6 +283,12 @@ class SettingsFormTest extends KernelTestBase {
     $this->assertStringContainsString('was not the production default', $message);
     $this->assertStringContainsString('the sentinel_connector.api_base_url setting in settings.php', $message);
     $this->assertStringNotContainsString('uat-ingest', $message);
+    // Nothing is sent to production until the URL is set again.
+    $this->assertSame('uat-ingest.sentinelconnector.io', \Drupal::state()->get(ApiBaseUrlResolver::STATE_LEGACY_HOST));
+    $this->setSetting('sentinel_connector.api_base_url', NULL);
+    $this->assertNull($this->container->get(ApiBaseUrlResolver::class)->getUrl());
+    $this->setSetting('sentinel_connector.api_base_url', 'https://uat-ingest.sentinelconnector.io');
+    $this->assertSame('https://uat-ingest.sentinelconnector.io', $this->container->get(ApiBaseUrlResolver::class)->getUrl());
 
     // A second run changes nothing and warns about nothing.
     $this->assertStringNotContainsString('production default', sentinel_connector_update_10005());
@@ -494,7 +501,8 @@ class SettingsFormTest extends KernelTestBase {
     $this->assertNotEmpty($messages);
     $this->assertStringContainsString($expected, (string) end($messages));
     $this->assertStringNotContainsString(self::SAVED_KEY, (string) end($messages));
-    // Recorded for the status report.
+    // Recorded for the status report, as plain text.
+    $this->assertStringNotContainsString('<a ', \Drupal::state()->get(ConnectionChecker::STATE_LAST_CHECK)['message']);
     $this->assertSame($type === 'status', \Drupal::state()->get(ConnectionChecker::STATE_LAST_CHECK)['outcome'] === 'connected');
   }
 

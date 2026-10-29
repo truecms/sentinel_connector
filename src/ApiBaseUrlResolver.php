@@ -2,7 +2,9 @@
 
 namespace Drupal\sentinel_connector;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Site\Settings;
+use Drupal\Core\State\StateInterface;
 
 /**
  * Resolves the Sentinel API base URL.
@@ -10,6 +12,10 @@ use Drupal\Core\Site\Settings;
  * Sources in order: settings.php, the environment variable, then the
  * production default. An override that is not a valid base URL is refused,
  * never replaced by the default: a typo must not send data elsewhere.
+ *
+ * A site that saved a non-production URL on the form before 1.4.0 is not
+ * moved to production either: until settings.php or the environment sets a
+ * URL, nothing is sent.
  */
 class ApiBaseUrlResolver {
 
@@ -37,25 +43,66 @@ class ApiBaseUrlResolver {
   public const SOURCE_DEFAULT = 'default';
 
   /**
+   * State key: the host of a non-production URL saved before 1.4.0.
+   *
+   * Set by update 10005. Only the host is kept, never a path or credentials.
+   */
+  public const STATE_LEGACY_HOST = 'sentinel_connector.legacy_api_base_url_host';
+
+  /**
    * Constructs the resolver.
    *
    * @param \Drupal\Core\Site\Settings $settings
    *   The site settings.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface|null $configFactory
+   *   The config factory, for a URL saved before update 10005 ran.
+   * @param \Drupal\Core\State\StateInterface|null $state
+   *   The state store, for the host update 10005 removed.
    */
-  public function __construct(protected Settings $settings) {}
+  public function __construct(
+    protected Settings $settings,
+    protected ?ConfigFactoryInterface $configFactory = NULL,
+    protected ?StateInterface $state = NULL,
+  ) {}
 
   /**
    * The base URL in use, without a trailing slash, or NULL when invalid.
    */
   public function getUrl(): ?string {
-    return self::validate($this->getRawValue())[0];
+    return $this->getLegacyHost() !== NULL ? NULL : self::validate($this->getRawValue())[0];
   }
 
   /**
    * Why the configured URL cannot be used, or NULL when it can.
    */
   public function getError(): ?string {
+    $legacy = $this->getLegacyHost();
+    if ($legacy !== NULL) {
+      return 'A Sentinel API base URL for ' . $legacy . ' was saved on the settings form before version 1.4.0, which no longer has that field. Set it in settings.php or the ' . self::ENV_VAR . ' environment variable, or set ' . self::DEFAULT_URL . ' there to use production.';
+    }
     return self::validate($this->getRawValue())[1];
+  }
+
+  /**
+   * The host of a non-production URL saved on the form, while not replaced.
+   *
+   * @return string|null
+   *   The host, or NULL when settings.php or the environment sets a URL, or
+   *   nothing other than the default was saved.
+   */
+  public function getLegacyHost(): ?string {
+    if ($this->getSource() !== self::SOURCE_DEFAULT) {
+      return NULL;
+    }
+    // Before update 10005: the saved value itself.
+    $saved = $this->configFactory?->get('sentinel_connector.settings')->get('api_base_url');
+    if (is_string($saved) && trim($saved) !== '' && self::validate($saved)[0] !== self::DEFAULT_URL) {
+      $host = parse_url(trim($saved), PHP_URL_HOST);
+      return is_string($host) && $host !== '' ? strtolower($host) : 'an unknown host';
+    }
+    // After it: the host it recorded.
+    $host = $this->state?->get(self::STATE_LEGACY_HOST);
+    return is_string($host) && $host !== '' ? $host : NULL;
   }
 
   /**
@@ -78,6 +125,8 @@ class ApiBaseUrlResolver {
   /**
    * The configured value, safe to show to an administrator.
    *
+   * A query or fragment, which may hold a token, is cut off.
+   *
    * @return string|null
    *   The value, or NULL when it carries a user name or password.
    */
@@ -85,7 +134,11 @@ class ApiBaseUrlResolver {
     $raw = trim($this->getRawValue());
     $authority = preg_replace('#\A[a-zA-Z][a-zA-Z0-9+.\-]*://#', '', $raw);
     $authority = strtok((string) $authority, '/?#');
-    return is_string($authority) && str_contains($authority, '@') ? NULL : $raw;
+    if (is_string($authority) && str_contains($authority, '@')) {
+      return NULL;
+    }
+    $cut = strcspn($raw, '?#');
+    return $cut < strlen($raw) ? substr($raw, 0, $cut) . $raw[$cut] . '…' : $raw;
   }
 
   /**

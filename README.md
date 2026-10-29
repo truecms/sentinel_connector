@@ -59,10 +59,11 @@ Update `10005`:
 
 The API base URL now comes from `settings.php` or the environment, with
 `https://ingest.sentinelconnector.io` as the default. **UAT and local sites
-must act**: when the saved base URL was not the production default, the update
-logs a warning, and the site sends to production until you set
-`$settings['sentinel_connector.api_base_url']` or
-`SENTINEL_CONNECTOR_API_BASE_URL` on that environment. See
+must act**: when the saved base URL was not the production default, the
+site is never moved to production. It sends nothing, and the update logs a
+warning, until you set `$settings['sentinel_connector.api_base_url']` or
+`SENTINEL_CONNECTOR_API_BASE_URL` on that environment (to the production URL
+if that is what you want). See
 [Several environments](#several-environments). Afterwards run
 `drush sentinel_connector:check` on each environment.
 
@@ -655,7 +656,7 @@ lower-case letters, digits or underscores is ignored.
 | `unavailable` | 503 | `rate_limiter_unavailable`, `replay_protection_unavailable`, `queue_unavailable`, `inventory_busy`, `auth_rate_limiter_unavailable` | error | Sentinel is temporarily unavailable. With one of these codes the message has the `Retry-After` wait. |
 | `server_error` | other 5xx | `internal_error` | error | Sentinel failed. |
 | `transport_error` | none | | error | Sentinel could not be reached. |
-| `invalid_response` | any | | error | The response was not the JSON the connector expects. |
+| `invalid_response` | any | | error | The response was not the JSON the connector expects, or a redirect (3xx), which is never followed. |
 | `rejected` | other | | error | Any other refusal. |
 | `internal_error`, `state_error` | none | | error | The push failed on this site; the entry has the error class. Not to be confused with Sentinel's `internal_error` code, which is a `server_error`. |
 

@@ -96,6 +96,16 @@ class ConnectionCheckTest extends TestCase {
   }
 
   /**
+   * A redirect is not followed: the key must not reach another host.
+   */
+  public function testRedirectIsNotFollowed(): void {
+    $result = $this->check(new Response(301, ['Location' => 'http://elsewhere.example.com/']));
+    $this->assertSame(ConnectionCheckResult::NOT_SENTINEL, $result->outcome);
+    $this->assertCount(1, $this->transactions);
+    $this->assertFalse($this->transactions[0]['options']['allow_redirects']);
+  }
+
+  /**
    * A TLS, DNS or connection failure means no Sentinel API answered.
    */
   public function testTransportFailure(): void {

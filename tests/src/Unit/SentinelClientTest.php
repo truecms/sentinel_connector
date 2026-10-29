@@ -71,6 +71,17 @@ class SentinelClientTest extends TestCase {
   }
 
   /**
+   * A redirect is not followed and says what to fix.
+   */
+  public function testRedirectIsNotFollowed(): void {
+    $result = $this->client(new Response(302, ['Location' => 'http://elsewhere.example.com/']))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertSame('invalid_response', $result->status);
+    $this->assertSame(302, $result->httpCode);
+    $this->assertStringContainsString('redirects elsewhere', $result->message);
+  }
+
+  /**
    * A queued response without an actual task ID is not usable acceptance.
    */
   public function testInvalidTaskIdIsRejected(): void {

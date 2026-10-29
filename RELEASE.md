@@ -22,6 +22,11 @@ Before tagging, on a canary site with a UAT Sentinel:
 - With `SENTINEL_CONNECTOR_DISABLED=1`, `drush sentinel_connector:deploy`
   exits 0 and sends nothing.
 
+Tell production owners to read the `drush updb` output: any saved base URL
+other than exactly `https://ingest.sentinelconnector.io` (an old host name, a
+plain `http://` address) stops sending until `settings.php` or the
+environment sets the URL. Nothing is moved to another host silently.
+
 # Release 1.3.0: configuration drift
 
 1.2.0 is already published with Drupal 12 compatibility and payload v2.

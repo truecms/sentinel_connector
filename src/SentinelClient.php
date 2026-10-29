@@ -136,6 +136,8 @@ class SentinelClient {
         'json' => $payload,
         'timeout' => 30,
         'http_errors' => FALSE,
+        // The key must never follow a redirect to another host.
+        'allow_redirects' => FALSE,
         // Guzzle 8 exposes cURL errors through transfer stats, not exceptions.
         'on_stats' => static function (TransferStats $stats) use (&$curlErrno): void {
           $error = $stats->getHandlerErrorData();
@@ -159,6 +161,10 @@ class SentinelClient {
     }
 
     $code = $response->getStatusCode();
+    if ($code >= 300 && $code < 400) {
+      // Redirects are not followed, so the key stays with this host.
+      return SyncResult::failure('invalid_response', $code, 'The Sentinel API base URL redirects elsewhere. Set the final address as the base URL.');
+    }
     // Reverse proxies may return HTML for any error, so the body may not be
     // JSON at all.
     $decoded = json_decode((string) $response->getBody(), TRUE);
@@ -208,6 +214,9 @@ class SentinelClient {
         'json' => new \stdClass(),
         'timeout' => 15,
         'http_errors' => FALSE,
+        // The key is in a custom header, which Guzzle keeps on a redirect to
+        // another host. A redirect is no answer from Sentinel.
+        'allow_redirects' => FALSE,
       ]);
     }
     catch (TransferException) {

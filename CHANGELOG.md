@@ -37,7 +37,10 @@ connection check route (truecms/sentinel#1613).
 - Update `10005` removes `api_base_url`, `site_url` and `site_name`, maps the
   report scope (`contrib_custom` to `all`, `contrib` to `core_contrib`) and
   turns on `report_platform`. A saved base URL that was not the production
-  default is logged as a warning: set it in `settings.php` or the environment.
+  default is logged as a warning, and nothing is sent until `settings.php` or
+  the environment sets the URL: the site is never moved to production.
+- Sync and connection check requests no longer follow redirects, so the API
+  key never reaches another host.
 
 - The API key can be stored with the [Key](https://www.drupal.org/project/key)
   module (optional): when Key is enabled, the settings form has a key selector

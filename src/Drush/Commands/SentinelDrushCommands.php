@@ -71,6 +71,16 @@ class SentinelDrushCommands extends DrushCommands {
       $this->logger()->notice($this->syncService->disabledMessage());
       return;
     }
+    if ($this->syncService->hasInvalidUrl()) {
+      $message = trim(strip_tags(html_entity_decode((string) $this->connectionChecker->invalidUrlMessage(), ENT_QUOTES | ENT_HTML5)));
+      if ($this->syncService->hasSiteCredentials()) {
+        // A site set up to report: a typo must not pass for "not configured".
+        throw new \RuntimeException($message);
+      }
+      // An environment that does not report, such as a database copy.
+      $this->logger()->warning($message);
+      return;
+    }
     if (!$this->syncService->isConfigured()) {
       // The same pipeline often runs on environments that do not report.
       $this->logger()->warning(dt('Sentinel connector is not fully configured; no push was sent.'));

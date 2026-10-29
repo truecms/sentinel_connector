@@ -2,7 +2,10 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Site\Settings;
+use Drupal\Core\State\StateInterface;
 use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -61,6 +64,54 @@ class ApiBaseUrlResolverTest extends TestCase {
     $resolver = new ApiBaseUrlResolver(new Settings([ApiBaseUrlResolver::SETTINGS_KEY => TRUE]));
     $this->assertNull($resolver->getUrl());
     $this->assertSame(ApiBaseUrlResolver::SOURCE_SETTINGS, $resolver->getSource());
+  }
+
+  /**
+   * A non-production URL saved before 1.4.0 is not replaced by production.
+   */
+  public function testLegacySavedUrlIsNotReplaced(): void {
+    $state = $this->createMock(StateInterface::class);
+    $state->method('get')->willReturn(NULL);
+    $resolver = new ApiBaseUrlResolver(new Settings([]), $this->configFactory('https://uat-ingest.sentinelconnector.io/'), $state);
+    $this->assertNull($resolver->getUrl());
+    $this->assertSame('uat-ingest.sentinelconnector.io', $resolver->getLegacyHost());
+    $this->assertStringContainsString('before version 1.4.0', (string) $resolver->getError());
+
+    // The production default saved: nothing to keep.
+    $resolver = new ApiBaseUrlResolver(new Settings([]), $this->configFactory('https://ingest.sentinelconnector.io'), $state);
+    $this->assertSame(ApiBaseUrlResolver::DEFAULT_URL, $resolver->getUrl());
+
+    // After update 10005: the host it recorded.
+    $recorded = $this->createMock(StateInterface::class);
+    $recorded->method('get')->willReturn('uat-ingest.sentinelconnector.io');
+    $resolver = new ApiBaseUrlResolver(new Settings([]), $this->configFactory(NULL), $recorded);
+    $this->assertNull($resolver->getUrl());
+
+    // An override for this environment replaces it.
+    $resolver = new ApiBaseUrlResolver(new Settings([ApiBaseUrlResolver::SETTINGS_KEY => ApiBaseUrlResolver::DEFAULT_URL]), $this->configFactory(NULL), $recorded);
+    $this->assertSame(ApiBaseUrlResolver::DEFAULT_URL, $resolver->getUrl());
+    $this->assertNull($resolver->getLegacyHost());
+  }
+
+  /**
+   * A query or fragment, which may hold a token, is never shown back.
+   */
+  public function testDisplayValueCutsQuery(): void {
+    $resolver = new ApiBaseUrlResolver(new Settings([ApiBaseUrlResolver::SETTINGS_KEY => 'https://sentinel.example.com/?token=secret']));
+    $this->assertSame('https://sentinel.example.com/?…', $resolver->getDisplayValue());
+    $resolver = new ApiBaseUrlResolver(new Settings([ApiBaseUrlResolver::SETTINGS_KEY => 'https://sentinel.example.com#secret']));
+    $this->assertSame('https://sentinel.example.com#…', $resolver->getDisplayValue());
+  }
+
+  /**
+   * A config factory whose settings hold the given saved base URL.
+   */
+  protected function configFactory(?string $saved): ConfigFactoryInterface {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturnCallback(fn (string $key) => $key === 'api_base_url' ? $saved : NULL);
+    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $factory->method('get')->willReturn($config);
+    return $factory;
   }
 
   /**

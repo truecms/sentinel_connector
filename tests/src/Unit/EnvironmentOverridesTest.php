@@ -172,7 +172,14 @@ class EnvironmentOverridesTest extends TestCase {
           'sentinel_connector.site_uuid' => '11111111-1111-1111-1111-111111111111',
           'sentinel_connector.api_key' => 'sk_develop',
         ],
-        ['sentinel_connector.settings' => ['report_platform' => TRUE]],
+      ],
+      'develop without its key' => [
+        ['SENTINEL_CONNECTOR_ENVIRONMENT' => 'develop'],
+        [
+          'sentinel_connector.site_uuid' => '11111111-1111-1111-1111-111111111111',
+          'sentinel_connector.api_key' => NULL,
+          'sentinel_connector.disabled' => TRUE,
+        ],
       ],
       'other' => [['SENTINEL_CONNECTOR_ENVIRONMENT' => 'feature-123'], $off],
     ];
