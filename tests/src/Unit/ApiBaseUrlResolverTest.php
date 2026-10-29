@@ -70,7 +70,7 @@ class ApiBaseUrlResolverTest extends TestCase {
    * A non-production URL saved before 1.4.0 is not replaced by production.
    */
   public function testLegacySavedUrlIsNotReplaced(): void {
-    $state = $this->createMock(StateInterface::class);
+    $state = $this->createStub(StateInterface::class);
     $state->method('get')->willReturn(NULL);
     $resolver = new ApiBaseUrlResolver(new Settings([]), $this->configFactory('https://uat-ingest.sentinelconnector.io/'), $state);
     $this->assertNull($resolver->getUrl());
@@ -82,7 +82,7 @@ class ApiBaseUrlResolverTest extends TestCase {
     $this->assertSame(ApiBaseUrlResolver::DEFAULT_URL, $resolver->getUrl());
 
     // After update 10005: the host it recorded.
-    $recorded = $this->createMock(StateInterface::class);
+    $recorded = $this->createStub(StateInterface::class);
     $recorded->method('get')->willReturn('uat-ingest.sentinelconnector.io');
     $resolver = new ApiBaseUrlResolver(new Settings([]), $this->configFactory(NULL), $recorded);
     $this->assertNull($resolver->getUrl());
@@ -107,9 +107,9 @@ class ApiBaseUrlResolverTest extends TestCase {
    * A config factory whose settings hold the given saved base URL.
    */
   protected function configFactory(?string $saved): ConfigFactoryInterface {
-    $config = $this->createMock(ImmutableConfig::class);
+    $config = $this->createStub(ImmutableConfig::class);
     $config->method('get')->willReturnCallback(fn (string $key) => $key === 'api_base_url' ? $saved : NULL);
-    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $factory = $this->createStub(ConfigFactoryInterface::class);
     $factory->method('get')->willReturn($config);
     return $factory;
   }

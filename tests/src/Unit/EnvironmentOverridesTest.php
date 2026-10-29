@@ -144,11 +144,7 @@ class EnvironmentOverridesTest extends TestCase {
     foreach ($env as $name => $value) {
       putenv($name . '=' . $value);
     }
-    $settings = [];
-    $config = [];
-    (static function () use (&$settings, &$config): void {
-      include __DIR__ . '/../../../examples/settings.sentinel_connector.php';
-    })();
+    [$settings, $config] = self::includeExample();
     $this->assertSame($expected, $settings);
     $this->assertSame($expectedConfig, $config);
   }
@@ -228,12 +224,25 @@ class EnvironmentOverridesTest extends TestCase {
   }
 
   /**
+   * Includes the example file as settings.php would.
+   *
+   * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+   *   The $settings and $config it leaves.
+   */
+  protected static function includeExample(): array {
+    $settings = [];
+    $config = [];
+    include __DIR__ . '/../../../examples/settings.sentinel_connector.php';
+    return [$settings, $config];
+  }
+
+  /**
    * A config factory whose settings hold the given Site UUID.
    */
   protected function configFactory(string $uuid): ConfigFactoryInterface {
-    $config = $this->createMock(ImmutableConfig::class);
+    $config = $this->createStub(ImmutableConfig::class);
     $config->method('get')->willReturnCallback(fn (string $key) => $key === 'site_uuid' ? $uuid : NULL);
-    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $factory = $this->createStub(ConfigFactoryInterface::class);
     $factory->method('get')->willReturn($config);
     return $factory;
   }
