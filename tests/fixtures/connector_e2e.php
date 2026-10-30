@@ -8,6 +8,7 @@
  * environment. The original Drupal configuration and sync state are restored.
  */
 
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyResolver;
 use Drupal\sentinel_connector\SyncService;
 
@@ -19,11 +20,18 @@ $source = \Drupal::service(ApiKeyResolver::class)->getSource();
 if (in_array($source, ['settings.php', 'environment'], TRUE)) {
   throw new RuntimeException('Remove the settings.php or SENTINEL_CONNECTOR_API_KEY override on this isolated site before running the fixture.');
 }
+// The API base URL is set for this run through its environment variable,
+// which settings.php would override.
+if (\Drupal::service(ApiBaseUrlResolver::class)->getSource() === ApiBaseUrlResolver::SOURCE_SETTINGS) {
+  throw new RuntimeException('Remove the settings.php API base URL override on this isolated site before running the fixture.');
+}
+$apiUrl = getenv('SENTINEL_E2E_API_URL');
+if (!is_string($apiUrl) || $apiUrl === '') {
+  throw new RuntimeException('Missing fixture environment variable: SENTINEL_E2E_API_URL');
+}
+$originalApiUrl = getenv(ApiBaseUrlResolver::ENV_VAR);
 $fields = [
-  'api_base_url' => 'SENTINEL_E2E_API_URL',
   'site_uuid' => 'SENTINEL_E2E_SITE_UUID',
-  'site_url' => 'SENTINEL_E2E_SITE_URL',
-  'site_name' => 'SENTINEL_E2E_SITE_NAME',
 ];
 $config = \Drupal::configFactory()->getEditable('sentinel_connector.settings');
 $original = $config->getRawData();
@@ -47,6 +55,7 @@ foreach ($stateKeys as $key) {
   $originalState[$key] = $state->get('sentinel_connector.' . $key);
 }
 try {
+  putenv(ApiBaseUrlResolver::ENV_VAR . '=' . $apiUrl);
   foreach ($fields as $field => $env) {
     $value = getenv($env);
     if (!is_string($value) || $value === '') {
@@ -75,6 +84,7 @@ try {
   ]) . PHP_EOL;
 }
 finally {
+  putenv($originalApiUrl === FALSE ? ApiBaseUrlResolver::ENV_VAR : ApiBaseUrlResolver::ENV_VAR . '=' . $originalApiUrl);
   $config->setData($original)->save();
   foreach ($originalState as $key => $value) {
     if ($value === NULL) {

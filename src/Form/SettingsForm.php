@@ -8,9 +8,15 @@ use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\ConnectionChecker;
+use Drupal\sentinel_connector\ConnectionCheckResult;
+use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\sentinel_connector\PushLimitFormatter;
+use Drupal\sentinel_connector\SendingSwitch;
 use Drupal\sentinel_connector\SiteUuid;
+use Drupal\sentinel_connector\SiteUuidResolver;
 use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -35,6 +41,14 @@ final class SettingsForm extends ConfigFormBase {
    *   The sync service, for the stored push-limit outcome.
    * @param \Drupal\sentinel_connector\PushLimitFormatter $pushLimitFormatter
    *   Builds the text for a refused push.
+   * @param \Drupal\sentinel_connector\ApiBaseUrlResolver $urlResolver
+   *   Resolves the API base URL, shown read-only.
+   * @param \Drupal\sentinel_connector\SiteUuidResolver $uuidResolver
+   *   Resolves the Site UUID, which settings.php can override.
+   * @param \Drupal\sentinel_connector\SendingSwitch $sendingSwitch
+   *   The off switch.
+   * @param \Drupal\sentinel_connector\ConnectionChecker $connectionChecker
+   *   Runs "Test connection".
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
@@ -43,6 +57,10 @@ final class SettingsForm extends ConfigFormBase {
     protected StateInterface $state,
     protected SyncService $syncService,
     protected PushLimitFormatter $pushLimitFormatter,
+    protected ApiBaseUrlResolver $urlResolver,
+    protected SiteUuidResolver $uuidResolver,
+    protected SendingSwitch $sendingSwitch,
+    protected ConnectionChecker $connectionChecker,
   ) {
     parent::__construct($config_factory, $typedConfigManager);
   }
@@ -58,6 +76,10 @@ final class SettingsForm extends ConfigFormBase {
       $container->get('state'),
       $container->get('Drupal\sentinel_connector\SyncService'),
       $container->get('Drupal\sentinel_connector\PushLimitFormatter'),
+      $container->get('Drupal\sentinel_connector\ApiBaseUrlResolver'),
+      $container->get('Drupal\sentinel_connector\SiteUuidResolver'),
+      $container->get('Drupal\sentinel_connector\SendingSwitch'),
+      $container->get('Drupal\sentinel_connector\ConnectionChecker'),
     );
   }
 
@@ -92,52 +114,94 @@ final class SettingsForm extends ConfigFormBase {
   public function buildForm(array $form, FormStateInterface $form_state): array {
     $config = $this->config('sentinel_connector.settings');
 
+    $help = [':help' => ConnectionChecker::ENVIRONMENTS_HELP_URL];
+
+    // Shown first: nothing below is sent while either holds.
+    if ($this->sendingSwitch->isDisabled()) {
+      $form['sending_disabled'] = [
+        '#type' => 'item',
+        '#markup' => $this->sendingSwitch->getSource() === 'settings.php'
+          ? $this->t('Sending is turned off for this environment by <code>@settings</code> in settings.php. Cron, Drush and Sync now send nothing here.', ['@settings' => "\$settings['" . SendingSwitch::SETTINGS_KEY . "']"])
+          : $this->t('Sending is turned off for this environment by the <code>@env</code> environment variable. Cron, Drush and Sync now send nothing here.', ['@env' => SendingSwitch::ENV_VAR]),
+        '#wrapper_attributes' => ['class' => ['messages', 'messages--status'], 'role' => 'status'],
+      ];
+    }
+    elseif ($this->urlResolver->getUrl() === NULL) {
+      $form['api_base_url_error'] = [
+        '#type' => 'item',
+        '#markup' => $this->connectionChecker->invalidUrlMessage(),
+        '#wrapper_attributes' => ['class' => ['messages', 'messages--error'], 'role' => 'alert'],
+      ];
+    }
+
     $form['enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable automatic sync on cron'),
       '#description' => $this->t('Cron sends at most one push an hour. How often Sentinel accepts a push depends on the plan.'),
       '#default_value' => $config->get('enabled'),
     ];
+
+    // Read-only: only settings.php or the server environment can send the
+    // API key and inventory to another host.
+    $urlSource = match ($this->urlResolver->getSource()) {
+      ApiBaseUrlResolver::SOURCE_SETTINGS => $this->t('from settings.php'),
+      ApiBaseUrlResolver::SOURCE_ENVIRONMENT => $this->t('from the @env environment variable', ['@env' => ApiBaseUrlResolver::ENV_VAR]),
+      default => $this->t('Default'),
+    };
+    $url = $this->urlResolver->getUrl();
     $form['api_base_url'] = [
-      '#type' => 'url',
-      '#title' => $this->t('Sentinel API base URL'),
-      '#default_value' => $config->get('api_base_url'),
-      '#required' => TRUE,
+      '#type' => 'item',
+      '#title' => $this->t('Sentinel API'),
+      '#markup' => $url !== NULL
+        ? $this->t('<code>@url</code> · @source', ['@url' => $url, '@source' => $urlSource])
+        : $this->t('<strong>Not valid</strong> · @source', ['@source' => $urlSource]),
+      '#description' => $this->t('Change it only for a non-production Sentinel, in settings.php or the @env environment variable. <a href=":help">How</a>', $help + ['@env' => ApiBaseUrlResolver::ENV_VAR]),
     ];
-    $form['site_uuid'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Site UUID'),
-      '#description' => $this->t('The UUID of the site in Sentinel, for example @example. It is saved in lower case with hyphens.', ['@example' => SiteUuid::EXAMPLE]),
-      '#default_value' => $config->get('site_uuid'),
-      '#required' => TRUE,
-    ];
-    $form['site_url'] = [
-      '#type' => 'url',
-      '#title' => $this->t('Site URL (must match the registered URL)'),
-      '#default_value' => $config->get('site_url'),
-      '#required' => TRUE,
-    ];
-    $form['site_name'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Site name'),
-      '#default_value' => $config->get('site_name'),
-      '#required' => TRUE,
-    ];
+
+    if ($this->uuidResolver->isOverridden()) {
+      $form['site_uuid'] = [
+        '#type' => 'item',
+        '#title' => $this->t('Site UUID'),
+        '#markup' => $this->t('<code>@uuid</code> · @source', [
+          '@uuid' => $this->uuidResolver->getUuid() ?? $this->uuidResolver->getRawValue(),
+          '@source' => $this->uuidResolver->getSource() === SiteUuidResolver::SOURCE_SETTINGS
+            ? $this->t('from settings.php')
+            : $this->t('from the @env environment variable', ['@env' => SiteUuidResolver::ENV_VAR]),
+        ]),
+        '#description' => $this->uuidResolver->getUuid() === NULL
+          ? $this->t('This value is not a valid UUID. Nothing is sent until it is fixed.')
+          : $this->t('Set for this environment. The value saved on this form is not used.'),
+      ];
+    }
+    else {
+      $form['site_uuid'] = [
+        '#type' => 'textfield',
+        '#title' => $this->t('Site UUID'),
+        '#description' => $this->t("Copy it from the site's Connection tab in Sentinel. Can also be set in settings.php or @env for each environment.", ['@env' => SiteUuidResolver::ENV_VAR]),
+        '#default_value' => $config->get('site_uuid'),
+        '#required' => TRUE,
+      ];
+    }
     $form['report_scope'] = [
-      '#type' => 'select',
+      '#type' => 'radios',
       '#title' => $this->t('Report scope'),
       '#options' => [
-        'all' => $this->t('All (contrib + custom, core by version)'),
-        'contrib_custom' => $this->t('Contrib + custom'),
-        'contrib' => $this->t('Contrib only'),
+        'all' => $this->t('All: Drupal core, contrib and custom modules'),
+        'core_contrib' => $this->t('Drupal core and contrib (custom modules are not sent)'),
       ],
-      '#default_value' => $config->get('report_scope') ?: 'all',
+      '#default_value' => PayloadBuilder::normaliseScope($config->get('report_scope')),
     ];
     $form['report_config_drift'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Report configuration drift'),
-      '#description' => $this->t('Sends the names of configuration objects that differ from the configuration sync directory, and the type of change. Configuration values are never sent.'),
+      '#description' => $this->t('Sends the names of configuration objects that differ from the sync directory, and the type of change. Configuration values are never sent.'),
       '#default_value' => $config->get('report_config_drift') ?? TRUE,
+    ];
+    $form['report_platform'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Report platform versions'),
+      '#description' => $this->t('Sends the web server, database and operating system versions, and their system package versions, so Sentinel can warn you about known vulnerabilities in your server software. The PHP version is always sent, because Drupal core support depends on it.'),
+      '#default_value' => $config->get('report_platform') ?? TRUE,
     ];
     // API key status: the source is shown, the key never is.
     $source = $this->apiKeyResolver->getSource();
@@ -253,8 +317,25 @@ final class SettingsForm extends ConfigFormBase {
       ];
     }
 
+    $form['environments_help'] = [
+      '#type' => 'item',
+      '#markup' => $this->t('<a href=":help">Using several environments (production, non-production, local, CI)</a>', $help),
+      '#weight' => 100,
+    ];
+
     $form = parent::buildForm($form, $form_state);
 
+    // Both are hidden while sending is turned off: nothing would be sent.
+    $mayTrigger = !$this->sendingSwitch->isDisabled() && $this->currentUser()->hasPermission('trigger sentinel sync');
+    // Tests the saved settings, not the values on the form.
+    $form['actions']['test_connection'] = [
+      '#type' => 'submit',
+      '#value' => $this->t('Test connection'),
+      '#submit' => ['::testConnection'],
+      '#limit_validation_errors' => [],
+      '#weight' => 5,
+      '#access' => $mayTrigger,
+    ];
     // Offered only once a save has stored everything a push needs, and placed
     // to the right of "Save configuration".
     $form['actions']['sync_now'] = [
@@ -263,7 +344,7 @@ final class SettingsForm extends ConfigFormBase {
       '#url' => Url::fromRoute('sentinel_connector.sync_now'),
       '#attributes' => ['class' => ['button', 'button--primary']],
       '#weight' => 10,
-      '#access' => $this->syncService->isConfigured() && $this->currentUser()->hasPermission('trigger sentinel sync'),
+      '#access' => $mayTrigger && $this->syncService->isConfigured(),
     ];
 
     return $form;
@@ -279,6 +360,10 @@ final class SettingsForm extends ConfigFormBase {
    */
   public function validateForm(array &$form, FormStateInterface $form_state): void {
     parent::validateForm($form, $form_state);
+    if ($this->uuidResolver->isOverridden()) {
+      // The read-only value is not part of the submission.
+      return;
+    }
     $entered = $form_state->getValue('site_uuid');
     $uuid = is_string($entered) ? SiteUuid::normalize($entered) : NULL;
     if ($uuid !== NULL) {
@@ -300,15 +385,19 @@ final class SettingsForm extends ConfigFormBase {
    *   The form state.
    */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
-    $this->config('sentinel_connector.settings')
+    $config = $this->config('sentinel_connector.settings')
       ->set('enabled', (bool) $form_state->getValue('enabled'))
-      ->set('api_base_url', rtrim((string) $form_state->getValue('api_base_url'), '/'))
-      ->set('site_uuid', (string) $form_state->getValue('site_uuid'))
-      ->set('site_url', (string) $form_state->getValue('site_url'))
-      ->set('site_name', (string) $form_state->getValue('site_name'))
-      ->set('report_scope', (string) $form_state->getValue('report_scope'))
+      ->set('report_scope', PayloadBuilder::normaliseScope($form_state->getValue('report_scope')))
       ->set('report_config_drift', (bool) $form_state->getValue('report_config_drift'))
-      ->save();
+      ->set('report_platform', (bool) $form_state->getValue('report_platform'));
+    if (!$this->uuidResolver->isOverridden()) {
+      $config->set('site_uuid', (string) $form_state->getValue('site_uuid'));
+    }
+    $config->save();
+    // The other settings are saved; the URL is fixed outside this form.
+    if ($this->urlResolver->getUrl() === NULL && !$this->sendingSwitch->isDisabled()) {
+      $this->messenger()->addWarning($this->connectionChecker->invalidUrlMessage());
+    }
 
     $changed = FALSE;
     if (isset($form['api_key_id'])) {
@@ -337,6 +426,34 @@ final class SettingsForm extends ConfigFormBase {
     $this->syncService->markConfigured();
 
     parent::submitForm($form, $form_state);
+  }
+
+  /**
+   * Submit handler of "Test connection": one plain answer.
+   *
+   * @param array<array-key, mixed> $form
+   *   The form structure.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
+   */
+  public function testConnection(array &$form, FormStateInterface $form_state): void {
+    // The button is not rendered without the permission; this guards a
+    // crafted submission.
+    if (!$this->currentUser()->hasPermission('trigger sentinel sync')) {
+      $this->messenger()->addError($this->t('You do not have permission to test the connection.'));
+      return;
+    }
+    $result = $this->connectionChecker->check();
+    $message = $this->connectionChecker->message($result);
+    if ($result->isOk()) {
+      $this->messenger()->addStatus($message);
+    }
+    elseif ($result->outcome === ConnectionCheckResult::DISABLED || $result->outcome === ConnectionCheckResult::UNKNOWN_SITE || $result->outcome === ConnectionCheckResult::LIMITED) {
+      $this->messenger()->addWarning($message);
+    }
+    else {
+      $this->messenger()->addError($message);
+    }
   }
 
 }

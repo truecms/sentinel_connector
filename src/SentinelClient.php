@@ -136,6 +136,8 @@ class SentinelClient {
         'json' => $payload,
         'timeout' => 30,
         'http_errors' => FALSE,
+        // The key must never follow a redirect to another host.
+        'allow_redirects' => FALSE,
         // Guzzle 8 exposes cURL errors through transfer stats, not exceptions.
         'on_stats' => static function (TransferStats $stats) use (&$curlErrno): void {
           $error = $stats->getHandlerErrorData();
@@ -159,6 +161,10 @@ class SentinelClient {
     }
 
     $code = $response->getStatusCode();
+    if ($code >= 300 && $code < 400) {
+      // Redirects are not followed, so the key stays with this host.
+      return SyncResult::failure('invalid_response', $code, 'The Sentinel API base URL redirects elsewhere. Set the final address as the base URL.');
+    }
     // Reverse proxies may return HTML for any error, so the body may not be
     // JSON at all.
     $decoded = json_decode((string) $response->getBody(), TRUE);
@@ -179,6 +185,67 @@ class SentinelClient {
     return $result->withDiagnostics([
       (isset(self::ERROR_CODE_OUTCOMES[$errorCode]) ? 'ignored error code' : 'unknown error code') => $errorCode,
     ]);
+  }
+
+  /**
+   * Asks Sentinel whether it accepts this site's API key and Site UUID.
+   *
+   * The check route uses the same authentication and error codes as the sync
+   * route, and sends nothing about the site. A response that is not
+   * Sentinel's own, such as an HTML page or a TLS failure, counts as no
+   * Sentinel API at that address.
+   *
+   * @param string $baseUrl
+   *   Sentinel base URL, already validated.
+   * @param string $siteUuid
+   *   Site UUID; also the path segment.
+   * @param string $apiKey
+   *   Plaintext API key for the X-API-Key header.
+   */
+  public function check(string $baseUrl, string $siteUuid, string $apiKey): ConnectionCheckResult {
+    $url = rtrim($baseUrl, '/') . '/api/v1/sites/' . $siteUuid . '/connection-check';
+    try {
+      $response = $this->httpClient->request('POST', $url, [
+        'headers' => [
+          'X-API-Key' => $apiKey,
+          'Content-Type' => 'application/json',
+          'Accept' => 'application/json',
+        ],
+        'json' => new \stdClass(),
+        'timeout' => 15,
+        'http_errors' => FALSE,
+        // The key is in a custom header, which Guzzle keeps on a redirect to
+        // another host. A redirect is no answer from Sentinel.
+        'allow_redirects' => FALSE,
+      ]);
+    }
+    catch (TransferException) {
+      // Never keep the request URL, exception message, headers, or payload.
+      return new ConnectionCheckResult(ConnectionCheckResult::NOT_SENTINEL);
+    }
+
+    $code = $response->getStatusCode();
+    $decoded = json_decode((string) $response->getBody(), TRUE);
+    if ($code === 200) {
+      $ok = is_array($decoded) && ($decoded['ok'] ?? NULL) === TRUE;
+      return new ConnectionCheckResult(
+        $ok ? ConnectionCheckResult::CONNECTED : ConnectionCheckResult::NOT_SENTINEL,
+        $ok ? ConnectionCheckResult::environment($decoded['environment'] ?? NULL) : NULL,
+      );
+    }
+    $error = $code >= 400 ? $this->errorBody($decoded) : NULL;
+    if ($error === NULL || !$this->decidesOutcome((string) $error['error_code'], $code)) {
+      // Only Sentinel answers with one of its own error codes.
+      return new ConnectionCheckResult(ConnectionCheckResult::NOT_SENTINEL);
+    }
+    $refusal = $this->codedRefusal($code, $error, !isset($decoded['error_code']), $this->retryAfter($response->getHeaderLine('Retry-After')));
+    $outcome = match ($refusal->status) {
+      'site_mismatch', 'not_found' => ConnectionCheckResult::UNKNOWN_SITE,
+      'auth_error' => ConnectionCheckResult::KEY_REFUSED,
+      SyncResult::PUSH_LIMITED, SyncResult::SUBSCRIPTION_INACTIVE => ConnectionCheckResult::LIMITED,
+      default => ConnectionCheckResult::FAILED,
+    };
+    return new ConnectionCheckResult($outcome, ConnectionCheckResult::environment($error['environment'] ?? NULL), $refusal);
   }
 
   /**
@@ -429,7 +496,7 @@ class SentinelClient {
     $text = fn (string $fallback): string => $this->detailMessage($detail, $fallback);
     $advised = fn (string $fallback, string $advice): string => rtrim($text($fallback), '.') . '. ' . $advice;
     return match ($status) {
-      'site_mismatch' => $advised('The site does not match.', 'Check the site URL and site UUID against the site registered in Sentinel.'),
+      'site_mismatch' => $advised('The site does not match.', 'Check the Site UUID against the site registered in Sentinel.'),
       'validation_failed' => is_array($detail) && !array_is_list($detail)
         ? $this->validationMessage($detail)
         : $text('Sentinel rejected one or more modules.'),

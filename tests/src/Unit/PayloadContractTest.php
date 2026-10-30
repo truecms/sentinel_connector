@@ -45,14 +45,16 @@ class PayloadContractTest extends TestCase {
       'packages' => [['source' => 'php8.3', 'version' => '8.3.6-0ubuntu0.24.04.3']],
     ];
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform, fn () => self::drift()))->build('all');
-    // Add the 'site' block the caller normally supplies.
-    $payload['site'] = [
-      'url' => 'https://example.com',
-      'name' => 'Example',
-      'uuid' => '11111111-1111-4111-8111-111111111111',
-    ];
+    // Add the 'site' block the caller normally supplies: since v4 the UUID.
+    $payload['site'] = ['uuid' => '11111111-1111-4111-8111-111111111111'];
 
     $this->assertSame([], $this->errors($payload), 'Payload must match DrupalSiteSync schema.');
+
+    // Platform reporting turned off: no platform block, still valid.
+    $off = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform, fn () => self::drift(), FALSE))->build('core_contrib');
+    $off['site'] = $payload['site'];
+    $this->assertArrayNotHasKey('platform', $off);
+    $this->assertSame([], $this->errors($off), 'A payload without platform reporting must match the schema.');
 
     // The config pull request submodule may add its open pull request.
     $payload['config_drift']['export_pull_request'] = [
