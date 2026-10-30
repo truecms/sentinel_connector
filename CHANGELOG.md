@@ -3,10 +3,10 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 1.4.0 - Unreleased
+## 1.4.0 - 2026-10-30
 
-Payload v4. Release only after Sentinel accepts payload v4 and serves the
-connection check route (truecms/sentinel#1613).
+Payload v4. Needs a Sentinel release that accepts payload v4 and serves the
+connection check route (truecms/sentinel#1613, deployed 30 October 2026).
 
 ### Added
 
