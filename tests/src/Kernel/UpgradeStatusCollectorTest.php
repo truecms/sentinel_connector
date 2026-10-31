@@ -314,7 +314,7 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->assertStringNotContainsString('secret_custom_marker', $raw);
     $this->assertStringNotContainsString('token', $raw);
     $this->assertStringNotContainsString('modules/', $raw);
-    $this->assertStringNotContainsString('custom', str_replace('custom_not_ready', '', $raw));
+    $this->assertStringNotContainsString('custom', str_replace(['custom_not_ready', 'oldest_custom_scan_at'], '', $raw));
   }
 
   /**
