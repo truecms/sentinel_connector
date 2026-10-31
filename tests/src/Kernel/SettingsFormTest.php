@@ -398,6 +398,7 @@ class SettingsFormTest extends KernelTestBase {
       'report_scope' => 'core_contrib',
       'enabled' => FALSE,
       'report_config_drift' => TRUE,
+      'report_upgrade_status' => TRUE,
       'report_platform' => FALSE,
       'api_key_id' => '',
     ], $saved);

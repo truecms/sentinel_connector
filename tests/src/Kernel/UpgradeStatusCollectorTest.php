@@ -69,11 +69,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->installConfig(['system', 'sentinel_connector']);
     // Uninstalling a module clears user data.
     $this->installSchema('user', ['users_data']);
+    $this->setSetting('sentinel_connector.api_base_url', 'https://sentinel.example.com');
     $this->config('sentinel_connector.settings')
-      ->set('api_base_url', 'https://sentinel.example.com')
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
-      ->set('site_url', 'https://example.com')
-      ->set('site_name', 'Example')
       ->save();
     $this->container->get('state')->set('sentinel_connector.api_key', 'sk_test');
     $this->setClock($this->now);
@@ -429,7 +427,7 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
    * With the off switch set the command exits cleanly and scans nothing.
    */
   public function testDrushCommandOffSwitch(): void {
-    new Settings(['sentinel_connector.disabled' => TRUE] + Settings::getAll());
+    $this->setSetting('sentinel_connector.disabled', TRUE);
     $this->mockSentinel();
     $command = $this->command(0);
     $command->upgradeStatus();

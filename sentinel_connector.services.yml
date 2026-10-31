@@ -19,8 +19,8 @@ services:
       - '%app.root%'
       - '@Drupal\sentinel_connector\PlatformCollector'
       - '@Drupal\sentinel_connector\ConfigDriftCollector'
-      - '@Drupal\sentinel_connector\UpgradeStatusCollector'
       - '@config.factory'
+      - '@Drupal\sentinel_connector\UpgradeStatusCollector'
 
   Drupal\sentinel_connector\UpgradeStatusCollector:
     class: Drupal\sentinel_connector\UpgradeStatusCollector
