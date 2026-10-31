@@ -8,6 +8,7 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Site\Settings;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\sentinel_connector\ConnectionChecker;
 use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\sentinel_connector\PushLimitFormatter;
 use Drupal\sentinel_connector\SentinelClient;
@@ -425,17 +426,31 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
   }
 
   /**
+   * With the off switch set the command exits cleanly and scans nothing.
+   */
+  public function testDrushCommandOffSwitch(): void {
+    new Settings(['sentinel_connector.disabled' => TRUE] + Settings::getAll());
+    $this->mockSentinel();
+    $command = $this->command(0);
+    $command->upgradeStatus();
+    $this->assertFalse($command->scanned);
+    $this->assertCount(0, $this->transactions);
+    $messages = implode("\n", array_column($command->buffer->cleanLogs(), 1));
+    $this->assertStringContainsString('turned off', $messages);
+  }
+
+  /**
    * The update hook turns reporting on for existing sites.
    */
   public function testUpdateHook(): void {
     $this->config('sentinel_connector.settings')->clear('report_upgrade_status')->save();
     $this->container->get('module_handler')->loadInclude('sentinel_connector', 'install');
-    sentinel_connector_update_10004();
+    sentinel_connector_update_10006();
     $this->assertTrue($this->config('sentinel_connector.settings')->get('report_upgrade_status'));
 
     // A site that switched it off keeps it off.
     $this->config('sentinel_connector.settings')->set('report_upgrade_status', FALSE)->save();
-    sentinel_connector_update_10004();
+    sentinel_connector_update_10006();
     $this->assertFalse($this->config('sentinel_connector.settings')->get('report_upgrade_status'));
   }
 
@@ -594,6 +609,7 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
       $this->container->get(SyncService::class),
       $this->container->get(PushLimitFormatter::class),
       $this->container->get(UpgradeStatusCollector::class),
+      $this->container->get(ConnectionChecker::class),
     );
     $command->exit = $exit;
     $command->buffer = new BufferLogger();

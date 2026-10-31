@@ -7,8 +7,12 @@ use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\SendingSwitch;
+use Drupal\sentinel_connector\SiteUuidResolver;
 use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\sentinel_connector\SentinelClient;
 use Drupal\sentinel_connector\SyncResult;
@@ -47,8 +51,12 @@ class SentinelErrorCodeTest extends TestCase {
   private const EXPECTED = [
     'site_url_mismatch' => ['site_mismatch', LogLevel::WARNING, ''],
     'site_uuid_mismatch' => ['site_mismatch', LogLevel::WARNING, ''],
-    'module_validation_failed' => ['validation_failed', LogLevel::WARNING, ' Rejected modules (1): Capital_Name.'],
-    'module_not_on_drupal_org' => ['validation_failed', LogLevel::WARNING, ' Rejected modules (1): not_on_drupal_org.'],
+    'module_validation_failed' => [
+      'validation_failed', LogLevel::WARNING, ' Rejected modules (1): Capital_Name (invalid, version "1.0.0").',
+    ],
+    'module_not_on_drupal_org' => [
+      'validation_failed', LogLevel::WARNING, ' Rejected modules (1): not_on_drupal_org (invalid, version "1.0.0").',
+    ],
     'body_unreadable' => ['invalid_payload', LogLevel::ERROR, ''],
     'authentication_required' => ['auth_error', LogLevel::ERROR, ''],
     'api_key_invalid' => ['auth_error', LogLevel::ERROR, ''],
@@ -394,9 +402,9 @@ class SentinelErrorCodeTest extends TestCase {
     foreach (['site_unavailable', 'push_limit_reached', 'brand_new_code'] as $errorCode) {
       $body = ['error_code' => $errorCode, 'message' => 'Moved.'];
       $redirect = $this->push(new Response(302, [], (string) json_encode($body)));
-      $this->assertSame('rejected', $redirect->status);
+      $this->assertSame('invalid_response', $redirect->status);
       $this->assertSame(302, $redirect->httpCode);
-      $this->assertSame('Sentinel rejected the sync.', $redirect->message);
+      $this->assertSame('The Sentinel API base URL redirects elsewhere. Set the final address as the base URL.', $redirect->message);
       $this->assertSame([], $redirect->diagnostics);
       $this->assertSame('no details', $this->logs[0][2]['@details']);
       foreach (self::HOLD_STATE as $key) {
@@ -534,7 +542,7 @@ class SentinelErrorCodeTest extends TestCase {
    * older server does not, so the advice still follows that.
    */
   public function testAdviceIsNotAddedToServerMessage(): void {
-    $advice = 'Check the site URL and site UUID against the site registered in Sentinel.';
+    $advice = 'Check the Site UUID against the site registered in Sentinel.';
     $this->assertSame(
       'The site URL differs. Check the site URL in Sentinel.',
       $this->respond(400, '{"error_code": "site_url_mismatch", "message": "The site URL differs. Check the site URL in Sentinel.", "detail": "Site URL mismatch"}')->message,
@@ -1016,10 +1024,7 @@ class SentinelErrorCodeTest extends TestCase {
     $this->stateValues = [];
     $this->logs = [];
     $settings = [
-      'api_base_url' => 'https://sentinel.example.com',
       'site_uuid' => '11111111-1111-4111-8111-111111111111',
-      'site_url' => 'https://example.com',
-      'site_name' => 'Example',
       'report_scope' => 'all',
       'enabled' => TRUE,
     ];
@@ -1042,7 +1047,7 @@ class SentinelErrorCodeTest extends TestCase {
       $this->logs[] = [$level, (string) $message, $context];
     });
 
-    return (new SyncService($configFactory, $this->state(), $builder, $resolver, $this->client($response), $time, $logger))->sync(SyncService::TRIGGER_CRON);
+    return (new SyncService($configFactory, $this->state(), $builder, $resolver, $this->client($response), $time, $logger, new ApiBaseUrlResolver($siteSettings = new Settings([ApiBaseUrlResolver::SETTINGS_KEY => 'https://sentinel.example.com'])), new SiteUuidResolver($siteSettings, $configFactory), new SendingSwitch($siteSettings)))->sync(SyncService::TRIGGER_CRON);
   }
 
   /**

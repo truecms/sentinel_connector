@@ -5,6 +5,7 @@ namespace Drupal\sentinel_connector\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Url;
 use Drupal\sentinel_connector\PushLimitFormatter;
+use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -41,9 +42,20 @@ final class SyncController extends ControllerBase {
    * Run a sync and redirect back to the settings form with a status message.
    */
   public function syncNow(): RedirectResponse {
+    if ($this->syncService->isDisabled()) {
+      $this->messenger()->addStatus($this->syncService->disabledMessage());
+      return new RedirectResponse(Url::fromRoute('sentinel_connector.settings')->toString());
+    }
     $result = $this->syncService->sync(SyncService::TRIGGER_FORM);
     if ($result->isOk()) {
       $this->messenger()->addStatus($this->t('Sentinel sync: @msg', ['@msg' => $result->message]));
+      if ($result->modules !== []) {
+        $this->messenger()->addWarning($this->formatPlural(count($result->modules),
+          'Sentinel could not read the version of 1 module and shows it as unknown version: @modules.',
+          'Sentinel could not read the version of @count modules and shows them as unknown version: @modules.',
+          ['@modules' => SyncResult::listModules($result->modules)],
+        ));
+      }
     }
     elseif ($result->isPushLimited()) {
       // A plan limit is an expected outcome, not a connection failure.

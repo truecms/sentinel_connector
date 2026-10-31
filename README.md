@@ -40,29 +40,101 @@ Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
-## Upgrading to 1.4.0
+## Upgrading to 1.5.0
 
-Release `1.4.0` introduces payload v4 with the optional `upgrade_status`
-block ([Drupal upgrade readiness](#drupal-upgrade-readiness-upgrade-status-integration)).
-Upgrade only after the receiving Sentinel environment accepts v4, then:
+Release `1.5.0` keeps payload v4 and adds the optional `upgrade_status` block
+([Drupal upgrade readiness](#drupal-upgrade-readiness-upgrade-status-integration)).
+Upgrade only after the receiving Sentinel accepts that block: a Sentinel
+without it refuses the push. Then:
 
 ```bash
-composer require drupal/sentinel_connector:^1.4 --with-all-dependencies
+composer require drupal/sentinel_connector:^1.5 --with-all-dependencies
 drush updb
 ```
 
-Update `10004` enables `report_upgrade_status`. Export configuration
+Update `10006` enables `report_upgrade_status`. Export configuration
 afterwards (`drush cex`), or add `report_upgrade_status: true` to the site's
 `sentinel_connector.settings.yml`, so a later import keeps it. Nothing is sent
 until Upgrade Status is enabled on the site; no scan runs on cron. Sites
-upgrading from a release before 1.3.0 also follow the 1.3.0 steps below.
+upgrading from a release before 1.4.0 also follow the 1.4.0 steps below.
+
+## Upgrading to 1.4.0
+
+Release `1.4.0` slims the settings form, adds settings for several
+environments, and sends payload v4. Upgrade only after the receiving Sentinel
+accepts payload v4 and has the connection check route. Run `drush updb` after
+updating, then export configuration (`drush cex`).
+
+Update `10005`:
+
+- Removes `api_base_url`, `site_url` and `site_name` from
+  `sentinel_connector.settings`. The site is identified by its Site UUID and
+  its API key; the URL and name are no longer sent.
+- Maps the report scope: `contrib_custom` becomes `all`, `contrib` becomes
+  `core_contrib`. Custom modules that were left out stay left out.
+- Turns on **Report platform versions** (`report_platform: true`), which keeps
+  what the site sent before.
+
+The API base URL now comes from `settings.php` or the environment, with
+`https://ingest.sentinelconnector.io` as the default. **UAT and local sites
+must act**: when the saved base URL was not the production default, the
+site is never moved to production. It sends nothing, and the update logs a
+warning, until you set `$settings['sentinel_connector.api_base_url']` or
+`SENTINEL_CONNECTOR_API_BASE_URL` on that environment (to the production URL
+if that is what you want). See
+[Several environments](#several-environments). Afterwards run
+`drush sentinel_connector:check` on each environment.
+
+Release `1.4.0` also adds the Key module as the recommended API key source.
+
+If the key was saved on the settings form (Drupal State) and the Key module is
+enabled, update `10004` moves it into a new key `sentinel_connector_api_key`
+(`sentinel_connector_api_key_2` and so on if that id is taken), selects it, and
+deletes the State value. Without the Key module the key stays in State until
+the module is enabled, which runs the same move. A site that already selected
+a key, or uses `settings.php` or the environment variable, is not changed.
+
+The moved key uses Key's State provider, so the value is still in the
+database. Edit the key, change its provider to a file, an environment variable
+or a vault, then delete the State variable named in its description:
+
+```bash
+drush state:delete sentinel_connector.key_value.sentinel_connector_api_key
+```
+
+Export configuration afterwards (`drush cex`) to keep `api_key_id` and the
+key entity. The key entity holds no value for file, environment or vault
+providers, so it is safe to export.
+
+## Upgrading to 1.3.3
+
+Release `1.3.3` adds two optional platform fields and keeps payload v3: the
+operating system's `codename`, and a `packages` list of the installed builds
+of PHP, Apache, Nginx, MySQL, MariaDB and PostgreSQL from the Debian and
+Ubuntu package database. Sentinel uses them to check Ubuntu's and Debian's
+own security fixes; older Sentinel releases ignore them. Update the module
+with Composer; no database update or configuration export is needed.
+
+## Upgrading to 1.3.2
+
+Release `1.3.2` is a patch release with no payload, schema or configuration
+change. It reports numeric Composer branches, such as `dev-3.x`, as Drupal
+branch versions, such as `3.x-dev`. Update the module with Composer; no
+database update or configuration export is needed.
+
+## Upgrading to 1.3.1
+
+Release `1.3.1` is a patch release with no payload, schema or configuration
+change. It trims module versions, names each module Sentinel rejected and
+warns about versions Sentinel could not read. Update the module with Composer;
+no database update or configuration export is needed.
 
 ## Upgrading to 1.3.0
 
 Release `1.3.0` introduces payload v3, configuration drift and the optional
 `sentinel_connector_config_pr` submodule. Release `1.2.0` already provides
 Drupal 12 compatibility and uses payload v2. Upgrade only after the receiving
-Sentinel environment accepts v3; preserve the site's API URL, UUID, key and
+Sentinel environment accepts v3; preserve the site's UUID, key and
 production-only overrides. See [RELEASE.md](RELEASE.md) for release and canary
 gates. Availability on Drupal.org must be confirmed before running:
 
@@ -116,19 +188,31 @@ module does not automatically patch those dependencies.
 ## What it sends
 
 A `POST` to `{api_base_url}/api/v1/sites/{site_uuid}/modules/sync` with an
-`X-API-Key` header, containing the site info, Drupal/PHP/IP environment, and the
+`X-API-Key` header, containing the site UUID, Drupal/PHP/IP environment, and the
 list of installed modules (machine name, display name, type, enabled, version,
 description). Every sync is a full snapshot (`full_sync: true`).
 
-The payload is `schema_version: 4`. Its `platform` block reports the stack
-Sentinel matches against known vulnerabilities:
+The payload is `schema_version: 4`. The `site` block holds only the `uuid`:
+the site URL and name are not sent. `platform_reporting` is always sent,
+`"enabled"` or `"disabled"`, so Sentinel can tell a site that turned platform
+reporting off from one whose versions could not be read.
+
+With **Report platform versions** on (the default), the `platform` block
+reports the stack Sentinel matches against known vulnerabilities. Turned off,
+the stack is not read and no `platform` block is sent;
+`drupal_info.php_version` is still sent, because Drupal core support depends
+on it.
+
+The optional `upgrade_status` block is described in
+[Drupal upgrade readiness](#drupal-upgrade-readiness-upgrade-status-integration).
 
 | Part | Fields | Source |
 |------|--------|--------|
 | `php` | `version`, `sapi` | `PHP_VERSION`, `PHP_SAPI` |
 | `web_server` | `software`, `version`, `raw` | `SERVER_SOFTWARE` of a web request |
 | `database` | `driver`, `product`, `version` | The Drupal database connection; `product` is `mariadb` when the version says MariaDB |
-| `os` | `family`, `distribution`, `release` | `PHP_OS_FAMILY`; `ID` and `VERSION_ID` from `/etc/os-release` |
+| `os` | `family`, `distribution`, `release`, `codename` | `PHP_OS_FAMILY`; `ID`, `VERSION_ID` and `VERSION_CODENAME` from `/etc/os-release` |
+| `packages` | list of `source`, `version` | Installed source packages from `/var/lib/dpkg/status`, only PHP (`php8.3`), `apache2`, `nginx`, MySQL (`mysql-8.0`), MariaDB (`mariadb`, `mariadb-10.11`) and PostgreSQL (`postgresql-16`); at most 20 |
 
 Cron and Drush have no web server, so the module keeps the `SERVER_SOFTWARE`
 of the last web request in state (`sentinel_connector.web_server_software`)
@@ -137,7 +221,9 @@ that report different values do not write state on every request. With the
 version hidden (`server_tokens off`) `version` is left out. The `php` and `os`
 parts describe the process that sends the push: on cron or Drush that is the
 command-line PHP. A value the module cannot read is left out and never fails
-the sync; Sentinel shows it as unknown.
+the sync; Sentinel shows it as unknown. `packages` is read only on Debian and
+Ubuntu (a readable `/var/lib/dpkg/status`); the version is the source
+package's, and a source whose installed packages disagree is left out.
 
 ### Configuration drift
 
@@ -259,6 +345,9 @@ drush upgrade_status:analyze --all --ignore-contrib
 drush sentinel_connector:sync
 ```
 
+With the [off switch](#several-environments) set, the command exits 0 and scans
+nothing.
+
 Turn reporting off with **Report Upgrade Status readiness to Sentinel** in the
 Integrations section of the settings form (`report_upgrade_status: false`), or
 in `settings.php`, which takes precedence:
@@ -276,19 +365,41 @@ Admin UI: **Configuration → Web services → Sentinel Connector**
 
 | Setting | Description |
 | --- | --- |
-| API base URL | Sentinel base URL, e.g. `https://sentinel.example.com` |
-| Site UUID | The registered site's UUID (must match Sentinel). Saved and sent in lower case with hyphens; see below |
-| Site URL | Must match the URL registered in Sentinel |
-| Report scope | `all` (default), `contrib_custom`, or `contrib` |
+| Site UUID | From the site's Connection tab in Sentinel. Saved and sent in lower case with hyphens; see below. Can come from `settings.php` or the environment |
+| API key | See below |
+| Report scope | `all` (default): Drupal core, contrib and custom modules. `core_contrib`: Drupal core and contrib; custom modules are not sent |
 | Report configuration drift | On by default. Sends the names of configuration objects that differ from the sync directory, never their values; see [Configuration drift](#configuration-drift) |
-| Integrations | Upgrade Status: detected or not, version, last scan, **Report Upgrade Status readiness to Sentinel** (on by default) and the scan command. Config PR: detected or not, with a link to its settings |
+| Report platform versions | On by default. Sends the web server, database and OS versions and their system package versions. The PHP version is always sent |
+| Integrations | Closed until Upgrade Status is enabled. Upgrade Status: detected or not, version, last scan, **Report Upgrade Status readiness to Sentinel** (on by default) and the scan command. Config PR: detected or not, with a link to its settings |
+
+The form shows the Sentinel API base URL in use and where it comes from
+(Default, settings.php or the environment variable). It cannot be changed on
+the form, so nobody with form access can send the API key and the inventory to
+another host.
+
+**Test connection** (next to "Save configuration", with the *Trigger Sentinel
+sync* permission) and `drush sentinel_connector:check` ask Sentinel whether it
+accepts this site's API key and Site UUID. Nothing about the site is sent. The
+answer is one of:
+
+| Answer | What to do |
+| --- | --- |
+| Connected to Sentinel production (or UAT, local) as this site | Nothing |
+| The Sentinel API base URL is not valid | Fix the value named in the message. Nothing is sent until then |
+| No Sentinel API answered at the address | Check the base URL, the network and the TLS certificate |
+| Sentinel does not know this Site UUID | Most often the URL of one environment with the UUID of another. Check both belong to the same Sentinel |
+| Sentinel refused the API key, or the key belongs to another site | Copy the key of this site from Sentinel again |
+| Subscription or push limit | As for a push; see [Push limits](#push-limits) and [Inactive subscription](#inactive-subscription) |
+
+`drush sentinel_connector:check` exits non-zero on any failure, so CI and
+deployment scripts stop, and exits 0 with a notice when sending is turned off.
 
 ### API key (secret — never stored in exported config)
 
 In Sentinel, open the registered site's dashboard and choose **Create API key**
 (or **Rotate API key** to replace existing credentials). Copy the displayed key
 once into Drupal; Sentinel stores its hash and never returns it on later reads.
-The Site UUID and Site URL on the dashboard must match this module's settings.
+The Site UUID on the dashboard must match this module's settings.
 Revoke a key in Sentinel to disable it immediately.
 
 Sentinel accepts the Site UUID in one notation only: lower case with hyphens,
@@ -303,68 +414,103 @@ with a message that names the Site UUID.
 
 Resolved in this order:
 
-1. `$settings['sentinel_connector.api_key']` in `settings.php` (recommended for production)
-2. Environment variable `SENTINEL_CONNECTOR_API_KEY` (host-set, never in code)
-3. Drupal state (set via the settings form), for simple setups
+1. `$settings['sentinel_connector.api_key']` in `settings.php`
+2. A key from the [Key](https://www.drupal.org/project/key) module, selected on
+   the settings form (recommended)
+3. Environment variable `SENTINEL_CONNECTOR_API_KEY` (host-set, never in code)
+4. Drupal State, saved by the settings form when the Key module is not
+   enabled (deprecated)
 
-The API key is the only credential. There is no site token: paste the key from
-the Sentinel dashboard into **API key** on the settings form, or set it in one
-of the first two places. The form never shows a saved key; it shows where the
-active key comes from, and a blank field keeps the current key. Drupal state is
-not encrypted.
+The API key is the only credential. There is no site token. The form never
+shows the key; it shows where the active key comes from.
 
-### Send reports from production only
+To use the Key module, enable it, add a key of type *Authentication* whose
+provider reads a file, an environment variable or a vault (**Configuration >
+System > Keys**), paste the key from the Sentinel dashboard into it, and select
+it under **API key** on the settings form. Only the key id is stored in
+`sentinel_connector.settings` (`api_key_id`), so it can be exported. A key
+whose provider keeps the value in configuration is refused, because it would
+be exported. A selected key that is missing, empty or refused is skipped, and
+the next source is used; the settings form says why.
 
-When development, staging and production share configuration or database copies,
-only production must report to the registered Sentinel site. Add this block near
-the end of each environment's `settings.php`, after other settings includes:
+Without the Key module, the form saves the key in Drupal State, which is
+stored in plain text in the database and its backups. A blank field keeps the
+current key. This is deprecated: enabling the Key module moves the saved key
+into a new key (see [Upgrading to 1.4.0](#upgrading-to-140)).
+
+### Several environments
+
+One codebase can push production and non-production as separate Sentinel
+sites, or not push at all from local and CI. These settings can come from
+`settings.php` or the server environment:
+
+| Setting | settings.php | Environment variable |
+| --- | --- | --- |
+| API base URL | `$settings['sentinel_connector.api_base_url']` | `SENTINEL_CONNECTOR_API_BASE_URL` |
+| API key | `$settings['sentinel_connector.api_key']` | `SENTINEL_CONNECTOR_API_KEY` |
+| Site UUID | `$settings['sentinel_connector.site_uuid']` | `SENTINEL_CONNECTOR_SITE_UUID` |
+| Off switch | `$settings['sentinel_connector.disabled'] = TRUE` | `SENTINEL_CONNECTOR_DISABLED=1` |
+
+`settings.php` wins over the environment, and the environment wins over the
+form. A value that comes from `settings.php` or the environment is shown
+read-only on the form with its source; a key is never shown. A Site UUID
+override is normalised like the form value.
+
+**API base URL.** The default is `https://ingest.sentinelconnector.io`.
+Change it only for a non-production Sentinel. The value must be a base URL:
+`https://` only (plain `http://` only for `localhost` and `*.localhost`), a
+host, no path, query, fragment, user name or password. A trailing `/` is
+dropped. A sync endpoint pasted by mistake gets its own message: "Use the base
+URL, not the sync endpoint." An invalid value is refused, never replaced by
+the default: nothing is sent, and the form, the status report, "Sync now" and
+Drush say why.
+
+**Off switch.** With sending turned off, cron sends nothing,
+`drush sentinel_connector:sync` and `:deploy` print "Sending is turned off for
+this environment" and exit 0, and "Sync now" and "Test connection" are hidden.
+The status report shows it as information.
+
+**Platform versions** can be turned off per environment with the normal
+configuration override:
+`$config['sentinel_connector.settings']['report_platform'] = FALSE;`.
+
+The module ships a commented example,
+[`examples/settings.sentinel_connector.php`](examples/settings.sentinel_connector.php).
+Copy it next to `settings.php`, set `SENTINEL_CONNECTOR_ENVIRONMENT` on each
+environment (or map your host's own variable, such as
+`LAGOON_ENVIRONMENT_TYPE`), and include it in one of two ways:
 
 ```php
-// APP_ENV is a server environment variable, not a Drupal standard variable.
-// Replace it with your hosting platform's trusted environment identifier.
-$is_production = getenv('APP_ENV') === 'production';
-
-$config['sentinel_connector.settings']['enabled'] = $is_production;
-if (!$is_production) {
-  $config['sentinel_connector.settings']['api_base_url'] = '';
-  $config['sentinel_connector.settings']['site_uuid'] = '';
+// Always include (the file itself turns sending off on local and CI).
+if (file_exists($app_root . '/' . $site_path . '/settings.sentinel_connector.php')) {
+  include $app_root . '/' . $site_path . '/settings.sentinel_connector.php';
 }
 ```
 
-Set `APP_ENV=production` only on the production website, for both web requests
-and Drush/cron. Leave it unset or use another value on every other environment.
-Do not detect production from the request host name: requests can supply it,
-and Drush may not have it. If the variable is missing, reporting stays off.
-
-The `enabled` setting controls automatic cron reports only. The empty API URL
-and Site UUID also prevent **Sync now**, `sentinel_connector:sync` and
-`sentinel_connector:deploy --force` from sending a payload on other
-environments, even after a production database copy. A manual attempt there
-returns `unconfigured` (or an existing deferred plan-limit result) without an
-HTTP request. The status report can show the connector as not configured there.
-
-Keep the API key in production's private settings or secret environment only.
-Do not export it with configuration. The URL and Site UUID overrides above also
-block sending if a database copy includes an old key in Drupal state.
-
-These overrides do not change stored or exported configuration. The settings
-form can show the stored values; check effective values with Drush:
-
-```bash
-drush php:eval 'var_export(["enabled" => \Drupal::config("sentinel_connector.settings")->get("enabled"), "api_base_url" => \Drupal::config("sentinel_connector.settings")->get("api_base_url"), "site_uuid" => \Drupal::config("sentinel_connector.settings")->get("site_uuid")]);'
+```php
+// Include only outside local and CI.
+if (!getenv('CI') && getenv('SENTINEL_CONNECTOR_ENVIRONMENT') !== 'local') {
+  include $app_root . '/' . $site_path . '/settings.sentinel_connector.php';
+}
 ```
 
-On each non-production environment, check for `enabled: false` and empty API
-URL and Site UUID before you enable cron or run deployment commands. Check the
-same values from the web runtime if its environment differs from Drush. Clear
-Drupal's cache after changing environment settings (`drush cr`).
+With the second form, also turn sending off on local and CI, for example with
+`SENTINEL_CONNECTOR_DISABLED=1`: a production database copy holds the
+production Site UUID.
+
+Keep API keys out of the file: read them from the environment or a secrets
+store. Then run `drush sentinel_connector:check` on each environment.
+
+More in the knowledge base:
+[Use the Sentinel Connector on several environments](https://sentinelconnector.io/app/support/knowledge-base/use-the-sentinel-connector-on-several-environments).
 
 ## Triggering a sync
 
 - **Cron** — automatic when enabled on the settings form. Pushes only when the inventory changed, at most once an hour; see [Push frequency](#push-frequency).
 - **Drush** — `drush sentinel_connector:sync` (alias `sc-sync`).
 - **Deployment** — `drush sentinel_connector:deploy` (alias `sc-deploy`) from the CI/CD pipeline; see [Notify Sentinel on deployment](#notify-sentinel-on-deployment).
-- **Admin button** — "Sync now", next to "Save configuration" on the settings form (requires the *Trigger Sentinel sync* permission). It appears once the saved settings hold the API base URL, a valid Site UUID and an API key.
+- **Admin button** — "Sync now", next to "Save configuration" on the settings form (requires the *Trigger Sentinel sync* permission). It appears once a valid API base URL, a valid Site UUID and an API key are in place, and not while sending is turned off.
+- **Connection check** — "Test connection" on the settings form, or `drush sentinel_connector:check` (alias `sc-check`). Sends no inventory; see [Configuration](#configuration).
 
 ## Notify Sentinel on deployment
 
@@ -408,7 +554,8 @@ that pushed with the same credentials, or a site registered again.
 | Nothing changed, last accepted push under 24 hours old | "no change since the last accepted push" | 0 |
 | Changed, push accepted | Success | 0 |
 | Changed, held or refused by the [plan limit](#push-limits) | Warning with the next allowed time | 0 |
-| API URL, site UUID or API key missing, or site UUID not a UUID | Warning, nothing sent | 0 |
+| Site UUID or API key missing, or site UUID not a UUID | Warning, nothing sent | 0 |
+| Sending turned off for this environment | Notice, nothing sent | 0 |
 | Inactive subscription, or any other failure | Error | non-zero |
 
 Options and notes:
@@ -457,7 +604,7 @@ the plan's push limit is kept for real changes:
   last attempt whatever its outcome, or from the last check that found no
   change. This floor is fixed in code.
 - The comparison uses a SHA-256 hash of everything that is sent, apart from
-  the IP address, plus the API base URL. Any difference, down to one
+  the IP address, plus the API base URL in use. Any difference, down to one
   character, is a change and is pushed. The hash is kept in state
   (`sentinel_connector.last_fingerprint`) and is updated by every accepted
   push; the payload itself is not stored.
@@ -584,26 +731,38 @@ lower-case letters, digits or underscores is ignored.
 
 | Outcome | HTTP | `error_code` | Level | Meaning |
 |---------|------|--------------|-------|---------|
-| `success` | 200 | | info | The inventory was stored. The message is Sentinel's own when it sends one. |
-| `accepted` | 202 | | info | The inventory was queued; the entry has the task ID. |
+| `success` | 200 | | info; warning with unresolved versions | The inventory was stored. The message is Sentinel's own when it sends one. Modules whose version Sentinel could not read are listed as a warning (see below). |
+| `accepted` | 202 | | info; warning with unresolved versions | The inventory was queued; the entry has the task ID. Unresolved versions are listed as for `success`. |
 | `push_deferred` | none | | debug | A stored plan limit held the push back; no request was sent. |
 | `push_limited` | 429 | `push_limit_reached` | notice | The plan's push limit was reached. |
 | `rate_limited` | 429 | `site_rate_limited`, `auth_rate_limited` | notice | Sentinel's general rate limit, or its limit on authentication attempts, was reached. The message is Sentinel's own, with the `Retry-After` wait. |
 | `subscription_inactive` | 402 | `subscription_inactive` | warning | The subscription is overdue, unpaid or paused. |
-| `site_mismatch` | 400 | `site_url_mismatch`, `site_uuid_mismatch` | warning | The site URL or UUID differs from the site registered in Sentinel. |
-| `validation_failed` | 400 | `module_validation_failed`, `module_not_on_drupal_org` | warning | Sentinel rejected module names or versions, or a module that is not on drupal.org. The message has the count and the first five names when Sentinel lists them. |
+| `site_mismatch` | 400 | `site_url_mismatch`, `site_uuid_mismatch` | warning | The site UUID differs from the site registered in Sentinel. (`site_url_mismatch` comes only from connectors before 1.4.0, which sent the site URL.) |
+| `validation_failed` | 400 | `module_validation_failed`, `module_not_on_drupal_org` | warning | Sentinel rejected module names or versions, or a module that is not on drupal.org. The message has the count and up to five entries when Sentinel lists them, each with its result and the version sent, then "and N more". `drush sentinel_connector:sync` lists every entry. |
 | `not_found` | 404 | `site_unavailable` | warning | Sentinel does not know the site, the site or its organisation is inactive, or the API base URL is wrong. |
 | `conflict` | 409 | `catalog_conflict`, `catalog_entry_unavailable` | warning | Sentinel could not store a reported module. |
-| `unconfigured` | none | | warning; debug on cron | The API URL, site UUID or API key is missing, or the site UUID is not a UUID; no request was sent. |
+| `unconfigured` | none | | warning; debug on cron | The site UUID or API key is missing, or the site UUID is not a UUID; no request was sent. |
+| `invalid_url` | none | | error | The API base URL from `settings.php` or the environment is not a valid base URL; no request was sent. |
+| `disabled` | none | | debug | Sending is turned off for this environment; no request was sent and nothing is recorded. |
 | `signature_refused` | 401 | `signature_missing`, `signature_invalid`, `timestamp_skew`, `replay_detected` | error | The request signature was refused; the entry has Sentinel's code. |
 | `auth_error` | 401, 403 | `authentication_required`, `api_key_invalid`, `api_key_inactive`, `permission_denied`, `site_mismatch` | error | The API key is missing, wrong, expired or inactive, lacks permission, or belongs to another site. |
 | `invalid_payload` | 400, 422 | `payload_invalid`, `json_invalid`, `body_unreadable` | error | Sentinel could not read or decode the payload. The message has the first field at fault when Sentinel names one. |
 | `unavailable` | 503 | `rate_limiter_unavailable`, `replay_protection_unavailable`, `queue_unavailable`, `inventory_busy`, `auth_rate_limiter_unavailable` | error | Sentinel is temporarily unavailable. With one of these codes the message has the `Retry-After` wait. |
 | `server_error` | other 5xx | `internal_error` | error | Sentinel failed. |
 | `transport_error` | none | | error | Sentinel could not be reached. |
-| `invalid_response` | any | | error | The response was not the JSON the connector expects. |
+| `invalid_response` | any | | error | The response was not the JSON the connector expects, or a redirect (3xx), which is never followed. |
 | `rejected` | other | | error | Any other refusal. |
 | `internal_error`, `state_error` | none | | error | The push failed on this site; the entry has the error class. Not to be confused with Sentinel's `internal_error` code, which is a `server_error`. |
+
+Sentinel stores a module whose version it cannot read, such as a Composer
+branch name like `dev-main`, as an unknown version instead of refusing the
+push, and lists it in `unresolved_versions` of the `200` or `202` response.
+The connector then shows a warning on the settings page after "Sync now",
+lists every such module in the Drush output and writes the log entry at
+warning level with `unresolved versions (N)` and the first entries. Module
+names and versions from Sentinel are shown without control characters, with
+angle brackets as `‹ ›`, and cut to 64 and 50 characters. A Sentinel that does not send the list shows no
+warning.
 
 A 403 without an `error_code` is also reported as `auth_error`. Such a
 response can come from in front of Sentinel, for example a network-level
@@ -631,7 +790,9 @@ Connector* entry:
 
 | State | Severity |
 | --- | --- |
-| API base URL, site UUID or API key missing, or site UUID not a UUID | Error, with a link to the settings form |
+| Sending turned off for this environment | Information |
+| API base URL from `settings.php` or the environment not valid | Error, with the reason |
+| Site UUID or API key missing, or site UUID not a UUID | Error, with a link to the settings form |
 | Last push refused over an inactive subscription | Error, with the reason |
 | No push accepted and no unchanged check in the last 24 hours | Error, with the last attempt, its result and its time |
 | Configured less than 24 hours ago, no push accepted yet | Warning |
@@ -642,6 +803,10 @@ Connector* entry:
 "Accepted" means Sentinel answered 200 or 202. A plan limit that ended less
 than 6 hours ago also shows as information, so that a Free site does not
 report an error between the end of its daily limit and the next cron run.
+
+A second entry, *Sentinel Connector connection test*, is a warning while the
+last "Test connection" or `drush sentinel_connector:check` failed and no push
+has been accepted since.
 
 ## Configuration pull request (optional submodule)
 
@@ -778,7 +943,7 @@ module's directory (for example, `webform_ui` inside `webform`) is folded into
 that module, which reports `enabled: true` when it or any of its sub-modules is
 enabled. Modules shipped inside an install profile are listed normally. Core
 modules are not listed either; core is reported by `drupal_info.core_version`
-alone, so the `all` and `contrib_custom` scopes list the same modules. Custom
+alone, in both scopes. `core_contrib` leaves out custom modules. Custom
 names are never guessed as Drupal.org projects.
 
 The project comes from the `project` key that Drupal.org packaging adds to
@@ -796,7 +961,8 @@ dev checkout have no such key, so the connector then looks for the installed
 
 The root package, `drupal/core*` packages and `drupal-custom-*` package types
 are ignored, so site-specific code in a path repository stays `custom`. A missing version
-keeps the legacy `0.0.0` placeholder with `version_known: false`.
+keeps the legacy `0.0.0` placeholder with `version_known: false`. Whitespace
+around a version is trimmed before it is sent.
 Sentinel uses this site-scoped identity to assess the persisted inventory
 asynchronously. Inventory acceptance and upstream assessment are distinct;
 narrow scopes, custom modules and missing metadata cannot establish whole-site
@@ -805,8 +971,9 @@ assessment coverage. The connector does not yet sign or poll requests.
 The real local API smoke fixture lives at `tests/fixtures/connector_e2e.php`.
 Provision a synthetic site and issue its key through the normal Sentinel UI/API,
 then provide `SENTINEL_E2E_ALLOW=1`, `SENTINEL_E2E_API_URL` (base before
-`/api/v1`), `SENTINEL_E2E_SITE_UUID`, `SENTINEL_E2E_SITE_URL`,
-`SENTINEL_E2E_SITE_NAME` and `SENTINEL_E2E_API_KEY` in a private environment.
+`/api/v1`), `SENTINEL_E2E_SITE_UUID` and `SENTINEL_E2E_API_KEY` in a private
+environment. The fixture sets the API base URL through
+`SENTINEL_CONNECTOR_API_BASE_URL` for its run.
 Run from the Drupal project root:
 
 ```bash

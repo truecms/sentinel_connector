@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\sentinel_connector\ComposerProjectResolver;
 use PHPUnit\Framework\TestCase;
@@ -10,11 +11,13 @@ use PHPUnit\Framework\TestCase;
  * @coversDefaultClass \Drupal\sentinel_connector\ComposerProjectResolver
  * @covers \Drupal\sentinel_connector\ComposerProjectResolver::__construct
  * @covers \Drupal\sentinel_connector\ComposerProjectResolver::resolve
+ * @covers \Drupal\sentinel_connector\ComposerProjectResolver::version
  * @covers \Drupal\sentinel_connector\ComposerProjectResolver::fromInstalledVersions
  * @group sentinel_connector
  */
 #[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, '__construct')]
 #[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, 'resolve')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, 'version')]
 #[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, 'fromInstalledVersions')]
 #[Group('sentinel_connector')]
 class ComposerProjectResolverTest extends TestCase {
@@ -79,10 +82,23 @@ class ComposerProjectResolverTest extends TestCase {
       'Drupal/Admin_Toolbar' => [
         'type' => 'drupal-module',
         'install_path' => $web . '/modules/contrib/../contrib/admin_toolbar',
+        'pretty_version' => '3.5.0',
       ],
-      'drupal/hyphen-name' => ['type' => 'drupal-module', 'install_path' => $web . '/modules/contrib/hyphen'],
-      'drupal/linked' => ['type' => 'drupal-module', 'install_path' => $this->root . '/vendor/drupal/linked'],
-      'drupal/lightning' => ['type' => 'drupal-profile', 'install_path' => $web . '/profiles/contrib/lightning'],
+      'drupal/linked' => [
+        'type' => 'drupal-module',
+        'install_path' => $web . '/modules/contrib/linked',
+        'pretty_version' => '2.3.0',
+      ],
+      'drupal/hyphen-name' => [
+        'type' => 'drupal-module',
+        'install_path' => $web . '/modules/contrib/hyphen',
+        'pretty_version' => ['not', 'a', 'string'],
+      ],
+      'drupal/lightning' => [
+        'type' => 'drupal-profile',
+        'install_path' => $web . '/profiles/contrib/lightning',
+        'pretty_version' => ' 5.0.0-rc1 ',
+      ],
       'drupal/site_feature' => [
         'type' => 'drupal-custom-module',
         'install_path' => $web . '/modules/custom/site_feature',
@@ -121,6 +137,67 @@ class ComposerProjectResolverTest extends TestCase {
     // A sibling whose name shares a prefix is not inside the package.
     mkdir($this->root . '/web/modules/contrib/admin_toolbar_extra');
     $this->assertNull($resolver->resolve('modules/contrib/admin_toolbar_extra'));
+  }
+
+  /**
+   * Tests the installed version of the containing package.
+   */
+  public function testVersionOfContainingPackage(): void {
+    $resolver = $this->resolver();
+    $this->assertSame('3.5.0', $resolver->version('modules/contrib/admin_toolbar'));
+    // Only the package root gets a version: a nested module may be another
+    // project, such as a module shipped inside a profile.
+    $this->assertNull($resolver->version('modules/contrib/admin_toolbar/admin_toolbar_links_access_filter'));
+    $this->assertNull($resolver->version('profiles/contrib/lightning/modules/lightning_core'));
+    // A symlinked path-repository install has no trusted version.
+    $this->assertSame('linked', $resolver->resolve('modules/contrib/linked'));
+    $this->assertNull($resolver->version('modules/contrib/linked'));
+    // A non-string version, and paths outside any package.
+    $this->assertNull($resolver->version('modules/contrib/hyphen'));
+    $this->assertNull($resolver->version('modules/custom/my_custom'));
+    $this->assertNull($resolver->version('modules/contrib/does_not_exist'));
+  }
+
+  /**
+   * Composer's numeric branch syntax is sent in Drupal's syntax.
+   *
+   * @dataProvider branchVersions
+   */
+  #[DataProvider('branchVersions')]
+  public function testNumericBranchUsesDrupalSyntax(string $installed, string $expected): void {
+    $web = $this->root . '/web';
+    $resolver = new ComposerProjectResolver($web, [
+      'drupal/hyphen' => [
+        'type' => 'drupal-module',
+        'install_path' => $web . '/modules/contrib/hyphen',
+        'pretty_version' => $installed,
+      ],
+    ]);
+    $this->assertSame($expected, $resolver->version('modules/contrib/hyphen'));
+  }
+
+  /**
+   * Numeric branches, releases, pre-releases and other branch names.
+   *
+   * @return array<string, array{string, string}>
+   *   Composer's recorded version and the version that must be reported.
+   */
+  public static function branchVersions(): array {
+    return [
+      'numeric branch' => ['dev-3.x', '3.x-dev'],
+      'minor branch' => ['dev-3.2.x', '3.2.x-dev'],
+      'padded numeric branch' => [' dev-3.x ', '3.x-dev'],
+      'already Drupal syntax' => ['3.x-dev', '3.x-dev'],
+      'stable release' => ['3.2.1', '3.2.1'],
+      'release candidate' => ['1.0.0-rc1', '1.0.0-rc1'],
+      'alpha' => ['2.1.0-alpha2', '2.1.0-alpha2'],
+      'beta' => ['3.0.0-beta1', '3.0.0-beta1'],
+      'named branch' => ['dev-main', 'dev-main'],
+      'feature branch' => ['dev-feature-3.x', 'dev-feature-3.x'],
+      'numeric name without wildcard' => ['dev-3', 'dev-3'],
+      'unsupported long branch' => ['dev-3.2.1.x', 'dev-3.2.1.x'],
+      'branch suffix' => ['dev-3.x-extra', 'dev-3.x-extra'],
+    ];
   }
 
   /**

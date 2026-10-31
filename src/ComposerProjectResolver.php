@@ -5,10 +5,11 @@ namespace Drupal\sentinel_connector;
 use Composer\InstalledVersions;
 
 /**
- * Resolves the Drupal.org project of an extension from Composer metadata.
+ * Resolves the Drupal.org project and version of an extension from Composer.
  *
- * Used when an info.yml has no 'project' key, which is the case for modules
- * installed from a git clone, a VCS Composer repository or a dev checkout.
+ * Used when an info.yml has no 'project' or 'version' key, which is the case
+ * for modules installed from a git clone, a VCS Composer repository or a dev
+ * checkout.
  */
 class ComposerProjectResolver {
 
@@ -20,13 +21,20 @@ class ComposerProjectResolver {
   protected array $paths = [];
 
   /**
+   * Composer pretty versions keyed like $paths, for packages that have one.
+   *
+   * @var array<string, string>
+   */
+  protected array $versions = [];
+
+  /**
    * Constructs the resolver from Composer's installed package data.
    *
    * @param string $appRoot
    *   The Drupal app root that extension paths are relative to.
    * @param array<string, array<string, mixed>> $versions
    *   Installed packages keyed by name, as in Composer's 'versions' data. Only
-   *   'type' and 'install_path' are read.
+   *   'type', 'install_path' and 'pretty_version' are read.
    * @param string|null $rootPackage
    *   Name of the root package. Its install path is the whole project, so it
    *   can never identify a single extension.
@@ -52,7 +60,20 @@ class ComposerProjectResolver {
       if ($real === FALSE) {
         continue;
       }
-      $this->paths[rtrim($real, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR] = substr($name, strlen('drupal/'));
+      $key = rtrim($real, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+      $this->paths[$key] = substr($name, strlen('drupal/'));
+      $version = $package['pretty_version'] ?? NULL;
+      // A symlinked install is a path repository, whose version Composer may
+      // guess from the site's own repository, so it is not trusted.
+      if (is_string($version) && trim($version) !== '' && !is_link(rtrim($path, '/\\'))) {
+        $version = trim($version);
+        // Composer names a numeric branch 'dev-3.x'; Sentinel reads Drupal's
+        // '3.x-dev'. Other branch names and releases are sent unchanged.
+        if (preg_match('/^dev-(\d+(?:\.\d+)?\.x)$/D', $version, $matches)) {
+          $version = $matches[1] . '-dev';
+        }
+        $this->versions[$key] = $version;
+      }
     }
   }
 
@@ -83,19 +104,55 @@ class ComposerProjectResolver {
    *   package of their parent project.
    */
   public function resolve(string $extensionPath): ?string {
+    $key = $this->match($extensionPath);
+    return $key === NULL ? NULL : $this->paths[$key];
+  }
+
+  /**
+   * Returns the installed version of the package that contains an extension.
+   *
+   * @param string $extensionPath
+   *   Extension directory, relative to the app root.
+   *
+   * @return string|null
+   *   Composer's recorded pretty version, such as '2.1.1' or '1.x-dev', or
+   *   NULL unless the extension is the root of a drupal/* package with a
+   *   trusted version. A module nested elsewhere in a package, such as inside
+   *   a profile, may belong to another project and gets no version.
+   */
+  public function version(string $extensionPath): ?string {
+    $key = $this->match($extensionPath);
+    if ($key === NULL) {
+      return NULL;
+    }
+    $real = realpath($this->appRoot . DIRECTORY_SEPARATOR . $extensionPath);
+    return rtrim((string) $real, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR === $key
+      ? ($this->versions[$key] ?? NULL)
+      : NULL;
+  }
+
+  /**
+   * Finds the install path key of the package that contains an extension.
+   *
+   * @param string $extensionPath
+   *   Extension directory, relative to the app root.
+   *
+   * @return string|null
+   *   The deepest containing package's real install path with a trailing
+   *   slash, or NULL.
+   */
+  protected function match(string $extensionPath): ?string {
     $real = realpath($this->appRoot . DIRECTORY_SEPARATOR . $extensionPath);
     if ($real === FALSE) {
       return NULL;
     }
     $real = rtrim($real, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
     $match = NULL;
-    $length = 0;
     // The deepest containing package wins, so a module shipped inside a
     // profile package is not attributed to a package nested elsewhere.
-    foreach ($this->paths as $path => $name) {
-      if (str_starts_with($real, $path) && strlen($path) > $length) {
-        $match = $name;
-        $length = strlen($path);
+    foreach (array_keys($this->paths) as $path) {
+      if (str_starts_with($real, $path) && strlen($path) > strlen($match ?? '')) {
+        $match = $path;
       }
     }
     return $match;

@@ -3,35 +3,154 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 1.4.0 - Unreleased
+## 1.5.0 - Unreleased
+
+Keeps payload `schema_version: 4` and adds an optional block to it. Connector
+1.4.0 sends version 4 without the block. A Sentinel that does not yet know the
+block refuses a push that carries it, so deploy truecms/sentinel#1349 first.
 
 ### Added
 
-- The sync payload is `schema_version: 4` and has an optional
-  `upgrade_status` block with the Drupal upgrade readiness Upgrade Status
-  stored: a status (`ready`, `not_ready`, `incomplete`, `not_scanned`,
-  `unavailable`), the count of projects at each next step, the custom
-  projects that need code changes and the newest and oldest scan dates.
-  Counts only: no project names, paths or messages. Sent only while
-  Upgrade Status is enabled; a failed read sends `unavailable` with a reason
-  and never fails the push.
+- An optional `upgrade_status` block with the Drupal upgrade readiness
+  Upgrade Status stored: a status (`ready`, `not_ready`, `incomplete`,
+  `not_scanned`, `unavailable`), the count of projects at each next step, the
+  custom projects that need code changes and the newest and oldest scan dates.
+  Counts only: no project names, paths or messages. Sent only while Upgrade
+  Status is enabled; a failed read sends `unavailable` with a reason and never
+  fails the push.
 - The block is part of the push fingerprint, except its `generated_at`, so a
   new scan result is pushed by the next cron run.
 - `drush sentinel_connector:upgrade-status` scans custom projects with
-  Upgrade Status, then syncs. Opt-in; it never runs on cron.
+  Upgrade Status, then syncs. Opt-in; it never runs on cron. With the off
+  switch set it exits 0 and scans nothing.
 - An Integrations section on the settings form with Upgrade Status and
   Config PR rows, and **Report Upgrade Status readiness to Sentinel**
   (`report_upgrade_status`), on by default and overridable with
-  `$settings['sentinel_connector.report_upgrade_status']`. Update `10004`
-  turns it on for existing sites; export configuration afterwards
-  (`drush cex`).
+  `$settings['sentinel_connector.report_upgrade_status']`. The section starts
+  closed until Upgrade Status is enabled. Update `10006` turns reporting on for
+  existing sites; export configuration afterwards (`drush cex`).
 
 ### Requires
 
-- A Sentinel server that accepts payload `schema_version: 4`, deployed before
-  upgrading clients.
+- A Sentinel release with the `upgrade_status` block
+  (truecms/sentinel#1349), deployed before upgrading clients.
 
-## 1.3.0 - Unreleased
+## 1.4.0 - 2026-10-30
+
+Payload v4. Needs a Sentinel release that accepts payload v4 and serves the
+connection check route (truecms/sentinel#1613, deployed 30 October 2026).
+
+### Added
+
+- Settings for several environments (#45). The API base URL, the API key, the
+  Site UUID and a new off switch can come from `settings.php`
+  (`sentinel_connector.api_base_url`, `.api_key`, `.site_uuid`, `.disabled`)
+  or the environment (`SENTINEL_CONNECTOR_API_BASE_URL`, `_API_KEY`,
+  `_SITE_UUID`, `_DISABLED=1`). `settings.php` wins over the environment, the
+  environment over the form. The form shows overridden values read-only with
+  their source.
+- The API base URL defaults to `https://ingest.sentinelconnector.io` and is
+  validated: `https://` only (`http://` for `localhost` and `*.localhost`), no
+  path, query, fragment or credentials, and its own message for a pasted sync
+  endpoint. An invalid value is refused, never replaced by the default.
+- The off switch stops cron, `drush sentinel_connector:sync` and `:deploy`
+  (which exit 0) and "Sync now".
+- "Test connection" on the settings form and `drush sentinel_connector:check`
+  (alias `sc-check`) call Sentinel's connection check route and give one plain
+  answer: connected (with the Sentinel environment), not a Sentinel API, Site
+  UUID not known there, API key refused, or a subscription or push limit. The
+  status report warns while the last check failed.
+- **Report platform versions** (`report_platform`), on by default. Off, the
+  stack is not read and no `platform` block is sent; the PHP version is still
+  sent. The payload always says `platform_reporting: "enabled"` or
+  `"disabled"`.
+- `examples/settings.sentinel_connector.php`, a commented include file for
+  production, non-production, local and CI.
+- Update `10005` removes `api_base_url`, `site_url` and `site_name`, maps the
+  report scope (`contrib_custom` to `all`, `contrib` to `core_contrib`) and
+  turns on `report_platform`. A saved base URL that was not the production
+  default is logged as a warning, and nothing is sent until `settings.php` or
+  the environment sets the URL: the site is never moved to production.
+- Sync and connection check requests no longer follow redirects, so the API
+  key never reaches another host.
+
+- The API key can be stored with the [Key](https://www.drupal.org/project/key)
+  module (optional): when Key is enabled, the settings form has a key selector
+  with links to add and manage keys, and stores only the key id
+  (`api_key_id`). Keys whose provider keeps the value in configuration are
+  refused. Sources are resolved in this order: `settings.php`, the selected
+  key, the `SENTINEL_CONNECTOR_API_KEY` environment variable, then the key
+  saved in State.
+- Update `10004`, and enabling the Key module later, move a key saved in State
+  into a new key `sentinel_connector_api_key` and select it. That key uses
+  Key's State provider, so the value is still in the database; its label says
+  this is not recommended. Change its provider to a file, an environment
+  variable or a vault. Export configuration afterwards (`drush cex`).
+
+### Changed
+
+- Payload `schema_version` 4. The `site` block holds only the `uuid`: the
+  site URL and name are no longer sent.
+- Report scope has two values: `all` (core, contrib and custom) and
+  `core_contrib` (custom modules left out).
+- The settings form asks only for the Site UUID, the API key, the report
+  scope and the two reporting checkboxes.
+
+### Removed
+
+- The API base URL, Site URL and Site name fields and settings.
+
+### Deprecated
+
+- Saving the API key in State. Without the Key module the form still offers
+  the field, marked as deprecated. Selecting a usable key deletes the State
+  value.
+
+## 1.3.3 - 2026-10-29
+
+### Added
+
+- The `os` part sends `codename` (`VERSION_CODENAME` from os-release, such
+  as `noble` or `bookworm`).
+- A new `packages` part lists the installed builds of the stack's own
+  source packages, read from the Debian and Ubuntu package database
+  (`/var/lib/dpkg/status`): PHP (`php8.3`), Apache (`apache2`), Nginx,
+  MySQL (`mysql-8.0`), MariaDB and PostgreSQL (`postgresql-16`), as
+  `{"source", "version"}`, at most 20. Nothing else from the database is
+  sent. Sentinel uses them to tell whether Ubuntu's or Debian's security
+  fixes are installed (truecms/sentinel#1409). A source whose installed
+  packages disagree on the version is left out, and a server without a
+  readable package database sends no `packages` part. Sentinel releases
+  before #1409 ignore both fields.
+
+## 1.3.2 - 2026-10-28
+
+### Fixed
+
+- A module installed from a numeric Composer branch, such as `dev-3.x` or
+  `dev-3.2.x`, is reported in Drupal's syntax, `3.x-dev` or `3.2.x-dev`.
+  Sentinel can read these versions. Releases, pre-releases such as
+  `1.0.0-rc1`, and other branch names such as `dev-main` are sent unchanged.
+
+## 1.3.1 - 2026-10-28
+
+### Changed
+
+- A module version is sent without surrounding whitespace.
+- A refusal over invalid modules (`validation_failed`) names each rejected
+  entry with its result, such as `invalid_name`, and the version sent, up to
+  five entries and "and N more" in the message and log.
+  `drush sentinel_connector:sync` lists every entry.
+
+### Added
+
+- Sentinel stores a version it cannot read as an unknown version and lists the
+  module in `unresolved_versions` (truecms/sentinel#1521). The connector now
+  shows these modules as a warning after "Sync now", in the Drush output and
+  in the log entry, which is written at warning level. A Sentinel without the
+  list shows nothing new.
+
+## 1.3.0 - 2026-10-27
 
 ### Added
 
@@ -56,6 +175,17 @@ All notable changes to this project are documented here. Versions follow
   from `drush sentinel_connector:config-pr` or cron (off by default). It never
   merges. Its open pull request is added to the drift block as
   `export_pull_request`.
+
+### Fixed
+
+- A contrib module installed from git or a source checkout has no `version`
+  in its info.yml and was reported as `0.0.0`, so Sentinel could not assess
+  it. The connector now reports the version Composer recorded for the
+  package, when the module is the root of a Composer package of the same
+  project. It is Composer's record, not a reading of the files: a checkout
+  moved by hand after `composer install` still reports the installed version.
+  Symlinked path-repository packages and modules nested in another package,
+  such as inside a profile, still report no version.
 
 ### Requires
 

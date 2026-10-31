@@ -6,6 +6,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\sentinel_connector\ConnectionChecker;
+use Drupal\sentinel_connector\ConnectionCheckResult;
 use Drupal\sentinel_connector\PushHealth;
 use Drupal\sentinel_connector\PushLimitFormatter;
 use Drupal\sentinel_connector\SyncService;
@@ -35,13 +37,11 @@ class StatusReportTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->setSetting('sentinel_connector.api_base_url', 'https://sentinel.example.com');
     $this->installConfig(['sentinel_connector']);
     $this->config('system.date')->set('timezone.default', 'Australia/Sydney')->save();
     $this->config('sentinel_connector.settings')
-      ->set('api_base_url', 'https://sentinel.example.com')
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
-      ->set('site_url', 'https://example.com')
-      ->set('site_name', 'Example')
       ->set('enabled', TRUE)
       ->save();
     $this->now = time();
@@ -116,7 +116,62 @@ class StatusReportTest extends KernelTestBase {
    *   The setting that is missing.
    */
   public static function incompleteConfigurations(): array {
-    return ['API URL' => ['api_base_url'], 'site UUID' => ['site_uuid'], 'API key' => ['api_key']];
+    return ['site UUID' => ['site_uuid'], 'API key' => ['api_key']];
+  }
+
+  /**
+   * An invalid API base URL override is an error that says why.
+   */
+  public function testInvalidUrlIsAnError(): void {
+    $this->setState(['last_accepted_time' => $this->now - 60]);
+    $this->setSetting('sentinel_connector.api_base_url', 'http://sentinel.example.com');
+    $entry = $this->entry();
+    $this->assertSame(PushHealth::SEVERITY_ERROR, $entry['severity']);
+    $this->assertSame('API base URL not valid', (string) $entry['value']);
+    $this->assertStringContainsString('must start with https://', (string) $entry['description']);
+    $this->assertStringContainsString('settings.php', (string) $entry['description']);
+  }
+
+  /**
+   * Sending turned off is information, not a fault.
+   */
+  public function testOffSwitchIsInformation(): void {
+    $this->setSetting('sentinel_connector.disabled', TRUE);
+    $entry = $this->entry();
+    $this->assertSame(PushHealth::SEVERITY_INFO, $entry['severity']);
+    $this->assertSame('Sending turned off', (string) $entry['value']);
+    $this->assertStringContainsString('sentinel_connector.disabled', (string) $entry['description']);
+  }
+
+  /**
+   * A failed connection test is a warning until a push is accepted.
+   */
+  public function testFailedConnectionTestWarns(): void {
+    $health = $this->container->get(PushHealth::class);
+    $this->assertArrayNotHasKey('sentinel_connector_connection', sentinel_connector_requirements('runtime'));
+
+    \Drupal::state()->set(ConnectionChecker::STATE_LAST_CHECK, [
+      'outcome' => ConnectionCheckResult::KEY_REFUSED,
+      'message' => 'Sentinel refused the API key.',
+      'time' => $this->now - 600,
+    ]);
+    $entry = $health->connectionRequirement();
+    $this->assertNotNull($entry);
+    $this->assertSame(PushHealth::SEVERITY_WARNING, $entry['severity'] instanceof \BackedEnum ? $entry['severity']->value : $entry['severity']);
+    $this->assertStringContainsString('Sentinel refused the API key.', (string) $entry['description']);
+    $this->assertArrayHasKey('sentinel_connector_connection', sentinel_connector_requirements('runtime'));
+
+    // A push accepted after the test shows the connection works.
+    $this->setState(['last_accepted_time' => $this->now - 60]);
+    $this->assertNull($health->connectionRequirement());
+
+    // A test that passed is not reported.
+    \Drupal::state()->set(ConnectionChecker::STATE_LAST_CHECK, [
+      'outcome' => ConnectionCheckResult::CONNECTED,
+      'message' => '',
+      'time' => $this->now,
+    ]);
+    $this->assertNull($health->connectionRequirement());
   }
 
   /**

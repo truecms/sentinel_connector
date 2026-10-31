@@ -3,6 +3,7 @@
 namespace Drupal\sentinel_connector\Hook;
 
 use Drupal\Core\Hook\Attribute\Hook;
+use Drupal\sentinel_connector\ApiKeyMigrator;
 use Drupal\sentinel_connector\PushHealth;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -61,7 +62,26 @@ class SentinelHooks {
    */
   #[Hook('runtime_requirements')]
   public function runtimeRequirements(): array {
-    return ['sentinel_connector' => $this->container->get(PushHealth::class)->requirement()];
+    $health = $this->container->get(PushHealth::class);
+    $requirements = ['sentinel_connector' => $health->requirement()];
+    $connection = $health->connectionRequirement();
+    if ($connection !== NULL) {
+      $requirements['sentinel_connector_connection'] = $connection;
+    }
+    return $requirements;
+  }
+
+  /**
+   * Moves a State API key into a key once the Key module is enabled.
+   *
+   * @param string[] $modules
+   *   The modules just installed.
+   */
+  #[Hook('modules_installed')]
+  public function modulesInstalled(array $modules): void {
+    if (in_array('key', $modules, TRUE)) {
+      $this->container->get(ApiKeyMigrator::class)->migrate();
+    }
   }
 
 }

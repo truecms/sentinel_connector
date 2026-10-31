@@ -6,6 +6,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\sentinel_connector\SentinelClient;
+use Drupal\sentinel_connector\SyncResult;
 use GuzzleHttp\Client;
 use GuzzleHttp\TransferStats;
 use GuzzleHttp\Exception\ConnectException;
@@ -67,6 +68,17 @@ class SentinelClientTest extends TestCase {
       ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
     $this->assertSame('invalid_response', $result->status);
     $this->assertFalse($result->isOk());
+  }
+
+  /**
+   * A redirect is not followed and says what to fix.
+   */
+  public function testRedirectIsNotFollowed(): void {
+    $result = $this->client(new Response(302, ['Location' => 'http://elsewhere.example.com/']))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertSame('invalid_response', $result->status);
+    $this->assertSame(302, $result->httpCode);
+    $this->assertStringContainsString('redirects elsewhere', $result->message);
   }
 
   /**
@@ -437,7 +449,7 @@ class SentinelClientTest extends TestCase {
    *   HTTP status, raw body, expected status and expected message.
    */
   public static function refusals(): array {
-    $check = '. Check the site URL and site UUID against the site registered in Sentinel.';
+    $check = '. Check the Site UUID against the site registered in Sentinel.';
     $modules = fn (int $count): array => array_map(fn (int $i): array => [
       'module_name' => 'bad_' . $i,
       'version' => '1.0',
@@ -456,11 +468,11 @@ class SentinelClientTest extends TestCase {
       'site UUID mismatch' => [400, '{"detail": "Site UUID mismatch"}', 'site_mismatch', 'Site UUID mismatch' . $check],
       'two invalid modules' => [
         400, $validation(2), 'validation_failed',
-        'All module names and versions must be valid. Rejected modules (2): bad_1, bad_2.',
+        'All module names and versions must be valid. Rejected modules (2): bad_1 (invalid_name, version "1.0"), bad_2 (invalid_name, version "1.0").',
       ],
       'many invalid modules' => [
         400, $validation(8), 'validation_failed',
-        'All module names and versions must be valid. Rejected modules (8): bad_1, bad_2, bad_3, bad_4, bad_5 and 3 more.',
+        'All module names and versions must be valid. Rejected modules (8): ' . implode(', ', array_map(fn (int $i): string => 'bad_' . $i . ' (invalid_name, version "1.0")', range(1, 5))) . ' and 3 more.',
       ],
       'validation without modules' => [
         400, '{"detail": {"error": "Module validation failed"}}', 'validation_failed', 'Module validation failed',
@@ -541,6 +553,90 @@ class SentinelClientTest extends TestCase {
     $queued = $this->client(new Response(202, [], (string) json_encode(['task_id' => "abc\ninjected"])))
       ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
     $this->assertSame('invalid_response', $queued->status);
+  }
+
+  /**
+   * A validation refusal keeps every rejected entry, cleaned.
+   *
+   * The message names the first few and how many more; the result holds all
+   * of them for Drush.
+   */
+  public function testEveryRejectedEntryIsKept(): void {
+    $modules = array_map(fn (int $i): array => [
+      'module_name' => 'mod_' . $i,
+      'version' => "1.0\u{202E}" . str_repeat('v', 80),
+      'result' => 'invalid_version',
+      'reason' => 'Unreadable version',
+    ], range(1, 7));
+    $modules[] = ['module_name' => 'Bad Name', 'version' => '2.0.0', 'result' => "invalid_name\n"];
+    $body = [
+      'error_code' => 'module_validation_failed',
+      'message' => 'Refused.',
+      'detail' => ['invalid_modules' => $modules],
+    ];
+    $result = $this->client(new Response(400, [], (string) json_encode($body)))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+
+    $this->assertSame('validation_failed', $result->status);
+    $this->assertCount(8, $result->modules);
+    $this->assertSame([
+      'module_name' => 'mod_1',
+      'version' => '1.0 ' . str_repeat('v', 46),
+      'result' => 'invalid_version',
+    ], $result->modules[0]);
+    // A result that is not a plain token is dropped, not shown.
+    $this->assertSame(['module_name' => 'Bad Name', 'version' => '2.0.0', 'result' => NULL], $result->modules[7]);
+    // The list stops within the message limit and says how many more there
+    // are.
+    $this->assertStringStartsWith('Refused. Rejected modules (8): mod_1 (invalid_version, version "1.0 vvv', $result->message);
+    $this->assertMatchesRegularExpression('/ and [1-7] more\.\z/', $result->message);
+    $this->assertLessThanOrEqual(500, mb_strlen($result->message));
+
+    // A response from an older server, without a code, is listed the same.
+    $older = (string) json_encode(['detail' => ['error' => 'Module validation failed', 'invalid_modules' => $modules]]);
+    $older = $this->client(new Response(400, [], $older))->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertCount(8, $older->modules);
+
+    // A long message from an older server is shortened, so the list keeps
+    // its end.
+    $legacy = ['error' => 'Module validation failed', 'message' => str_repeat('w', 300), 'invalid_modules' => $modules];
+    $legacy = $this->client(new Response(400, [], (string) json_encode(['detail' => $legacy])))
+      ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertLessThanOrEqual(500, mb_strlen($legacy->message));
+    $this->assertStringStartsWith('www', $legacy->message);
+    $this->assertMatchesRegularExpression('/ and [1-7] more\.\z/', $legacy->message);
+  }
+
+  /**
+   * Unreadable versions of an accepted push are kept for a warning.
+   */
+  public function testUnresolvedVersionsAreKept(): void {
+    $unresolved = [
+      ['module_name' => 'foo', 'version' => 'dev-main', 'result' => 'unresolved_version'],
+      ['module_name' => "bar\n", 'version' => "1.0 <b>\u{202E}", 'result' => 'unresolved_version'],
+    ];
+    $ok = (string) json_encode(['message' => 'Synced.', 'unresolved_versions' => $unresolved]);
+    $ok = $this->client(new Response(200, [], $ok))->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertTrue($ok->isOk());
+    $this->assertSame([
+      ['module_name' => 'foo', 'version' => 'dev-main', 'result' => NULL],
+      ['module_name' => 'bar', 'version' => "1.0 \u{2039}b\u{203A}", 'result' => NULL],
+    ], $ok->modules);
+    $this->assertSame("foo (version \"dev-main\"), bar (version \"1.0 \u{2039}b\u{203A}\")", SyncResult::listModules($ok->modules));
+
+    $queued = (string) json_encode(['task_id' => 'task-1', 'unresolved_versions' => $unresolved]);
+    $queued = $this->client(new Response(202, [], $queued))->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+    $this->assertSame('accepted', $queued->status);
+    $this->assertCount(2, $queued->modules);
+
+    // An empty list, a missing one (an older Sentinel) or a malformed one
+    // adds nothing.
+    foreach ([['unresolved_versions' => []], [], ['unresolved_versions' => 'x']] as $extra) {
+      $plain = $this->client(new Response(200, [], (string) json_encode(['message' => 'Synced.'] + $extra)))
+        ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
+      $this->assertTrue($plain->isOk());
+      $this->assertSame([], $plain->modules);
+    }
   }
 
   /**

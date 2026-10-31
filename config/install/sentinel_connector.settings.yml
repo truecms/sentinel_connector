@@ -1,8 +1,7 @@
-api_base_url: ''
 site_uuid: ''
-site_url: ''
-site_name: ''
 report_scope: all
 enabled: false
 report_config_drift: true
 report_upgrade_status: true
+report_platform: true
+api_key_id: ''

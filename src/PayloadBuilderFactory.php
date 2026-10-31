@@ -2,6 +2,7 @@
 
 namespace Drupal\sentinel_connector;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Symfony\Component\HttpFoundation\RequestStack;
 
@@ -16,6 +17,7 @@ class PayloadBuilderFactory {
     protected string $appRoot,
     protected ?PlatformCollector $platform = NULL,
     protected ?ConfigDriftCollector $configDrift = NULL,
+    protected ?ConfigFactoryInterface $configFactory = NULL,
     protected ?UpgradeStatusCollector $upgradeStatus = NULL,
   ) {}
 
@@ -32,8 +34,12 @@ class PayloadBuilderFactory {
       $resolved = gethostbyname($hostname);
       $ip = ($resolved !== '' && $resolved !== $hostname) ? $resolved : '127.0.0.1';
     }
+    // On unless the site owner turned it off; a site updated from before
+    // the setting existed keeps reporting.
+    $platformReporting = $this->configFactory?->get('sentinel_connector.settings')->get('report_platform') ?? TRUE;
     try {
-      $platform = $this->platform?->collect() ?? [];
+      // Off: the stack is not even read.
+      $platform = $platformReporting ? ($this->platform?->collect() ?? []) : [];
     }
     catch (\Throwable) {
       // Stack versions are optional: never fail a sync over them.
@@ -61,7 +67,7 @@ class PayloadBuilderFactory {
         return NULL;
       }
     };
-    return new PayloadBuilder($this->moduleList, \Drupal::VERSION, PHP_VERSION, $ip, ComposerProjectResolver::fromInstalledVersions($this->appRoot), $platform, $configDrift, $upgradeStatus);
+    return new PayloadBuilder($this->moduleList, \Drupal::VERSION, PHP_VERSION, $ip, ComposerProjectResolver::fromInstalledVersions($this->appRoot), $platform, $configDrift, (bool) $platformReporting, $upgradeStatus);
   }
 
 }

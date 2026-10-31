@@ -56,8 +56,10 @@ class PayloadBuilderTest extends TestCase {
    *   Discovered modules.
    * @param array<string, string> $packages
    *   Composer package short names keyed by extension path prefix.
+   * @param array<string, string> $versions
+   *   Composer pretty versions keyed by extension path prefix.
    */
-  private function builder(array $extensions, array $packages = []): PayloadBuilder {
+  private function builder(array $extensions, array $packages = [], array $versions = []): PayloadBuilder {
     $list = $this->createMock(ModuleExtensionList::class);
     $list->method('reset')->willReturnSelf();
     $list->method('getList')->willReturn($extensions);
@@ -66,6 +68,14 @@ class PayloadBuilderTest extends TestCase {
       foreach ($packages as $prefix => $package) {
         if ($path === $prefix || str_starts_with($path, $prefix . '/')) {
           return $package;
+        }
+      }
+      return NULL;
+    });
+    $resolver->method('version')->willReturnCallback(function (string $path) use ($versions): ?string {
+      foreach ($versions as $prefix => $version) {
+        if ($path === $prefix || str_starts_with($path, $prefix . '/')) {
+          return $version;
         }
       }
       return NULL;
@@ -136,10 +146,27 @@ class PayloadBuilderTest extends TestCase {
 
     $this->assertEqualsCanonicalizing(['token', 'my_custom'], $names($this->builder($extensions)->build('all')));
     $this->assertSame('all', $this->builder($extensions)->build('all')['inventory_scope']);
-    $this->assertEqualsCanonicalizing(['token', 'my_custom'], $names($this->builder($extensions)->build('contrib_custom')));
-    $this->assertEqualsCanonicalizing(['token'], $names($this->builder($extensions)->build('contrib')));
-    $this->assertSame('contrib', $this->builder($extensions)->build('contrib')['inventory_scope']);
-    $this->assertSame('contrib_custom', $this->builder($extensions)->build('contrib_custom')['inventory_scope']);
+    $this->assertEqualsCanonicalizing(['token'], $names($this->builder($extensions)->build('core_contrib')));
+    $this->assertSame('core_contrib', $this->builder($extensions)->build('core_contrib')['inventory_scope']);
+    // Unknown values, the legacy ones too, count as 'all'.
+    foreach (['contrib_custom', 'contrib', 'nonsense', ''] as $scope) {
+      $payload = $this->builder($extensions)->build($scope);
+      $this->assertSame('all', $payload['inventory_scope'], $scope);
+      $this->assertEqualsCanonicalizing(['token', 'my_custom'], $names($payload), $scope);
+    }
+  }
+
+  /**
+   * Saved scopes from before payload v4 map to their replacements.
+   */
+  public function testLegacyScopesAreMapped(): void {
+    $this->assertSame('all', PayloadBuilder::normaliseScope('contrib_custom'));
+    $this->assertSame('core_contrib', PayloadBuilder::normaliseScope('contrib'));
+    $this->assertSame('all', PayloadBuilder::normaliseScope('all'));
+    $this->assertSame('core_contrib', PayloadBuilder::normaliseScope('core_contrib'));
+    $this->assertSame('all', PayloadBuilder::normaliseScope(NULL));
+    $this->assertSame('all', PayloadBuilder::normaliseScope('CONTRIB'));
+    $this->assertSame('all', PayloadBuilder::normaliseScope(['contrib']));
   }
 
   /**
@@ -243,9 +270,83 @@ class PayloadBuilderTest extends TestCase {
     $this->assertSame(['contrib', NULL], $identity('odd'));
     $this->assertSame(['custom', NULL], $identity('pathauto'));
 
-    // The 'contrib' scope now keeps Composer-identified modules.
-    $names = array_column($this->builder($extensions, $packages)->build('contrib')['modules'], 'machine_name');
+    // The 'core_contrib' scope keeps Composer-identified modules.
+    $names = array_column($this->builder($extensions, $packages)->build('core_contrib')['modules'], 'machine_name');
     $this->assertEqualsCanonicalizing(['token', 'admin_toolbar', 'odd'], $names);
+  }
+
+  /**
+   * Composer supplies the version when info.yml has none.
+   */
+  public function testComposerVersionFillsMissingVersion(): void {
+    $extensions = [
+      // Packaged release: info.yml wins.
+      'token' => $this->ext('token', ['project' => 'token', 'version' => '8.x-1.15'], 1, 'modules/contrib/token'),
+      // Git checkout identified by Composer.
+      'metatag' => $this->ext('metatag', ['name' => 'Metatag'], 1, 'modules/contrib/metatag'),
+      // info.yml names the project but has no version.
+      'redis' => $this->ext('redis', ['project' => 'redis'], 1, 'modules/contrib/redis'),
+      // Branch install: reported as a development version.
+      'glightbox' => $this->ext('glightbox', [], 1, 'modules/contrib/glightbox'),
+      // The containing package is another project: its version is not used.
+      'mask' => $this->ext('mask', ['project' => 'mask'], 1, 'modules/contrib/bundle/mask'),
+      // Composer has no version, or one too long to send.
+      'audit' => $this->ext('audit', [], 1, 'modules/contrib/audit'),
+      'long' => $this->ext('long', [], 1, 'modules/contrib/long'),
+      // Custom code is never given a Composer version.
+      'my_custom' => $this->ext('my_custom', [], 1, 'modules/custom/my_custom'),
+      // A blank info.yml version falls through to Composer.
+      'blank' => $this->ext('blank', ['project' => 'blank', 'version' => ' '], 1, 'modules/contrib/blank'),
+    ];
+    $packages = [
+      'modules/contrib/token' => 'token',
+      'modules/contrib/metatag' => 'metatag',
+      'modules/contrib/redis' => 'redis',
+      'modules/contrib/glightbox' => 'glightbox',
+      'modules/contrib/bundle' => 'bundle',
+      'modules/contrib/audit' => 'audit',
+      'modules/contrib/long' => 'long',
+      'modules/contrib/blank' => 'blank',
+    ];
+    $versions = [
+      'modules/contrib/token' => '1.16.0',
+      'modules/contrib/metatag' => '2.1.1',
+      'modules/contrib/redis' => '1.9.0',
+      'modules/contrib/glightbox' => '1.x-dev',
+      'modules/contrib/bundle' => '3.0.0',
+      'modules/contrib/long' => str_repeat('9', 51),
+      'modules/custom/my_custom' => '1.0.0',
+      'modules/contrib/blank' => 'dev-main',
+    ];
+    $byName = array_column($this->builder($extensions, $packages, $versions)->build('all')['modules'], NULL, 'machine_name');
+    $version = fn(string $name): array => [$byName[$name]['version'], $byName[$name]['version_known']];
+    $this->assertSame(['8.x-1.15', TRUE], $version('token'));
+    $this->assertSame(['2.1.1', TRUE], $version('metatag'));
+    $this->assertSame(['1.9.0', TRUE], $version('redis'));
+    $this->assertSame(['1.x-dev', TRUE], $version('glightbox'));
+    $this->assertSame(['0.0.0', FALSE], $version('mask'));
+    $this->assertSame(['0.0.0', FALSE], $version('audit'));
+    $this->assertSame(['0.0.0', FALSE], $version('long'));
+    $this->assertSame(['0.0.0', FALSE], $version('my_custom'));
+    $this->assertSame(['dev-main', TRUE], $version('blank'));
+  }
+
+  /**
+   * Whitespace around a version is trimmed before it is sent.
+   */
+  public function testVersionIsTrimmed(): void {
+    $extensions = [
+      'token' => $this->ext('token', ['project' => 'token', 'version' => " 8.x-1.15\n"], 1, 'modules/contrib/token'),
+      'redis' => $this->ext('redis', ['project' => 'redis'], 1, 'modules/contrib/redis'),
+      'blank' => $this->ext('blank', ['project' => 'blank'], 1, 'modules/contrib/blank'),
+    ];
+    $packages = ['modules/contrib/redis' => 'redis', 'modules/contrib/blank' => 'blank'];
+    $versions = ['modules/contrib/redis' => "\t1.9.0 ", 'modules/contrib/blank' => '  '];
+    $byName = array_column($this->builder($extensions, $packages, $versions)->build('all')['modules'], NULL, 'machine_name');
+    $this->assertSame(['8.x-1.15', TRUE], [$byName['token']['version'], $byName['token']['version_known']]);
+    $this->assertSame(['1.9.0', TRUE], [$byName['redis']['version'], $byName['redis']['version_known']]);
+    // A blank Composer version keeps the placeholder.
+    $this->assertSame(['0.0.0', FALSE], [$byName['blank']['version'], $byName['blank']['version_known']]);
   }
 
   /**
@@ -273,10 +374,27 @@ class PayloadBuilderTest extends TestCase {
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4'))->build('all');
     $this->assertSame(4, $payload['schema_version']);
     $this->assertArrayNotHasKey('platform', $payload);
+    $this->assertSame('enabled', $payload['platform_reporting']);
 
     $platform = ['php' => ['version' => '8.3.0', 'sapi' => 'fpm-fcgi']];
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform))->build('all');
     $this->assertSame($platform, $payload['platform']);
+    $this->assertSame('enabled', $payload['platform_reporting']);
+  }
+
+  /**
+   * Platform reporting turned off: no platform block, PHP still sent.
+   */
+  public function testPlatformReportingOff(): void {
+    $list = $this->createMock(ModuleExtensionList::class);
+    $list->method('reset')->willReturnSelf();
+    $list->method('getList')->willReturn([]);
+
+    $platform = ['php' => ['version' => '8.3.0', 'sapi' => 'fpm-fcgi'], 'os' => ['id' => 'debian']];
+    $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, $platform, NULL, FALSE))->build('all');
+    $this->assertArrayNotHasKey('platform', $payload);
+    $this->assertSame('disabled', $payload['platform_reporting']);
+    $this->assertSame('8.3.0', $payload['drupal_info']['php_version']);
   }
 
   /**
@@ -312,7 +430,7 @@ class PayloadBuilderTest extends TestCase {
     $this->assertSame($drift, $payload['config_drift']);
     $this->assertSame(4, $payload['schema_version']);
     // The sync and its change check see the same drift, compared once.
-    $this->assertSame($drift, $builder->build('contrib')['config_drift']);
+    $this->assertSame($drift, $builder->build('core_contrib')['config_drift']);
     $this->assertCount(1, $calls);
 
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', NULL, [], fn () => NULL))->build('all');
@@ -331,7 +449,7 @@ class PayloadBuilderTest extends TestCase {
 
     $block = ['status' => 'ready', 'generated_at' => '2026-10-25T01:00:00Z'];
     $calls = new \ArrayObject();
-    $builder = new PayloadBuilder($list, '11.2.0', '8.4.0', '203.0.113.4', NULL, [], NULL, function () use ($calls, $block): array {
+    $builder = new PayloadBuilder($list, '11.2.0', '8.4.0', '203.0.113.4', NULL, [], NULL, TRUE, function () use ($calls, $block): array {
       $calls->append(TRUE);
       return $block;
     });
@@ -340,7 +458,7 @@ class PayloadBuilderTest extends TestCase {
     $this->assertSame($block, $builder->build('contrib')['upgrade_status']);
     $this->assertCount(1, $calls);
 
-    $payload = (new PayloadBuilder($list, '11.2.0', '8.4.0', '203.0.113.4', NULL, [], NULL, fn () => NULL))->build('all');
+    $payload = (new PayloadBuilder($list, '11.2.0', '8.4.0', '203.0.113.4', NULL, [], NULL, TRUE, fn () => NULL))->build('all');
     $this->assertArrayNotHasKey('upgrade_status', $payload);
   }
 

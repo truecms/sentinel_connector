@@ -17,15 +17,30 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '1.4.0';
+  public const CONNECTOR_VERSION = '1.5.0';
 
   /**
    * Sync payload contract version.
    *
-   * Version 2 adds the platform block, version 3 the config_drift block,
-   * version 4 the upgrade_status block.
+   * Version 2 adds the platform block, version 3 the config_drift block.
+   * Version 4 sends the site block without url and name, adds the
+   * core_contrib scope, the platform_reporting field and the optional
+   * upgrade_status block.
    */
   public const SCHEMA_VERSION = 4;
+
+  /**
+   * The report scopes: everything, or core and contrib without custom.
+   */
+  public const SCOPES = ['all', 'core_contrib'];
+
+  /**
+   * Scopes saved before payload version 4, and the scope each became.
+   *
+   * Core is reported by version in every scope, so 'contrib_custom' always
+   * sent what 'all' sends.
+   */
+  public const LEGACY_SCOPES = ['contrib_custom' => 'all', 'contrib' => 'core_contrib'];
 
   /**
    * Constructs a PayloadBuilder.
@@ -40,11 +55,14 @@ class PayloadBuilder {
    *   The server IP address.
    * @param \Drupal\sentinel_connector\ComposerProjectResolver|null $composerProjects
    *   Resolves the Composer package of an extension without packaging data.
-   * @param array<string, array<string, string>> $platform
+   * @param array{php?: array<string, string>, web_server?: array<string, string>, database?: array<string, string>, os?: array<string, string>, packages?: list<array{source: string, version: string}>} $platform
    *   The platform block, without the parts that could not be read.
    * @param \Closure|null $configDrift
    *   Returns the config_drift block, or NULL to leave it out. Called on the
    *   first build only: the comparison exports the whole configuration.
+   * @param bool $platformReporting
+   *   FALSE when the site owner turned off platform reporting: no platform
+   *   block is sent, and the payload says so.
    * @param \Closure|null $upgradeStatus
    *   Returns the upgrade_status block, or NULL to leave it out. Called on
    *   the first build only, so a failed read logs one warning.
@@ -57,8 +75,23 @@ class PayloadBuilder {
     protected ?ComposerProjectResolver $composerProjects = NULL,
     protected array $platform = [],
     protected ?\Closure $configDrift = NULL,
+    protected bool $platformReporting = TRUE,
     protected ?\Closure $upgradeStatus = NULL,
   ) {}
+
+  /**
+   * Brings a saved report scope into one of SCOPES.
+   *
+   * A scope saved before payload version 4 becomes its replacement, so a
+   * site that left out custom modules never starts sending them. Anything
+   * else becomes 'all'.
+   */
+  public static function normaliseScope(mixed $scope): string {
+    if (is_string($scope) && isset(self::LEGACY_SCOPES[$scope])) {
+      return self::LEGACY_SCOPES[$scope];
+    }
+    return is_string($scope) && in_array($scope, self::SCOPES, TRUE) ? $scope : 'all';
+  }
 
   /**
    * The config_drift block of the first build, FALSE before it.
@@ -81,14 +114,15 @@ class PayloadBuilder {
    * Sub-modules are folded into the module whose directory contains them.
    *
    * @param string $scope
-   *   One of 'all', 'contrib_custom', 'contrib'.
+   *   'all', or 'core_contrib' to leave out custom modules. Any other value
+   *   counts as 'all'.
    *
    * @return array<string, mixed>
    *   The full DrupalSiteSync-shaped payload, minus the 'site' block which the
    *   caller fills from config.
    */
   public function build(string $scope): array {
-    $scope = in_array($scope, ['all', 'contrib_custom', 'contrib'], TRUE) ? $scope : 'all';
+    $scope = in_array($scope, self::SCOPES, TRUE) ? $scope : 'all';
     $extensions = array_filter(
       $this->moduleList->reset()->getList(),
       fn(Extension $extension): bool => !$this->isCore($extension),
@@ -117,17 +151,27 @@ class PayloadBuilder {
         $project = $this->normaliseProject($package);
       }
       $type = $packaged ? 'contrib' : 'custom';
-      if ($scope === 'contrib' && $type !== 'contrib') {
+      if ($scope === 'core_contrib' && $type !== 'contrib') {
         continue;
       }
       $version = $info['version'] ?? NULL;
       $versionKnown = is_string($version) && trim($version) !== '';
+      if (!$versionKnown && $project !== NULL && $this->composerProjects) {
+        // A git or source install has no version in info.yml. Composer's
+        // version is used only when its package is the same project.
+        $path = $extension->getPath();
+        if ($this->normaliseProject($this->composerProjects->resolve($path)) === $project) {
+          $version = $this->composerProjects->version($path);
+          $versionKnown = is_string($version) && trim($version) !== '' && strlen($version) <= 50;
+        }
+      }
       $modules[] = [
         'machine_name' => $name,
         'display_name' => $info['name'] ?? $name,
         'module_type' => $type,
         'enabled' => isset($enabled[$name]),
-        'version' => $versionKnown ? $version : self::VERSION_PLACEHOLDER,
+        // Whitespace around a version is never part of it.
+        'version' => $versionKnown ? trim($version) : self::VERSION_PLACEHOLDER,
         'version_known' => $versionKnown,
         'reported_project' => $project,
         'description' => $info['description'] ?? NULL,
@@ -145,9 +189,10 @@ class PayloadBuilder {
       'inventory_scope' => $scope,
       'connector_version' => self::CONNECTOR_VERSION,
       'schema_version' => self::SCHEMA_VERSION,
+      'platform_reporting' => $this->platformReporting ? 'enabled' : 'disabled',
     ];
     // PHP encodes an empty array as a list, which is not an object.
-    if ($this->platform !== []) {
+    if ($this->platformReporting && $this->platform !== []) {
       $payload['platform'] = $this->platform;
     }
     if ($this->drift === FALSE) {

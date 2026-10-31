@@ -20,6 +20,7 @@ services:
       - '@Drupal\sentinel_connector\PlatformCollector'
       - '@Drupal\sentinel_connector\ConfigDriftCollector'
       - '@Drupal\sentinel_connector\UpgradeStatusCollector'
+      - '@config.factory'
 
   Drupal\sentinel_connector\UpgradeStatusCollector:
     class: Drupal\sentinel_connector\UpgradeStatusCollector
@@ -55,7 +56,37 @@ services:
 
   Drupal\sentinel_connector\ApiKeyResolver:
     class: Drupal\sentinel_connector\ApiKeyResolver
-    arguments: ['@settings', '@state']
+    arguments: ['@settings', '@state', '@config.factory', '@?key.repository']
+
+  Drupal\sentinel_connector\ApiBaseUrlResolver:
+    class: Drupal\sentinel_connector\ApiBaseUrlResolver
+    arguments: ['@settings', '@config.factory', '@state']
+
+  Drupal\sentinel_connector\SiteUuidResolver:
+    class: Drupal\sentinel_connector\SiteUuidResolver
+    arguments: ['@settings', '@config.factory']
+
+  Drupal\sentinel_connector\SendingSwitch:
+    class: Drupal\sentinel_connector\SendingSwitch
+    arguments: ['@settings']
+
+  Drupal\sentinel_connector\ConnectionChecker:
+    class: Drupal\sentinel_connector\ConnectionChecker
+    arguments:
+      - '@Drupal\sentinel_connector\SentinelClient'
+      - '@Drupal\sentinel_connector\ApiBaseUrlResolver'
+      - '@Drupal\sentinel_connector\SiteUuidResolver'
+      - '@Drupal\sentinel_connector\ApiKeyResolver'
+      - '@Drupal\sentinel_connector\SendingSwitch'
+      - '@Drupal\sentinel_connector\PushLimitFormatter'
+      - '@state'
+      - '@datetime.time'
+      - '@logger.channel.sentinel_connector'
+      - '@string_translation'
+
+  Drupal\sentinel_connector\ApiKeyMigrator:
+    class: Drupal\sentinel_connector\ApiKeyMigrator
+    arguments: ['@state', '@config.factory', '@entity_type.manager', '@module_handler', '@Drupal\sentinel_connector\ApiKeyResolver']
 
   Drupal\sentinel_connector\SentinelClient:
     class: Drupal\sentinel_connector\SentinelClient
@@ -74,6 +105,8 @@ services:
       - '@state'
       - '@datetime.time'
       - '@url_generator'
+      - '@Drupal\sentinel_connector\ApiBaseUrlResolver'
+      - '@Drupal\sentinel_connector\ConnectionChecker'
       - '@string_translation'
 
   Drupal\sentinel_connector\SyncService:
@@ -86,3 +119,6 @@ services:
       - '@Drupal\sentinel_connector\SentinelClient'
       - '@datetime.time'
       - '@logger.channel.sentinel_connector'
+      - '@Drupal\sentinel_connector\ApiBaseUrlResolver'
+      - '@Drupal\sentinel_connector\SiteUuidResolver'
+      - '@Drupal\sentinel_connector\SendingSwitch'

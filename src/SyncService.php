@@ -161,6 +161,12 @@ class SyncService {
    *   The time service.
    * @param \Psr\Log\LoggerInterface $logger
    *   Diagnostic logger; never receives secret-bearing exception messages.
+   * @param \Drupal\sentinel_connector\ApiBaseUrlResolver $urlResolver
+   *   Resolves the API base URL.
+   * @param \Drupal\sentinel_connector\SiteUuidResolver $uuidResolver
+   *   Resolves the Site UUID.
+   * @param \Drupal\sentinel_connector\SendingSwitch $sendingSwitch
+   *   The off switch.
    */
   public function __construct(
     protected ConfigFactoryInterface $configFactory,
@@ -170,7 +176,38 @@ class SyncService {
     protected SentinelClient $client,
     protected TimeInterface $time,
     protected LoggerInterface $logger,
+    protected ApiBaseUrlResolver $urlResolver,
+    protected SiteUuidResolver $uuidResolver,
+    protected SendingSwitch $sendingSwitch,
   ) {}
+
+  /**
+   * Whether sending is turned off for this environment.
+   */
+  public function isDisabled(): bool {
+    return $this->sendingSwitch->isDisabled();
+  }
+
+  /**
+   * Whether a valid Site UUID and an API key are set, whatever the URL.
+   */
+  public function hasSiteCredentials(): bool {
+    return $this->uuidResolver->getUuid() !== NULL && $this->apiKeyResolver->getKey() !== NULL;
+  }
+
+  /**
+   * Whether the API base URL in use is refused.
+   */
+  public function hasInvalidUrl(): bool {
+    return $this->urlResolver->getUrl() === NULL;
+  }
+
+  /**
+   * The line that says sending is turned off, and by what.
+   */
+  public function disabledMessage(): string {
+    return $this->sendingSwitch->message();
+  }
 
   /**
    * Run a sync now. Returns a SyncResult describing the outcome.
@@ -186,6 +223,13 @@ class SyncService {
     $this->pendingFingerprint = NULL;
     $this->pendingDrift = NULL;
     $this->pendingUpgradeStatus = NULL;
+    if ($this->isDisabled()) {
+      // Nothing is sent and nothing is recorded: the switch is not an outcome
+      // of a push.
+      $result = SyncResult::failure(SyncResult::DISABLED, NULL, $this->disabledMessage());
+      $this->logOutcome($result, $trigger);
+      return $result;
+    }
     $extra = [];
     try {
       $deferred = $this->deferredResult();
@@ -252,6 +296,9 @@ class SyncService {
       if ($result->isSubscriptionInactive()) {
         $details[] = 'reason ' . ($result->reason ?? 'unknown');
       }
+      if ($result->isOk() && $result->modules !== []) {
+        $details[] = 'unresolved versions (' . count($result->modules) . ') ' . SyncResult::listModules($result->modules);
+      }
       foreach ($result->diagnostics + $extra as $name => $value) {
         $details[] = $name . ' ' . $value;
       }
@@ -271,16 +318,17 @@ class SyncService {
   /**
    * The log level of an outcome.
    *
-   * Info for an accepted push, debug for a push held back on this site,
+   * Info for an accepted push, warning for an accepted push with versions
+   * Sentinel could not read, debug for a push held back on this site,
    * notice for expected throttling, warning for a refusal an administrator
    * can fix, and error for everything else. Cron on a site that is not
    * configured logs at debug: it would otherwise warn every hour.
    */
   protected function logLevel(SyncResult $result, string $trigger): string {
     if ($result->isOk()) {
-      return LogLevel::INFO;
+      return $result->modules !== [] ? LogLevel::WARNING : LogLevel::INFO;
     }
-    if ($result->deferred || ($result->status === 'unconfigured' && $trigger === self::TRIGGER_CRON)) {
+    if ($result->deferred || $result->status === SyncResult::DISABLED || ($result->status === 'unconfigured' && $trigger === self::TRIGGER_CRON)) {
       return LogLevel::DEBUG;
     }
     return match ($result->status) {
@@ -294,21 +342,27 @@ class SyncService {
    * Builds and sends the inventory inside the guarded sync boundary.
    */
   protected function performSync(): SyncResult {
-    $config = $this->configFactory->get('sentinel_connector.settings');
-    $baseUrl = (string) $config->get('api_base_url');
-    $stored = (string) $config->get('site_uuid');
+    $stored = $this->uuidResolver->getRawValue();
     $apiKey = $this->apiKeyResolver->getKey();
+    // An invalid override is refused, never replaced by the default: a typo
+    // must not send the key and the inventory somewhere unexpected.
+    $baseUrl = $this->urlResolver->getUrl();
+    if ($baseUrl === NULL) {
+      return SyncResult::failure('invalid_url', NULL, 'The Sentinel API base URL is not valid. ' . $this->urlResolver->getError() . ' Nothing is sent until this is fixed.');
+    }
 
-    if ($baseUrl === '' || $stored === '' || $apiKey === NULL) {
+    if (trim($stored) === '' || $apiKey === NULL) {
       $result = SyncResult::failure('unconfigured', NULL, 'Sentinel connector is not fully configured.');
       return $result;
     }
     // A stored UUID in another notation is sent in the canonical one. One
     // that is no UUID at all is not sent: Sentinel would refuse it in words
     // that point at the API key.
-    $uuid = SiteUuid::normalize($stored);
+    $uuid = $this->uuidResolver->getUuid();
     if ($uuid === NULL) {
-      return SyncResult::failure('unconfigured', NULL, 'The Site UUID in the Sentinel connector settings is not a valid UUID. Correct it on the settings form.');
+      return SyncResult::failure('unconfigured', NULL, $this->uuidResolver->isOverridden()
+        ? 'The Site UUID set in ' . ($this->uuidResolver->getSource() === SiteUuidResolver::SOURCE_SETTINGS ? 'settings.php' : 'the ' . SiteUuidResolver::ENV_VAR . ' environment variable') . ' is not a valid UUID.'
+        : 'The Site UUID in the Sentinel connector settings is not a valid UUID. Correct it on the settings form.');
     }
     $this->markConfigured();
 
@@ -324,19 +378,20 @@ class SyncService {
   }
 
   /**
-   * Builds the full payload: the inventory plus the site block from config.
+   * Builds the full payload: the inventory plus the site block.
+   *
+   * Since payload version 4 the site block holds the UUID only: the site is
+   * identified by it and by its key, not by its URL or name.
    *
    * @return array<string, mixed>
    *   The payload sent to Sentinel.
    */
   protected function buildPayload(): array {
     $config = $this->configFactory->get('sentinel_connector.settings');
-    $payload = $this->payloadBuilder->build((string) ($config->get('report_scope') ?: 'all'));
+    $payload = $this->payloadBuilder->build(PayloadBuilder::normaliseScope($config->get('report_scope')));
     $payload['site'] = [
-      'url' => (string) $config->get('site_url'),
-      'name' => (string) $config->get('site_name'),
       // The same form as in the request path: Sentinel compares the two.
-      'uuid' => SiteUuid::normalize((string) $config->get('site_uuid')) ?? (string) $config->get('site_uuid'),
+      'uuid' => $this->uuidResolver->getUuid() ?? $this->uuidResolver->getRawValue(),
     ];
     return $payload;
   }
@@ -370,7 +425,7 @@ class SyncService {
     // The order of the extension list is not part of the inventory.
     usort($modules, fn (array $a, array $b): int => strcmp((string) ($a['machine_name'] ?? ''), (string) ($b['machine_name'] ?? '')));
     $payload['modules'] = $modules;
-    $payload['api_base_url'] = rtrim((string) $this->configFactory->get('sentinel_connector.settings')->get('api_base_url'), '/');
+    $payload['api_base_url'] = (string) $this->urlResolver->getUrl();
     ksort($payload);
     return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
   }
@@ -470,12 +525,12 @@ class SyncService {
   /**
    * Whether everything a push needs is set: API URL, site UUID and API key.
    *
-   * A site UUID that is not a UUID counts as not set.
+   * An API base URL that is not valid and a site UUID that is not a UUID
+   * count as not set.
    */
   public function isConfigured(): bool {
-    $config = $this->configFactory->get('sentinel_connector.settings');
-    return (string) $config->get('api_base_url') !== ''
-      && SiteUuid::normalize((string) $config->get('site_uuid')) !== NULL
+    return $this->urlResolver->getUrl() !== NULL
+      && $this->uuidResolver->getUuid() !== NULL
       && $this->apiKeyResolver->getKey() !== NULL;
   }
 
@@ -564,7 +619,7 @@ class SyncService {
    */
   public function cronIsDue(int $now): bool {
     $config = $this->configFactory->get('sentinel_connector.settings');
-    if (!$config->get('enabled')) {
+    if (!$config->get('enabled') || $this->isDisabled()) {
       return FALSE;
     }
     $hold = $this->getSubscriptionHoldUntil();
@@ -594,6 +649,9 @@ class SyncService {
    *   The outcome of the push, or NULL when there was nothing to push.
    */
   public function syncIfChanged(): ?SyncResult {
+    if ($this->isDisabled()) {
+      return $this->sync(self::TRIGGER_CRON);
+    }
     if ($this->hasInventoryChanged()) {
       return $this->sync(self::TRIGGER_CRON);
     }

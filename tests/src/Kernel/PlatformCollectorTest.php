@@ -6,7 +6,9 @@ use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Database\Connection;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\EventSubscriber\WebServerSubscriber;
+use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\sentinel_connector\PlatformCollector;
+use Drupal\sentinel_connector\SyncService;
 use GuzzleHttp\Client;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Handler\MockHandler;
@@ -44,6 +46,7 @@ class PlatformCollectorTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->setSetting('sentinel_connector.api_base_url', 'https://sentinel.example.com');
     $this->fixtures = dirname(__DIR__, 2) . '/fixtures/os-release';
   }
 
@@ -54,14 +57,17 @@ class PlatformCollectorTest extends KernelTestBase {
    *   The os-release files to read.
    * @param \Drupal\Core\Database\Connection|null $database
    *   A database connection, the default one when NULL.
+   * @param string[] $dpkgStatusFiles
+   *   The package databases to read.
    */
-  protected function collector(array $osReleaseFiles = [], ?Connection $database = NULL): PlatformCollector {
+  protected function collector(array $osReleaseFiles = [], ?Connection $database = NULL, array $dpkgStatusFiles = []): PlatformCollector {
     return new PlatformCollector(
       $this->container->get('state'),
       $this->container->get('request_stack'),
       $database ?? $this->container->get('database'),
       $this->container->get('datetime.time'),
       $osReleaseFiles,
+      $dpkgStatusFiles,
     );
   }
 
@@ -242,7 +248,12 @@ class PlatformCollectorTest extends KernelTestBase {
    */
   public function testOsPresent(): void {
     $os = $this->collector([$this->fixtures . '/missing', $this->fixtures . '/debian'])->os();
-    $this->assertSame(['family' => PHP_OS_FAMILY, 'distribution' => 'debian', 'release' => '12'], $os);
+    $this->assertSame([
+      'family' => PHP_OS_FAMILY,
+      'distribution' => 'debian',
+      'release' => '12',
+      'codename' => 'bookworm',
+    ], $os);
 
     // A rolling distribution has no release.
     $os = $this->collector([$this->fixtures . '/arch'])->os();
@@ -254,6 +265,57 @@ class PlatformCollectorTest extends KernelTestBase {
    */
   public function testOsMissing(): void {
     $this->assertSame(['family' => PHP_OS_FAMILY], $this->collector([$this->fixtures . '/missing'])->os());
+  }
+
+  /**
+   * Only the stack's installed source packages are read from dpkg.
+   */
+  public function testPackagesFromDpkg(): void {
+    $dpkg = dirname(__DIR__, 2) . '/fixtures/dpkg';
+    $packages = $this->collector([], NULL, [$dpkg . '/missing', $dpkg . '/status'])->packages();
+    $this->assertSame([
+      // The source version, from the Source field or the binary's Version.
+      ['source' => 'php8.3', 'version' => '8.3.6-0ubuntu0.24.04.3'],
+      ['source' => 'apache2', 'version' => '2.4.58-1ubuntu8.5'],
+      ['source' => 'mariadb', 'version' => '1:10.11.8-0ubuntu0.24.04.1'],
+    ], $packages);
+    // A second architecture of php8.3 and a held apache2 package count once.
+    // nginx (one package removed, one half configured), mysql-8.0 (versions
+    // disagree), and every package outside the stack (php-defaults, openssl)
+    // are left out.
+  }
+
+  /**
+   * Windows line endings, the 20-entry cap and an oversized version.
+   */
+  public function testPackagesEdgeCases(): void {
+    $file = $this->container->get('file_system')->getTempDirectory() . '/sentinel-dpkg-status';
+    // Too long to keep whole: left out, not cut.
+    $stanzas = ["Package: php8.4-cli\nStatus: install ok installed\nSource: php8.4\nVersion: 8.4.1-" . str_repeat('1', 60) . "\n"];
+    foreach (range(1, 25) as $major) {
+      $stanzas[] = "Package: postgresql-$major\r\nStatus: install ok installed\r\nVersion: $major.1-1\r\n";
+    }
+    file_put_contents($file, implode("\r\n", $stanzas));
+    $packages = $this->collector([], NULL, [$file])->packages();
+    $this->assertCount(PlatformCollector::PACKAGES_LIMIT, $packages);
+    $this->assertSame(['source' => 'postgresql-1', 'version' => '1.1-1'], $packages[0]);
+    $this->assertNotContains('php8.4', array_column($packages, 'source'));
+
+    // The last stanza counts without a final newline or blank separator.
+    file_put_contents($file, "Package: nginx\nStatus: install ok installed\nVersion: 1.24.0-1");
+    $this->assertSame([['source' => 'nginx', 'version' => '1.24.0-1']], $this->collector([], NULL, [$file])->packages());
+
+    // A directory is not a package database.
+    $this->assertSame([], $this->collector([], NULL, [dirname($file)])->packages());
+    unlink($file);
+  }
+
+  /**
+   * Without a package database there is no packages part.
+   */
+  public function testPackagesMissing(): void {
+    $this->assertSame([], $this->collector([], NULL, ['/nonexistent/dpkg/status'])->packages());
+    $this->assertSame([], $this->collector()->packages());
   }
 
   /**
@@ -273,10 +335,7 @@ class PlatformCollectorTest extends KernelTestBase {
    */
   public function testSyncSendsPlatform(): void {
     $this->config('sentinel_connector.settings')
-      ->set('api_base_url', 'https://sentinel.example.com')
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
-      ->set('site_url', 'https://example.com')
-      ->set('site_name', 'Example')
       ->set('report_scope', 'all')
       ->set('enabled', TRUE)
       ->save();
@@ -293,9 +352,39 @@ class PlatformCollectorTest extends KernelTestBase {
     $this->assertTrue($result->isOk());
     $body = json_decode((string) $transactions[0]['request']->getBody(), TRUE);
     $this->assertSame(4, $body['schema_version']);
+    $this->assertSame('enabled', $body['platform_reporting']);
     $this->assertSame(['version' => PHP_VERSION, 'sapi' => PHP_SAPI], $body['platform']['php']);
     $this->assertSame('nginx/1.24.0', $body['platform']['web_server']['raw']);
     $this->assertSame($this->container->get('database')->driver(), $body['platform']['database']['driver']);
+  }
+
+  /**
+   * Platform reporting off: the stack is not read and no block is sent.
+   */
+  public function testPlatformReportingOff(): void {
+    $this->config('sentinel_connector.settings')
+      ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
+      ->set('report_platform', FALSE)
+      ->save();
+    $this->container->get('state')->set('sentinel_connector.api_key', 'sk_test');
+    $collector = $this->createMock(PlatformCollector::class);
+    $collector->expects($this->never())->method('collect');
+    $this->container->set(PlatformCollector::class, $collector);
+    // Built again, with the setting and the collector above.
+    $this->container->set('sentinel_connector.payload_builder_factory', NULL);
+    $this->container->set(PayloadBuilder::class, NULL);
+    $this->container->set(SyncService::class, NULL);
+
+    $transactions = [];
+    $stack = HandlerStack::create(new MockHandler([new HttpResponse(200, [], '{"message":"ok"}')]));
+    $stack->push(Middleware::history($transactions));
+    $this->container->set('http_client', new Client(['handler' => $stack]));
+
+    $this->assertTrue($this->container->get(SyncService::class)->sync()->isOk());
+    $body = json_decode((string) $transactions[0]['request']->getBody(), TRUE);
+    $this->assertArrayNotHasKey('platform', $body);
+    $this->assertSame('disabled', $body['platform_reporting']);
+    $this->assertSame(PHP_VERSION, $body['drupal_info']['php_version']);
   }
 
 }

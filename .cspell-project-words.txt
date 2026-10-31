@@ -1,5 +1,7 @@
 acquia
+behaviour
 fixdate
+glightbox
 glpat
 normalise
 normalised
@@ -7,9 +9,14 @@ organisation
 organisation's
 recognise
 recognised
+relock
+stackable
 synchronisations
 truecms
 tthumphrey
 unconfigured
 updb
 webform
+deinstall
+dpkg
+libmariadb

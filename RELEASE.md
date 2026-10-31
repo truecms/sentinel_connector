@@ -1,3 +1,54 @@
+# Release 1.5.0: Drupal upgrade readiness
+
+1.5.0 keeps payload v4 and adds the optional `upgrade_status` block. Tracked by
+truecms/sentinel#1355, with the backend and dashboard in truecms/sentinel#1718.
+
+1. Deploy Sentinel #1718 to production. A Sentinel without the block refuses
+   a push that carries it; connector 1.4.0 keeps working either way.
+2. Only then tag 1.5.0 and publish it on Drupal.org. Date the changelog first
+   and run `php scripts/check-release.php 1.5.0`.
+3. Update `latest_connector_version` in Sentinel. Turning on
+   `UPGRADE_STATUS_ENABLED` is an owner decision on #1355.
+
+Before tagging, on a canary site with a UAT Sentinel:
+
+- `drush updb` runs update `10006`; export configuration afterwards.
+- Without Upgrade Status, an accepted push carries `schema_version: 4` and no
+  `upgrade_status` block.
+- With Upgrade Status, `drush sentinel_connector:upgrade-status` prints the
+  readiness and pushes. The block carries counts only.
+- With `SENTINEL_CONNECTOR_DISABLED=1`, the same command exits 0 and scans
+  nothing.
+
+# Release 1.4.0: minimal settings and several environments
+
+1.4.0 sends payload v4 (#45). It depends on Sentinel truecms/sentinel#1613:
+
+1. Deploy Sentinel #1613 Part A (payload v4 and
+   `POST /api/v1/sites/{site_uuid}/connection-check`) to production, and
+   publish the knowledge base article
+   `use-the-sentinel-connector-on-several-environments` that the settings
+   form links to.
+2. Confirm `https://ingest.sentinelconnector.io` serves both routes: it is
+   the connector's built-in default.
+3. Only then tag 1.4.0 and publish it on Drupal.org. Date the changelog first
+   and run `php scripts/check-release.php 1.4.0`.
+
+Before tagging, on a canary site with a UAT Sentinel:
+
+- `drush updb` runs update `10005`; a saved UAT base URL is logged as a
+  warning. Set `SENTINEL_CONNECTOR_API_BASE_URL` and run
+  `drush sentinel_connector:check`: it reports "Connected to Sentinel UAT".
+- An accepted push carries `schema_version: 4`, a `site` block with the UUID
+  only, and `platform_reporting`.
+- With `SENTINEL_CONNECTOR_DISABLED=1`, `drush sentinel_connector:deploy`
+  exits 0 and sends nothing.
+
+Tell production owners to read the `drush updb` output: any saved base URL
+other than exactly `https://ingest.sentinelconnector.io` (an old host name, a
+plain `http://` address) stops sending until `settings.php` or the
+environment sets the URL. Nothing is moved to another host silently.
+
 # Release 1.3.0: configuration drift
 
 1.2.0 is already published with Drupal 12 compatibility and payload v2.

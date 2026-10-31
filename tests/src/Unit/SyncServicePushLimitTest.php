@@ -7,8 +7,12 @@ use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyResolver;
+use Drupal\sentinel_connector\SendingSwitch;
+use Drupal\sentinel_connector\SiteUuidResolver;
 use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\sentinel_connector\SentinelClient;
 use Drupal\sentinel_connector\SyncResult;
@@ -439,6 +443,12 @@ class SyncServicePushLimitTest extends TestCase {
     return [
       'success' => [SyncResult::success(200, 'ok'), SyncService::TRIGGER_FORM, LogLevel::INFO, 'no details'],
       'accepted' => [SyncResult::accepted('task-123'), SyncService::TRIGGER_DRUSH, LogLevel::INFO, 'task ID task-123'],
+      'unresolved versions' => [
+        SyncResult::success(200, 'ok')->withModules([
+          ['module_name' => 'foo', 'version' => 'dev-main', 'result' => NULL],
+        ]),
+        SyncService::TRIGGER_CRON, LogLevel::WARNING, 'unresolved versions (1) foo (version "dev-main")',
+      ],
       'rate limited' => [
         SyncResult::failure('rate_limited', 429, 'Slow down.'), SyncService::TRIGGER_CRON, LogLevel::NOTICE, 'no details',
       ],
@@ -530,10 +540,7 @@ class SyncServicePushLimitTest extends TestCase {
    */
   private function service(bool $enabled = TRUE): SyncService {
     $settings = [
-      'api_base_url' => 'https://sentinel.example.com',
       'site_uuid' => '11111111-1111-4111-8111-111111111111',
-      'site_url' => 'https://example.com',
-      'site_name' => 'Example',
       'report_scope' => 'all',
       'enabled' => $enabled,
     ];
@@ -596,7 +603,7 @@ class SyncServicePushLimitTest extends TestCase {
       }
     });
 
-    return new SyncService($configFactory, $state, $builder, $resolver, $client, $time, $logger);
+    return new SyncService($configFactory, $state, $builder, $resolver, $client, $time, $logger, new ApiBaseUrlResolver($siteSettings = new Settings([ApiBaseUrlResolver::SETTINGS_KEY => 'https://sentinel.example.com'])), new SiteUuidResolver($siteSettings, $configFactory), new SendingSwitch($siteSettings));
   }
 
 }
