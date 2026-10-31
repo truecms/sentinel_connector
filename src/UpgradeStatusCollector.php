@@ -44,6 +44,11 @@ class UpgradeStatusCollector {
   public const SCAN_RESULTS = 'upgrade_status_scan_results';
 
   /**
+   * The file name Upgrade Status stores in a result when PHPStan failed.
+   */
+  public const PHPSTAN_FAILED = 'PHPStan failed';
+
+  /**
    * The settings.php key that overrides the reporting switch.
    */
   public const SETTINGS_KEY = 'sentinel_connector.report_upgrade_status';
@@ -181,7 +186,10 @@ class UpgradeStatusCollector {
   }
 
   /**
-   * Counts custom projects with no stored scan from the given time or later.
+   * Counts custom projects with no good scan from the given time or later.
+   *
+   * A failed PHPStan run still stores a result with a new date, so a result
+   * that holds the failure counts as not scanned.
    *
    * @param int $since
    *   The Unix time the scan started.
@@ -208,9 +216,11 @@ class UpgradeStatusCollector {
       $results = $custom === [] ? [] : $this->keyValue->get(self::SCAN_RESULTS)->getMultiple($custom);
       $missing = 0;
       foreach ($custom as $name) {
-        $date = is_array($results[$name] ?? NULL) ? ($results[$name]['date'] ?? NULL) : NULL;
+        $result = is_array($results[$name] ?? NULL) ? $results[$name] : [];
+        $date = $result['date'] ?? NULL;
         $scanned = is_int($date) || (is_string($date) && ctype_digit($date));
-        $missing += $scanned && (int) $date >= $since ? 0 : 1;
+        $failed = isset($result['data']['files'][self::PHPSTAN_FAILED]);
+        $missing += $scanned && !$failed && (int) $date >= $since ? 0 : 1;
       }
       return $missing;
     }

@@ -157,7 +157,8 @@ class SentinelDrushCommands extends DrushCommands {
       throw new \RuntimeException(dt('The Upgrade Status scan failed (exit code @code). No push was sent.', ['@code' => $exit]));
     }
     // Exit code 3 also covers a project whose scan failed. That leaves no
-    // result, or an older one, which must not be reported as current.
+    // result, an older one or a new one holding the failure, none of which
+    // must be reported as current.
     $unscanned = $this->upgradeStatus->customProjectsNotScannedSince($started);
     if ($unscanned > 0) {
       throw new \RuntimeException(dt('The Upgrade Status scan did not finish for @count custom project(s). No push was sent.', ['@count' => $unscanned]));

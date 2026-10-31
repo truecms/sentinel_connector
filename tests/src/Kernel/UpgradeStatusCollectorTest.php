@@ -419,6 +419,30 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
   }
 
   /**
+   * A failed PHPStan run stores a new result, which must not be pushed.
+   */
+  public function testDrushCommandPhpstanFailure(): void {
+    $this->setProjects([
+      'site_a' => ['custom', 'relax'],
+      'site_b' => ['custom', 'relax'],
+    ], ['site_a' => 1792890000]);
+    $this->container->get('keyvalue')->get(UpgradeStatusCollector::SCAN_RESULTS)->set('site_b', [
+      'date' => 1792890000,
+      'data' => ['files' => [UpgradeStatusCollector::PHPSTAN_FAILED => ['messages' => []]]],
+    ]);
+    $this->mockSentinel();
+    $command = $this->command(3);
+    try {
+      $command->upgradeStatus();
+      $this->fail('A failed PHPStan run must fail the command.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('did not finish for 1 custom', $e->getMessage());
+    }
+    $this->assertCount(0, $this->transactions);
+  }
+
+  /**
    * Stored scans that leave one custom project without a current result.
    *
    * @return array<string, array{array<string, int>}>
