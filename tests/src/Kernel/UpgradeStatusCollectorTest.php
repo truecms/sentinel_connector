@@ -443,6 +443,22 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
   }
 
   /**
+   * While Sentinel defers pushes the command runs no scan.
+   */
+  public function testDrushCommandPushDeferred(): void {
+    $this->setProjects(['site_a' => ['custom', 'relax']], ['site_a' => 1792890000]);
+    $this->container->get('state')->set(
+      SyncService::STATE_NEXT_ALLOWED_AT,
+      $this->container->get('datetime.time')->getCurrentTime() + 3600,
+    );
+    $this->mockSentinel();
+    $command = $this->command(0);
+    $command->upgradeStatus();
+    $this->assertFalse($command->scanned);
+    $this->assertCount(0, $this->transactions);
+  }
+
+  /**
    * A scan result that cannot be read fails the command without a push.
    */
   public function testDrushCommandUnreadableResult(): void {

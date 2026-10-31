@@ -342,7 +342,7 @@ custom code: it takes minutes and uses CPU, so run it in a quiet window:
 drush sentinel_connector:upgrade-status
 
 # The same in two steps.
-drush upgrade_status:analyze --all --ignore-contrib
+drush upgrade_status:analyze --all --ignore-contrib --ignore-uninstalled
 drush sentinel_connector:sync
 ```
 

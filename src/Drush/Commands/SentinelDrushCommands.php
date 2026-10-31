@@ -148,6 +148,10 @@ class SentinelDrushCommands extends DrushCommands {
     if (!$this->syncService->isConfigured()) {
       throw new \RuntimeException(dt('Sentinel connector is not fully configured; no scan was run.'));
     }
+    if ($this->syncService->deferredResult() !== NULL) {
+      $this->report($this->syncService->sync(SyncService::TRIGGER_DRUSH));
+      return;
+    }
     $this->logger()->notice(dt('Scanning custom projects with Upgrade Status. This can take several minutes.'));
     $started = $this->upgradeStatus->now();
     $exit = $this->scan();
@@ -191,6 +195,9 @@ class SentinelDrushCommands extends DrushCommands {
     $process = Drush::drush(Drush::aliasManager()->getSelf(), 'upgrade_status:analyze', [], [
       'all' => TRUE,
       'ignore-contrib' => TRUE,
+      // Uninstalled projects only need removing: the check after the scan
+      // leaves them out too.
+      'ignore-uninstalled' => TRUE,
     ]);
     // A scan of a large codebase takes longer than the default time limit.
     $process->setTimeout(NULL);
