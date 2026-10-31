@@ -22,7 +22,8 @@ block refuses a push that carries it, so deploy truecms/sentinel#1349 first.
   new scan result is pushed by the next cron run.
 - `drush sentinel_connector:upgrade-status` scans custom projects with
   Upgrade Status, then syncs. Opt-in; it never runs on cron. With the off
-  switch set it exits 0 and scans nothing.
+  switch set it exits 0 and scans nothing. A project whose scan failed fails
+  the command, and nothing is pushed.
 - An Integrations section on the settings form with Upgrade Status and
   Config PR rows, and **Report Upgrade Status readiness to Sentinel**
   (`report_upgrade_status`), on by default and overridable with

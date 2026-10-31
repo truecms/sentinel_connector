@@ -337,7 +337,8 @@ The connector never scans on cron or during a push. A scan runs PHPStan over
 custom code: it takes minutes and uses CPU, so run it in a quiet window:
 
 ```bash
-# Scan custom projects with Upgrade Status, then sync. Fails if the scan fails.
+# Scan custom projects with Upgrade Status, then sync. Fails, with no push, if
+# the scan or the scan of any custom project fails.
 drush sentinel_connector:upgrade-status
 
 # The same in two steps.

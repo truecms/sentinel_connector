@@ -356,7 +356,7 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
    * The command scans, then syncs; a failed scan fails without a push.
    */
   public function testDrushCommand(): void {
-    $this->setProjects(['site_a' => ['custom', 'relax'], 'token' => ['contrib', 'relax']], ['site_a' => 1792800000]);
+    $this->setProjects(['site_a' => ['custom', 'relax'], 'token' => ['contrib', 'relax']], ['site_a' => $this->now]);
     $this->mockSentinel();
 
     $command = $this->command(0);
@@ -389,6 +389,46 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->mockSentinel(new Response(500, [], '{"message":"down"}'));
     $this->expectException(\RuntimeException::class);
     $this->command(0)->upgradeStatus();
+  }
+
+  /**
+   * Exit code 3 with a failed project scan fails without a push.
+   *
+   * @param array<string, int> $scans
+   *   Stored scan dates per project name.
+   *
+   * @dataProvider failedProjectScans
+   */
+  #[DataProvider('failedProjectScans')]
+  public function testDrushCommandFailedProjectScan(array $scans): void {
+    $this->setProjects([
+      'site_a' => ['custom', 'relax'],
+      'site_b' => ['custom', 'manual'],
+      'old' => ['custom', 'remove'],
+    ], $scans);
+    $this->mockSentinel();
+    $command = $this->command(3);
+    try {
+      $command->upgradeStatus();
+      $this->fail('A failed project scan must fail the command.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('did not finish for 1 custom', $e->getMessage());
+    }
+    $this->assertCount(0, $this->transactions);
+  }
+
+  /**
+   * Stored scans that leave one custom project without a current result.
+   *
+   * @return array<string, array{array<string, int>}>
+   *   Scan dates keyed by case.
+   */
+  public static function failedProjectScans(): array {
+    return [
+      'no result' => [['site_a' => 1792890000]],
+      'an older result' => [['site_a' => 1792890000, 'site_b' => 1792800000]],
+    ];
   }
 
   /**
@@ -435,6 +475,12 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->assertCount(0, $this->transactions);
     $messages = implode("\n", array_column($command->buffer->cleanLogs(), 1));
     $this->assertStringContainsString('turned off', $messages);
+
+    // Scripts shared with environments that do not have the module pass too.
+    $this->container->get('module_installer')->uninstall(['upgrade_status']);
+    $missing = $this->command(0);
+    $missing->upgradeStatus();
+    $this->assertFalse($missing->scanned);
   }
 
   /**

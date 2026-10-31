@@ -181,6 +181,45 @@ class UpgradeStatusCollector {
   }
 
   /**
+   * Counts custom projects with no stored scan from the given time or later.
+   *
+   * @param int $since
+   *   The Unix time the scan started.
+   *
+   * @return int
+   *   The number of projects, 0 when the projects cannot be read: the push
+   *   then reports the block as unavailable.
+   */
+  public function customProjectsNotScannedSince(int $since): int {
+    try {
+      $collector = $this->projectCollector();
+      $projects = $collector !== NULL && method_exists($collector, 'collectProjects') ? $collector->collectProjects() : NULL;
+      if (!is_array($projects)) {
+        return 0;
+      }
+      $custom = [];
+      foreach ($projects as $name => $project) {
+        $info = is_object($project) && isset($project->info) && is_array($project->info) ? $project->info : [];
+        // Uninstalled custom code is not scanned: it only needs removing.
+        if (($info['upgrade_status_type'] ?? NULL) === 'custom' && ($info['upgrade_status_next'] ?? NULL) !== 'remove') {
+          $custom[] = (string) $name;
+        }
+      }
+      $results = $custom === [] ? [] : $this->keyValue->get(self::SCAN_RESULTS)->getMultiple($custom);
+      $missing = 0;
+      foreach ($custom as $name) {
+        $date = is_array($results[$name] ?? NULL) ? ($results[$name]['date'] ?? NULL) : NULL;
+        $scanned = is_int($date) || (is_string($date) && ctype_digit($date));
+        $missing += $scanned && (int) $date >= $since ? 0 : 1;
+      }
+      return $missing;
+    }
+    catch (\Throwable) {
+      return 0;
+    }
+  }
+
+  /**
    * Builds the block from the project list and the stored scans.
    *
    * @return array<string, mixed>
@@ -317,7 +356,7 @@ class UpgradeStatusCollector {
   /**
    * The current Unix time.
    */
-  protected function now(): int {
+  public function now(): int {
     try {
       return $this->time->getCurrentTime();
     }
