@@ -160,6 +160,9 @@ class SentinelDrushCommands extends DrushCommands {
     // result, an older one or a new one holding the failure, none of which
     // must be reported as current.
     $unscanned = $this->upgradeStatus->customProjectsNotScannedSince($started);
+    if ($unscanned === NULL) {
+      throw new \RuntimeException(dt('The Upgrade Status result could not be checked. No push was sent.'));
+    }
     if ($unscanned > 0) {
       throw new \RuntimeException(dt('The Upgrade Status scan did not finish for @count custom project(s). No push was sent.', ['@count' => $unscanned]));
     }

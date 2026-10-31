@@ -443,6 +443,57 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
   }
 
   /**
+   * A scan result that cannot be read fails the command without a push.
+   */
+  public function testDrushCommandUnreadableResult(): void {
+    $this->setProjects(['site_a' => ['custom', 'relax']], ['site_a' => 1792890000]);
+    $this->container->get('state')->set(ProjectCollector::STATE_MODE, 'throw');
+    $this->mockSentinel();
+    $command = $this->command(3);
+    try {
+      $command->upgradeStatus();
+      $this->fail('An unreadable result must fail the command.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('could not be checked', $e->getMessage());
+    }
+    $this->assertCount(0, $this->transactions);
+  }
+
+  /**
+   * A stored PHPStan failure counts as not scanned, not as a code problem.
+   */
+  public function testFailedScanInBlock(): void {
+    $failure = [
+      'date' => 1792890000,
+      'data' => [
+        'files' => [UpgradeStatusCollector::PHPSTAN_FAILED => ['messages' => []]],
+        'totals' => ['upgrade_status_next' => 'manual'],
+      ],
+    ];
+    $storage = $this->container->get('keyvalue')->get(UpgradeStatusCollector::SCAN_RESULTS);
+
+    $this->setProjects(['site_a' => ['custom', 'manual']]);
+    $storage->set('site_a', $failure);
+    $block = $this->container->get(UpgradeStatusCollector::class)->collect();
+    $this->assertSame('not_scanned', $block['status']);
+    $this->assertSame(1, $block['counts']['scan']);
+    $this->assertSame(0, $block['counts']['manual']);
+    $this->assertSame(0, $block['custom_not_ready']);
+    $this->assertNull($block['oldest_scan_at']);
+
+    $this->setProjects([
+      'site_a' => ['custom', 'manual'],
+      'site_b' => ['custom', 'relax'],
+    ], ['site_b' => 1792800000]);
+    $storage->set('site_a', $failure);
+    $block = $this->container->get(UpgradeStatusCollector::class)->collect();
+    $this->assertSame('incomplete', $block['status']);
+    $this->assertSame(1, $block['counts']['scan']);
+    $this->assertSame($block['newest_scan_at'], $block['oldest_scan_at']);
+  }
+
+  /**
    * Stored scans that leave one custom project without a current result.
    *
    * @return array<string, array{array<string, int>}>

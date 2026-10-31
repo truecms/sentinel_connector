@@ -194,11 +194,12 @@ class UpgradeStatusCollector {
    * @param int $since
    *   The Unix time the scan started.
    *
-   * @return int
-   *   The number of projects, 0 when the projects cannot be read: the push
-   *   then reports the block as unavailable.
+   * @return int|null
+   *   The number of projects, NULL when reading them failed. 0 when Upgrade
+   *   Status gives no project list: the push then reports the block as
+   *   unavailable.
    */
-  public function customProjectsNotScannedSince(int $since): int {
+  public function customProjectsNotScannedSince(int $since): ?int {
     try {
       $collector = $this->projectCollector();
       $projects = $collector !== NULL && method_exists($collector, 'collectProjects') ? $collector->collectProjects() : NULL;
@@ -219,13 +220,12 @@ class UpgradeStatusCollector {
         $result = is_array($results[$name] ?? NULL) ? $results[$name] : [];
         $date = $result['date'] ?? NULL;
         $scanned = is_int($date) || (is_string($date) && ctype_digit($date));
-        $failed = isset($result['data']['files'][self::PHPSTAN_FAILED]);
-        $missing += $scanned && !$failed && (int) $date >= $since ? 0 : 1;
+        $missing += $scanned && !$this->scanFailed($result) && (int) $date >= $since ? 0 : 1;
       }
       return $missing;
     }
     catch (\Throwable) {
-      return 0;
+      return NULL;
     }
   }
 
@@ -248,6 +248,9 @@ class UpgradeStatusCollector {
       return $this->unavailable(self::REASON_UNEXPECTED_DATA);
     }
 
+    $names = array_values(array_filter(array_keys($projects), 'is_string'));
+    $results = $names === [] ? [] : $this->keyValue->get(self::SCAN_RESULTS)->getMultiple($names);
+
     $counts = array_fill_keys(self::NEXT_STEPS, 0);
     $customTotal = 0;
     $customScan = 0;
@@ -258,6 +261,10 @@ class UpgradeStatusCollector {
       $next = $info['upgrade_status_next'] ?? NULL;
       if (!is_string($name) || $name === '' || !is_string($next) || !isset($counts[$next])) {
         return $this->unavailable(self::REASON_UNEXPECTED_DATA);
+      }
+      // A failed scan says nothing about the code, so it still needs a scan.
+      if (in_array($next, self::CUSTOM_BLOCKING, TRUE) && $this->scanFailed($results[$name] ?? NULL)) {
+        $next = 'scan';
       }
       $counts[$next]++;
       // Uninstalled custom code is not scanned: it only needs removing.
@@ -273,10 +280,8 @@ class UpgradeStatusCollector {
     // results of deleted projects.
     $dates = [];
     $customScanned = FALSE;
-    $names = array_keys($projects);
-    $results = $names === [] ? [] : $this->keyValue->get(self::SCAN_RESULTS)->getMultiple($names);
     foreach ($results as $name => $result) {
-      if (!is_array($result)) {
+      if (!is_array($result) || $this->scanFailed($result)) {
         continue;
       }
       $customScanned = $customScanned || in_array($name, $custom, TRUE);
@@ -312,6 +317,13 @@ class UpgradeStatusCollector {
       'oldest_scan_at' => $dates === [] ? NULL : $this->format(min($dates)),
       'generated_at' => $this->format($this->now()),
     ];
+  }
+
+  /**
+   * Whether a stored scan result holds a failed PHPStan run.
+   */
+  protected function scanFailed(mixed $result): bool {
+    return is_array($result) && isset($result['data']['files'][self::PHPSTAN_FAILED]);
   }
 
   /**
