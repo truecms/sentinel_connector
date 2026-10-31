@@ -510,6 +510,34 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
   }
 
   /**
+   * The custom date covers custom projects only, and no failed scan.
+   */
+  public function testOldestCustomScan(): void {
+    $this->setProjects([
+      'site_a' => ['custom', 'relax'],
+      'site_b' => ['custom', 'relax'],
+      'site_c' => ['custom', 'relax'],
+      'webform' => ['contrib', 'relax'],
+      'old' => ['custom', 'remove'],
+    ], [
+      'site_a' => 1792800000,
+      'site_b' => 1792890000,
+      'webform' => 1792700000,
+      'old' => 1792600000,
+    ]);
+    $this->container->get('keyvalue')->get(UpgradeStatusCollector::SCAN_RESULTS)->set('site_c', [
+      'date' => 1792750000,
+      'data' => ['files' => [UpgradeStatusCollector::PHPSTAN_FAILED => ['messages' => []]]],
+    ]);
+    $block = $this->collect();
+    $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', 1792600000), $block['oldest_scan_at']);
+    $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', 1792800000), $block['oldest_custom_scan_at']);
+
+    $this->setProjects(['webform' => ['contrib', 'relax']], ['webform' => 1792700000]);
+    $this->assertNull($this->collect()['oldest_custom_scan_at']);
+  }
+
+  /**
    * Stored scans that leave one custom project without a current result.
    *
    * @return array<string, array{array<string, int>}>

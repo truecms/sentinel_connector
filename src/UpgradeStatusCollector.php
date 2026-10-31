@@ -279,6 +279,7 @@ class UpgradeStatusCollector {
     // Only results of projects on the site count: Upgrade Status keeps the
     // results of deleted projects.
     $dates = [];
+    $customDates = [];
     $customScanned = FALSE;
     foreach ($results as $name => $result) {
       if (!is_array($result) || $this->scanFailed($result)) {
@@ -289,6 +290,9 @@ class UpgradeStatusCollector {
       if (is_int($date) || (is_string($date) && ctype_digit($date))) {
         if ((int) $date > 0) {
           $dates[] = (int) $date;
+          if (in_array($name, $custom, TRUE)) {
+            $customDates[] = (int) $date;
+          }
         }
       }
     }
@@ -315,6 +319,7 @@ class UpgradeStatusCollector {
       'reason' => NULL,
       'newest_scan_at' => $dates === [] ? NULL : $this->format(max($dates)),
       'oldest_scan_at' => $dates === [] ? NULL : $this->format(min($dates)),
+      'oldest_custom_scan_at' => $customDates === [] ? NULL : $this->format(min($customDates)),
       'generated_at' => $this->format($this->now()),
     ];
   }
@@ -371,6 +376,7 @@ class UpgradeStatusCollector {
       'reason' => $reason,
       'newest_scan_at' => NULL,
       'oldest_scan_at' => NULL,
+      'oldest_custom_scan_at' => NULL,
       'generated_at' => $this->format($this->now()),
     ];
   }

@@ -308,6 +308,7 @@ and messages are never sent.**
   "custom_not_ready": 1, "reason": null,
   "newest_scan_at": "2026-10-20T03:12:00Z",
   "oldest_scan_at": "2026-10-12T22:40:00Z",
+  "oldest_custom_scan_at": "2026-10-18T01:05:00Z",
   "generated_at": "2026-10-25T01:00:00Z"
 }
 ```
