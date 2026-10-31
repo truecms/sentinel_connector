@@ -1,0 +1,7 @@
+name: 'Upgrade Status (test stub)'
+type: module
+description: 'Stands in for Upgrade Status in Sentinel Connector tests. Returns the projects a test stores in state.'
+package: Testing
+core_version_requirement: ^10.3 || ^11 || ^12
+version: '4.3.10'
+hidden: true

@@ -17,14 +17,15 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '1.4.0';
+  public const CONNECTOR_VERSION = '1.5.0';
 
   /**
    * Sync payload contract version.
    *
    * Version 2 adds the platform block, version 3 the config_drift block.
    * Version 4 sends the site block without url and name, adds the
-   * core_contrib scope and the platform_reporting field.
+   * core_contrib scope, the platform_reporting field and the optional
+   * upgrade_status block.
    */
   public const SCHEMA_VERSION = 4;
 
@@ -62,6 +63,9 @@ class PayloadBuilder {
    * @param bool $platformReporting
    *   FALSE when the site owner turned off platform reporting: no platform
    *   block is sent, and the payload says so.
+   * @param \Closure|null $upgradeStatus
+   *   Returns the upgrade_status block, or NULL to leave it out. Called on
+   *   the first build only, so a failed read logs one warning.
    */
   public function __construct(
     protected ModuleExtensionList $moduleList,
@@ -72,6 +76,7 @@ class PayloadBuilder {
     protected array $platform = [],
     protected ?\Closure $configDrift = NULL,
     protected bool $platformReporting = TRUE,
+    protected ?\Closure $upgradeStatus = NULL,
   ) {}
 
   /**
@@ -94,6 +99,13 @@ class PayloadBuilder {
    * @var array<string, mixed>|null|false
    */
   protected array|null|false $drift = FALSE;
+
+  /**
+   * The upgrade_status block of the first build, FALSE before it.
+   *
+   * @var array<string, mixed>|null|false
+   */
+  protected array|null|false $readiness = FALSE;
 
   /**
    * Build the modules array for the given scope.
@@ -188,6 +200,12 @@ class PayloadBuilder {
     }
     if ($this->drift !== NULL) {
       $payload['config_drift'] = $this->drift;
+    }
+    if ($this->readiness === FALSE) {
+      $this->readiness = $this->upgradeStatus ? ($this->upgradeStatus)() : NULL;
+    }
+    if ($this->readiness !== NULL) {
+      $payload['upgrade_status'] = $this->readiness;
     }
     return $payload;
   }

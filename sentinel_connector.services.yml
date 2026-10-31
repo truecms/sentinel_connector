@@ -20,6 +20,19 @@ services:
       - '@Drupal\sentinel_connector\PlatformCollector'
       - '@Drupal\sentinel_connector\ConfigDriftCollector'
       - '@config.factory'
+      - '@Drupal\sentinel_connector\UpgradeStatusCollector'
+
+  Drupal\sentinel_connector\UpgradeStatusCollector:
+    class: Drupal\sentinel_connector\UpgradeStatusCollector
+    arguments:
+      - '@service_container'
+      - '@module_handler'
+      - '@extension.list.module'
+      - '@keyvalue'
+      - '@config.factory'
+      - '@settings'
+      - '@datetime.time'
+      - '@logger.channel.sentinel_connector'
 
   Drupal\sentinel_connector\ConfigDriftCollector:
     class: Drupal\sentinel_connector\ConfigDriftCollector

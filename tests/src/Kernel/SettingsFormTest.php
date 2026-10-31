@@ -398,6 +398,7 @@ class SettingsFormTest extends KernelTestBase {
       'report_scope' => 'core_contrib',
       'enabled' => FALSE,
       'report_config_drift' => TRUE,
+      'report_upgrade_status' => TRUE,
       'report_platform' => FALSE,
       'api_key_id' => '',
     ], $saved);
@@ -569,6 +570,73 @@ class SettingsFormTest extends KernelTestBase {
     // User 1 bypasses permission checks, so it is created and not used.
     $this->createUser();
     $this->setCurrentUser($this->createUser($permissions));
+  }
+
+  /**
+   * The Integrations section shows both rows and the reporting checkbox.
+   */
+  public function testIntegrationsWithoutModules(): void {
+    $section = $this->plain($this->buildSettingsForm()['integrations']);
+
+    $this->assertSame('details', $section['#type']);
+    $this->assertStringContainsString('Not detected', $section['upgrade_status']['status']['#markup']);
+    $this->assertStringContainsString('composer require --dev drupal/upgrade_status', $section['upgrade_status']['status']['#markup']);
+    // Closed until the module is enabled, so the form stays short.
+    $this->assertFalse($section['#open']);
+    $this->assertSame('checkbox', $section['upgrade_status']['report_upgrade_status']['#type']);
+    $this->assertTrue($section['upgrade_status']['report_upgrade_status']['#default_value']);
+    $this->assertFalse($section['upgrade_status']['report_upgrade_status']['#disabled']);
+    $this->assertStringContainsString('drush sentinel_connector:upgrade-status', $section['upgrade_status']['scan']['#markup']);
+    $this->assertStringContainsString('Not detected', $section['config_pr']['status']['#markup']);
+    $this->assertStringContainsString('drush pm:install sentinel_connector_config_pr', $section['config_pr']['status']['#markup']);
+    $this->assertArrayNotHasKey('settings', $section['config_pr']);
+  }
+
+  /**
+   * Detected modules show their version, last scan and settings link.
+   */
+  public function testIntegrationsDetected(): void {
+    $this->enableModules(['upgrade_status']);
+    \Drupal::state()->set('upgrade_status_test.projects', ['site_a' => ['custom', 'relax']]);
+    \Drupal::keyValue('upgrade_status_scan_results')->set('site_a', ['date' => 1792800000]);
+    $configPr = $this->container->get('extension.list.module')->exists('config_pr');
+    if ($configPr) {
+      $this->enableModules(['config_pr', 'sentinel_connector_config_pr']);
+      $this->container->get('router.builder')->rebuild();
+    }
+
+    $section = $this->plain($this->buildSettingsForm()['integrations']);
+    $this->assertTrue($section['#open']);
+    $status = $section['upgrade_status']['status']['#markup'];
+    $this->assertStringContainsString('Detected', $status);
+    $this->assertStringContainsString('4.3.10', $status);
+    $this->assertStringContainsString(gmdate('Y-m-d\TH:i:s\Z', 1792800000), $status);
+    if ($configPr) {
+      $this->assertStringContainsString('Detected', $section['config_pr']['status']['#markup']);
+      $this->assertSame('link', $section['config_pr']['settings']['#type']);
+    }
+  }
+
+  /**
+   * The reporting switch is saved, unless settings.php sets it.
+   */
+  public function testReportingSwitch(): void {
+    // A programmed checkbox is unchecked by NULL; FALSE keeps its default.
+    $this->submitSettingsForm(['report_upgrade_status' => NULL]);
+    $this->assertFalse($this->config('sentinel_connector.settings')->get('report_upgrade_status'));
+    $this->submitSettingsForm(['report_upgrade_status' => 1]);
+    $this->assertTrue($this->config('sentinel_connector.settings')->get('report_upgrade_status'));
+
+    new Settings(['sentinel_connector.report_upgrade_status' => FALSE] + Settings::getAll());
+    $this->container->set('settings', Settings::getInstance());
+    $this->container->set('Drupal\sentinel_connector\UpgradeStatusCollector', NULL);
+    $checkbox = $this->plain($this->buildSettingsForm()['integrations']['upgrade_status']['report_upgrade_status']);
+    $this->assertTrue($checkbox['#disabled']);
+    $this->assertFalse($checkbox['#default_value']);
+    $this->assertStringContainsString('settings.php', $checkbox['#description']);
+    // The stored value is kept while settings.php sets the switch.
+    $this->submitSettingsForm(['report_upgrade_status' => NULL]);
+    $this->assertTrue($this->config('sentinel_connector.settings')->get('report_upgrade_status'));
   }
 
   /**

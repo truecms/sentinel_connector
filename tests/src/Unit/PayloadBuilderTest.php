@@ -437,4 +437,29 @@ class PayloadBuilderTest extends TestCase {
     $this->assertArrayNotHasKey('config_drift', $payload);
   }
 
+  /**
+   * Schema version 4 carries the upgrade_status block, read once.
+   *
+   * @covers ::build
+   */
+  public function testUpgradeStatusBlock(): void {
+    $list = $this->createMock(ModuleExtensionList::class);
+    $list->method('reset')->willReturnSelf();
+    $list->method('getList')->willReturn([]);
+
+    $block = ['status' => 'ready', 'generated_at' => '2026-10-25T01:00:00Z'];
+    $calls = new \ArrayObject();
+    $builder = new PayloadBuilder($list, '11.2.0', '8.4.0', '203.0.113.4', NULL, [], NULL, TRUE, function () use ($calls, $block): array {
+      $calls->append(TRUE);
+      return $block;
+    });
+    $this->assertCount(0, $calls);
+    $this->assertSame($block, $builder->build('all')['upgrade_status']);
+    $this->assertSame($block, $builder->build('contrib')['upgrade_status']);
+    $this->assertCount(1, $calls);
+
+    $payload = (new PayloadBuilder($list, '11.2.0', '8.4.0', '203.0.113.4', NULL, [], NULL, TRUE, fn () => NULL))->build('all');
+    $this->assertArrayNotHasKey('upgrade_status', $payload);
+  }
+
 }
