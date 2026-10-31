@@ -195,9 +195,8 @@ class SentinelDrushCommands extends DrushCommands {
     $process = Drush::drush(Drush::aliasManager()->getSelf(), 'upgrade_status:analyze', [], [
       'all' => TRUE,
       'ignore-contrib' => TRUE,
-      // Uninstalled projects only need removing: the check after the scan
-      // leaves them out too.
-      'ignore-uninstalled' => TRUE,
+      // Not "ignore-uninstalled": that also skips an active custom install
+      // profile, which reports as not installed but must be scanned.
     ]);
     // A scan of a large codebase takes longer than the default time limit.
     $process->setTimeout(NULL);
