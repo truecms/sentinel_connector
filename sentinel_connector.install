@@ -127,3 +127,16 @@ function sentinel_connector_update_10005(): string {
   }
   return implode(' ', $messages);
 }
+
+/**
+ * Turn on Upgrade Status readiness reporting.
+ */
+function sentinel_connector_update_10006(): string {
+  // Only counts are sent, and only while Upgrade Status is enabled.
+  $config = \Drupal::configFactory()->getEditable('sentinel_connector.settings');
+  if ($config->get('report_upgrade_status') === NULL) {
+    $config->set('report_upgrade_status', TRUE)->save();
+  }
+
+  return (string) t('Sentinel Connector now reports Drupal upgrade readiness from Upgrade Status when that module is enabled: counts only, never project names. Export configuration with drush cex. Turn it off on the settings form.');
+}

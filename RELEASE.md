@@ -1,3 +1,25 @@
+# Release 1.5.0: Drupal upgrade readiness
+
+1.5.0 keeps payload v4 and adds the optional `upgrade_status` block. Tracked by
+truecms/sentinel#1355, with the backend and dashboard in truecms/sentinel#1718.
+
+1. Deploy Sentinel #1718 to production. A Sentinel without the block refuses
+   a push that carries it; connector 1.4.0 keeps working either way.
+2. Only then tag 1.5.0 and publish it on Drupal.org. Date the changelog first
+   and run `php scripts/check-release.php 1.5.0`.
+3. Update `latest_connector_version` in Sentinel. Turning on
+   `UPGRADE_STATUS_ENABLED` is an owner decision on #1355.
+
+Before tagging, on a canary site with a UAT Sentinel:
+
+- `drush updb` runs update `10006`; export configuration afterwards.
+- Without Upgrade Status, an accepted push carries `schema_version: 4` and no
+  `upgrade_status` block.
+- With Upgrade Status, `drush sentinel_connector:upgrade-status` prints the
+  readiness and pushes. The block carries counts only.
+- With `SENTINEL_CONNECTOR_DISABLED=1`, the same command exits 0 and scans
+  nothing.
+
 # Release 1.4.0: minimal settings and several environments
 
 1.4.0 sends payload v4 (#45). It depends on Sentinel truecms/sentinel#1613:

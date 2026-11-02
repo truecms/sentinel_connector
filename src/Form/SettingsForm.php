@@ -4,6 +4,7 @@ namespace Drupal\sentinel_connector\Form;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
@@ -19,6 +20,7 @@ use Drupal\sentinel_connector\SiteUuid;
 use Drupal\sentinel_connector\SiteUuidResolver;
 use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
+use Drupal\sentinel_connector\UpgradeStatusCollector;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -41,6 +43,10 @@ final class SettingsForm extends ConfigFormBase {
    *   The sync service, for the stored push-limit outcome.
    * @param \Drupal\sentinel_connector\PushLimitFormatter $pushLimitFormatter
    *   Builds the text for a refused push.
+   * @param \Drupal\sentinel_connector\UpgradeStatusCollector $upgradeStatus
+   *   Reads the Upgrade Status result for the Integrations section.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
+   *   The module handler, to tell which optional modules are enabled.
    * @param \Drupal\sentinel_connector\ApiBaseUrlResolver $urlResolver
    *   Resolves the API base URL, shown read-only.
    * @param \Drupal\sentinel_connector\SiteUuidResolver $uuidResolver
@@ -57,6 +63,8 @@ final class SettingsForm extends ConfigFormBase {
     protected StateInterface $state,
     protected SyncService $syncService,
     protected PushLimitFormatter $pushLimitFormatter,
+    protected UpgradeStatusCollector $upgradeStatus,
+    protected ModuleHandlerInterface $moduleHandler,
     protected ApiBaseUrlResolver $urlResolver,
     protected SiteUuidResolver $uuidResolver,
     protected SendingSwitch $sendingSwitch,
@@ -76,6 +84,8 @@ final class SettingsForm extends ConfigFormBase {
       $container->get('state'),
       $container->get('Drupal\sentinel_connector\SyncService'),
       $container->get('Drupal\sentinel_connector\PushLimitFormatter'),
+      $container->get('Drupal\sentinel_connector\UpgradeStatusCollector'),
+      $container->get('module_handler'),
       $container->get('Drupal\sentinel_connector\ApiBaseUrlResolver'),
       $container->get('Drupal\sentinel_connector\SiteUuidResolver'),
       $container->get('Drupal\sentinel_connector\SendingSwitch'),
@@ -203,6 +213,7 @@ final class SettingsForm extends ConfigFormBase {
       '#description' => $this->t('Sends the web server, database and operating system versions, and their system package versions, so Sentinel can warn you about known vulnerabilities in your server software. The PHP version is always sent, because Drupal core support depends on it.'),
       '#default_value' => $config->get('report_platform') ?? TRUE,
     ];
+    $form['integrations'] = $this->integrations($config->get('report_upgrade_status') ?? TRUE);
     // API key status: the source is shown, the key never is.
     $source = $this->apiKeyResolver->getSource();
     $keyModule = $this->apiKeyResolver->keyModuleEnabled();
@@ -351,6 +362,94 @@ final class SettingsForm extends ConfigFormBase {
   }
 
   /**
+   * The Integrations section: one row per optional module.
+   *
+   * @param mixed $reportUpgradeStatus
+   *   The stored Upgrade Status reporting switch.
+   *
+   * @return array<string, mixed>
+   *   The section's form elements.
+   */
+  protected function integrations(mixed $reportUpgradeStatus): array {
+    $detected = $this->upgradeStatus->isDetected();
+    $section = [
+      '#type' => 'details',
+      '#title' => $this->t('Integrations'),
+      '#description' => $this->t('Optional modules the connector reports from when they are enabled on this site.'),
+      '#open' => $detected,
+    ];
+
+    $section['upgrade_status'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Upgrade Status'),
+    ];
+    if ($detected) {
+      $block = $this->upgradeStatus->isReportingEnabled() ? $this->upgradeStatus->collect(FALSE) : NULL;
+      $lastScan = is_string($block['newest_scan_at'] ?? NULL) ? $block['newest_scan_at'] : NULL;
+      $section['upgrade_status']['status'] = [
+        '#type' => 'item',
+        '#title' => $this->t('Status'),
+        '#markup' => $this->t('Detected. Version: @version. Last scan: @scan.', [
+          '@version' => $this->upgradeStatus->moduleVersion() ?? $this->t('unknown'),
+          '@scan' => $lastScan ?? $this->t('none'),
+        ]),
+      ];
+    }
+    else {
+      $section['upgrade_status']['status'] = [
+        '#type' => 'item',
+        '#title' => $this->t('Status'),
+        '#markup' => $this->t('Not detected. When Upgrade Status is enabled on the site the connector reports from, Sentinel receives its result and shows it. To add it: <code>@require</code> then <code>@enable</code>.', [
+          '@require' => 'composer require --dev drupal/upgrade_status',
+          '@enable' => 'drush pm:install upgrade_status',
+        ]),
+      ];
+    }
+    $overridden = $this->upgradeStatus->isReportingOverridden();
+    $section['upgrade_status']['report_upgrade_status'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Report Upgrade Status readiness to Sentinel'),
+      '#description' => $overridden
+        ? $this->t('Set in settings.php by $settings[@key], which takes precedence over this checkbox.', ['@key' => "'" . UpgradeStatusCollector::SETTINGS_KEY . "'"])
+        : $this->t('Sends how many projects are at each Upgrade Status next step and when they were scanned. Project names, paths and messages are never sent.'),
+      '#default_value' => $overridden ? $this->upgradeStatus->isReportingEnabled() : (bool) $reportUpgradeStatus,
+      '#disabled' => $overridden,
+    ];
+    $section['upgrade_status']['scan'] = [
+      '#type' => 'item',
+      '#title' => $this->t('Scan command'),
+      '#markup' => $this->t('<code>@command</code> scans custom projects with Upgrade Status, then syncs. A scan uses CPU for several minutes: run it in a quiet window. It never runs on cron.', [
+        '@command' => 'drush sentinel_connector:upgrade-status',
+      ]),
+    ];
+
+    // Its status fields come with the configuration pull request reporting.
+    $configPr = $this->moduleHandler->moduleExists('sentinel_connector_config_pr');
+    $section['config_pr'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Config PR'),
+    ];
+    $section['config_pr']['status'] = [
+      '#type' => 'item',
+      '#title' => $this->t('Status'),
+      '#markup' => $configPr
+        ? $this->t('Detected. The Sentinel Connector Config PR submodule is enabled.')
+        : $this->t('Not detected. To open configuration pull requests from Sentinel: <code>@require</code> then <code>@enable</code>.', [
+          '@require' => 'composer require drupal/config_pr',
+          '@enable' => 'drush pm:install sentinel_connector_config_pr',
+        ]),
+    ];
+    if ($configPr) {
+      $section['config_pr']['settings'] = [
+        '#type' => 'link',
+        '#title' => $this->t('Config PR settings'),
+        '#url' => Url::fromRoute('sentinel_connector_config_pr.settings'),
+      ];
+    }
+    return $section;
+  }
+
+  /**
    * {@inheritdoc}
    *
    * @param array<array-key, mixed> $form
@@ -385,11 +484,17 @@ final class SettingsForm extends ConfigFormBase {
    *   The form state.
    */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
-    $config = $this->config('sentinel_connector.settings')
+    $config = $this->config('sentinel_connector.settings');
+    // While settings.php sets the switch, the stored value is kept.
+    $reportUpgradeStatus = $this->upgradeStatus->isReportingOverridden()
+      ? $config->get('report_upgrade_status') ?? TRUE
+      : $form_state->getValue('report_upgrade_status');
+    $config
       ->set('enabled', (bool) $form_state->getValue('enabled'))
       ->set('report_scope', PayloadBuilder::normaliseScope($form_state->getValue('report_scope')))
       ->set('report_config_drift', (bool) $form_state->getValue('report_config_drift'))
-      ->set('report_platform', (bool) $form_state->getValue('report_platform'));
+      ->set('report_platform', (bool) $form_state->getValue('report_platform'))
+      ->set('report_upgrade_status', (bool) $reportUpgradeStatus);
     if (!$this->uuidResolver->isOverridden()) {
       $config->set('site_uuid', (string) $form_state->getValue('site_uuid'));
     }

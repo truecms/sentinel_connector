@@ -3,6 +3,42 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.5.0 - 2026-11-02
+
+Keeps payload `schema_version: 4` and adds an optional block to it. Connector
+1.4.0 sends version 4 without the block. A Sentinel that does not yet know the
+block or its fields refuses a push that carries them, so deploy
+truecms/sentinel#1349 and truecms/sentinel#1726 first.
+
+### Added
+
+- An optional `upgrade_status` block with the Drupal upgrade readiness
+  Upgrade Status stored: a status (`ready`, `not_ready`, `incomplete`,
+  `not_scanned`, `unavailable`), the count of projects at each next step, the
+  custom projects that need code changes, the newest and oldest scan dates
+  and the oldest scan date of a custom project.
+  Counts only: no project names, paths or messages. Sent only while Upgrade
+  Status is enabled; a failed read sends `unavailable` with a reason and never
+  fails the push.
+- The block is part of the push fingerprint, except its `generated_at`, so a
+  new scan result is pushed by the next cron run.
+- `drush sentinel_connector:upgrade-status` scans custom projects with
+  Upgrade Status, then syncs. Opt-in; it never runs on cron. With the off
+  switch set it exits 0 and scans nothing. A project whose scan failed fails
+  the command, and nothing is pushed.
+- An Integrations section on the settings form with Upgrade Status and
+  Config PR rows, and **Report Upgrade Status readiness to Sentinel**
+  (`report_upgrade_status`), on by default and overridable with
+  `$settings['sentinel_connector.report_upgrade_status']`. The section starts
+  closed until Upgrade Status is enabled. Update `10006` turns reporting on for
+  existing sites; export configuration afterwards (`drush cex`).
+
+### Requires
+
+- A Sentinel release with the `upgrade_status` block and its
+  `oldest_custom_scan_at` field (truecms/sentinel#1349, truecms/sentinel#1726),
+  deployed before upgrading clients.
+
 ## 1.4.0 - 2026-10-30
 
 Payload v4. Needs a Sentinel release that accepts payload v4 and serves the
