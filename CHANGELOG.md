@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 1.5.0 - Unreleased
+## 1.5.0 - 2026-11-02
 
 Keeps payload `schema_version: 4` and adds an optional block to it. Connector
 1.4.0 sends version 4 without the block. A Sentinel that does not yet know the
