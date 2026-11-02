@@ -1,8 +1,11 @@
 acquia
 behaviour
+fastapi
 fixdate
 glightbox
 glpat
+minimises
+normalisation
 normalise
 normalised
 organisation
@@ -10,11 +13,14 @@ organisation's
 recognise
 recognised
 relock
+rescan
+sentinelconnector
 stackable
 synchronisations
 truecms
 tthumphrey
 unconfigured
+unscanned
 updb
 webform
 deinstall
