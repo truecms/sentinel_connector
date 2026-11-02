@@ -45,7 +45,6 @@ elseif ($sentinel_environment === 'develop') {
   // $settings['sentinel_connector.api_base_url'] here, for example
   // https://uat-ingest.sentinelconnector.io. Use the base URL only, never the
   // sync endpoint. Left unset, the production default is used.
-
   // To keep the web server, database and OS versions to yourself on this
   // environment, uncomment the next line. The PHP version is still sent.
   // phpcs:ignore Drupal.Commenting.InlineComment.InvalidEndChar
