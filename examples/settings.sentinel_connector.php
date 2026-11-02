@@ -40,13 +40,11 @@ elseif ($sentinel_environment === 'develop') {
   if ($settings['sentinel_connector.api_key'] === NULL) {
     $settings['sentinel_connector.disabled'] = TRUE;
   }
-  // To send to a non-production Sentinel instead, set its base URL here, for
-  // example https://uat-ingest.sentinelconnector.io. Use the base URL only,
-  // never the sync endpoint. Left empty, the production default is used.
-  $sentinel_uat_url = '';
-  if ($sentinel_uat_url !== '') {
-    $settings['sentinel_connector.api_base_url'] = $sentinel_uat_url;
-  }
+  // To send to a non-production Sentinel instead, set its base URL in
+  // SENTINEL_CONNECTOR_API_BASE_URL on this environment, or in
+  // $settings['sentinel_connector.api_base_url'] here, for example
+  // https://uat-ingest.sentinelconnector.io. Use the base URL only, never the
+  // sync endpoint. Left unset, the production default is used.
   // To keep the web server, database and OS versions to yourself on this
   // environment, uncomment the next line. The PHP version is still sent.
   // phpcs:ignore Drupal.Commenting.InlineComment.InvalidEndChar
