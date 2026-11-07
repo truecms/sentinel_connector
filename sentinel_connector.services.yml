@@ -38,6 +38,7 @@ services:
       - '%app.root%'
       - '@language_manager'
       - '@string_translation'
+      - '@account_switcher'
 
   Drupal\sentinel_connector\EventSubscriber\StatusReportSubscriber:
     class: Drupal\sentinel_connector\EventSubscriber\StatusReportSubscriber

@@ -16,6 +16,8 @@ use Drupal\Core\Hook\Attribute\Hook;
  *   replaces.
  * - sentinel_status_report_test.enum: TRUE to return Drupal 11.2 enum
  *   severities where the enum exists.
+ * - sentinel_status_report_test.account: TRUE to add a warning that names
+ *   the current user's id.
  */
 class StatusReportTestHooks {
 
@@ -38,6 +40,13 @@ class StatusReportTestHooks {
       $time->advance($advance);
     }
     $items = $state->get('sentinel_status_report_test.items', []);
+    if ($state->get('sentinel_status_report_test.account')) {
+      $items['account_item'] = [
+        'title' => 'Account',
+        'value' => 'uid ' . \Drupal::currentUser()->id(),
+        'severity' => 1,
+      ];
+    }
     $enum = 'Drupal\Core\Extension\Requirement\RequirementSeverity';
     if ($state->get('sentinel_status_report_test.enum') && enum_exists($enum)) {
       foreach ($items as &$item) {

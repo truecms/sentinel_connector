@@ -8,6 +8,7 @@ use Drupal\Core\Language\Language;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManager;
 use Drupal\Core\Lock\DatabaseLockBackend;
+use Drupal\Core\Session\UserSession;
 use Drupal\Core\StringTranslation\Translator\StaticTranslation;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\Core\Url;
@@ -448,6 +449,20 @@ class StatusReportCollectorTest extends KernelTestBase {
     $this->assertSame([], $block['items']);
     $state->set(StatusReportCollector::STATE_SNAPSHOT, ['checked_at' => self::START - 86400, 'items' => []]);
     $this->assertSame('cli', $this->collector()->collect()['context']);
+  }
+
+  /**
+   * The list is built as the anonymous user, whoever asked for it.
+   */
+  public function testBuildsAsAnonymous(): void {
+    $this->container->get('state')->set('sentinel_status_report_test.account', TRUE);
+    $admin = new UserSession(['uid' => 5, 'roles' => ['authenticated']]);
+    $this->container->get('current_user')->setAccount($admin);
+
+    $block = $this->collector()->build(StatusReportCollector::CONTEXT_WEB);
+    $values = array_column($block['items'], 'value', 'key');
+    $this->assertSame('uid 0', $values['account_item']);
+    $this->assertSame(5, (int) $this->container->get('current_user')->id());
   }
 
   /**

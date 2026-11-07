@@ -10,6 +10,8 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Render\RendererInterface;
+use Drupal\Core\Session\AccountSwitcherInterface;
+use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StringTranslation\TranslationInterface;
@@ -144,6 +146,9 @@ class StatusReportCollector {
    * @param \Drupal\Core\StringTranslation\TranslationInterface|null $translation
    *   The translation service, switched to the default language while the
    *   list is built, so the request's language does not change the texts.
+   * @param \Drupal\Core\Session\AccountSwitcherInterface|null $accountSwitcher
+   *   Switches to the anonymous user while the list is built, so the
+   *   visitor's access does not change the texts.
    */
   public function __construct(
     protected ModuleHandlerInterface $moduleHandler,
@@ -158,6 +163,7 @@ class StatusReportCollector {
     protected string $appRoot,
     protected ?LanguageManagerInterface $languageManager = NULL,
     protected ?TranslationInterface $translation = NULL,
+    protected ?AccountSwitcherInterface $accountSwitcher = NULL,
   ) {}
 
   /**
@@ -305,6 +311,7 @@ class StatusReportCollector {
     $leftOut = $context === self::CONTEXT_CLI ? self::CLI_LEFT_OUT : [];
     $start = $this->microtime();
     $restore = $this->useDefaultLanguage();
+    $switched = $this->useAnonymousAccount();
     try {
       $items = $this->clean($this->requirements($start), $leftOut, $start);
     }
@@ -315,6 +322,9 @@ class StatusReportCollector {
       return $this->unavailable(self::REASON_FAILED);
     }
     finally {
+      if ($switched) {
+        $this->accountSwitcher?->switchBack();
+      }
       $restore();
     }
     return $this->block([
@@ -323,6 +333,29 @@ class StatusReportCollector {
       'left_out' => $leftOut,
       'items' => $items,
     ]);
+  }
+
+  /**
+   * Builds as the anonymous user, whoever made the request.
+   *
+   * Some checks add text for users with access, such as the link to the
+   * available updates report; with the visitor's account the texts would
+   * change between snapshots.
+   *
+   * @return bool
+   *   TRUE when the account was switched and must be switched back.
+   */
+  protected function useAnonymousAccount(): bool {
+    try {
+      if ($this->accountSwitcher === NULL) {
+        return FALSE;
+      }
+      $this->accountSwitcher->switchTo(new AnonymousUserSession());
+      return TRUE;
+    }
+    catch (\Throwable) {
+      return FALSE;
+    }
   }
 
   /**
