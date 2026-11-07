@@ -3,6 +3,44 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.6.0 - Unreleased
+
+Sends payload `schema_version: 5`. A Sentinel that does not know version 5
+refuses the push, so deploy truecms/sentinel#2314 first.
+
+### Added
+
+- An optional `status_report` block with the errors and warnings of the
+  site's Drupal status report (truecms/sentinel_connector#52,
+  truecms/sentinel#2313): `key`, `severity` (`error` or `warning`), `title`,
+  `value`, `description` and the module that produced each item
+  (`provider`). OK and information items are never sent. Texts are plain
+  text with links and HTML removed and the site root, private files and
+  temporary paths replaced; fields are cut to fixed limits and at most 100
+  items are sent, errors first. Works with `hook_requirements('runtime')` and
+  the Drupal 11.2 `hook_runtime_requirements()` and severity enum.
+- The list is built after a web response at most every 12 hours, under a
+  lock, and kept in state; page cache hits and `update.php` never build it.
+  Without a web snapshot from the last 24 hours, the sync builds it from the
+  command line and lists the left-out web-only checks in `left_out`. A build
+  over 20 seconds or a failed one sends `unavailable` with `timeout` or
+  `collector_failed` and never fails the push.
+- `status_reporting` (`enabled` or `disabled`) is always sent.
+- The block is part of the push fingerprint, except `checked_at`.
+- **Report the Drupal status report (errors and warnings)**
+  (`report_status_report`) on the settings form, on by default and
+  overridable with `$settings['sentinel_connector.report_status_report']`.
+  Update `10007` turns it on for existing sites, including sites upgraded
+  from 1.5.x; export configuration afterwards (`drush cex`).
+- `drush sentinel_connector:status-report` (`--format=json`) prints the block
+  a push would send, from a fresh command line build. It sends nothing.
+- Shared payload v5 examples in `tests/fixtures/drupal_sync_v5.json`.
+
+### Requires
+
+- A Sentinel release that accepts payload version 5 (truecms/sentinel#2314),
+  deployed before upgrading clients.
+
 ## 1.5.0 - 2026-11-02
 
 Keeps payload `schema_version: 4` and adds an optional block to it. Connector

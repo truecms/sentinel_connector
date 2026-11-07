@@ -18,6 +18,7 @@ use Drupal\sentinel_connector\PushLimitFormatter;
 use Drupal\sentinel_connector\SendingSwitch;
 use Drupal\sentinel_connector\SiteUuid;
 use Drupal\sentinel_connector\SiteUuidResolver;
+use Drupal\sentinel_connector\StatusReportCollector;
 use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
 use Drupal\sentinel_connector\UpgradeStatusCollector;
@@ -55,6 +56,9 @@ final class SettingsForm extends ConfigFormBase {
    *   The off switch.
    * @param \Drupal\sentinel_connector\ConnectionChecker $connectionChecker
    *   Runs "Test connection".
+   * @param \Drupal\sentinel_connector\StatusReportCollector $statusReport
+   *   Tells whether the status report is reported, and whether settings.php
+   *   sets that.
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
@@ -69,6 +73,7 @@ final class SettingsForm extends ConfigFormBase {
     protected SiteUuidResolver $uuidResolver,
     protected SendingSwitch $sendingSwitch,
     protected ConnectionChecker $connectionChecker,
+    protected StatusReportCollector $statusReport,
   ) {
     parent::__construct($config_factory, $typedConfigManager);
   }
@@ -90,6 +95,7 @@ final class SettingsForm extends ConfigFormBase {
       $container->get('Drupal\sentinel_connector\SiteUuidResolver'),
       $container->get('Drupal\sentinel_connector\SendingSwitch'),
       $container->get('Drupal\sentinel_connector\ConnectionChecker'),
+      $container->get('Drupal\sentinel_connector\StatusReportCollector'),
     );
   }
 
@@ -212,6 +218,16 @@ final class SettingsForm extends ConfigFormBase {
       '#title' => $this->t('Report platform versions'),
       '#description' => $this->t('Sends the web server, database and operating system versions, and their system package versions, so Sentinel can warn you about known vulnerabilities in your server software. The PHP version is always sent, because Drupal core support depends on it.'),
       '#default_value' => $config->get('report_platform') ?? TRUE,
+    ];
+    $statusOverridden = $this->statusReport->isReportingOverridden();
+    $form['report_status_report'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Report the Drupal status report (errors and warnings)'),
+      '#description' => $statusOverridden
+        ? $this->t('Set in settings.php by $settings[@key], which takes precedence over this checkbox.', ['@key' => "'" . StatusReportCollector::SETTINGS_KEY . "'"])
+        : $this->t('Sends the title, value and description of each error and warning on Reports, Status report, as plain text. OK and information items are never sent. Site paths are replaced with [site root]. Preview what is sent: <code>@command</code>', ['@command' => 'drush sentinel_connector:status-report']),
+      '#default_value' => $statusOverridden ? $this->statusReport->isReportingEnabled() : $config->get('report_status_report') ?? TRUE,
+      '#disabled' => $statusOverridden,
     ];
     $form['integrations'] = $this->integrations($config->get('report_upgrade_status') ?? TRUE);
     // API key status: the source is shown, the key never is.
@@ -489,12 +505,16 @@ final class SettingsForm extends ConfigFormBase {
     $reportUpgradeStatus = $this->upgradeStatus->isReportingOverridden()
       ? $config->get('report_upgrade_status') ?? TRUE
       : $form_state->getValue('report_upgrade_status');
+    $reportStatusReport = $this->statusReport->isReportingOverridden()
+      ? $config->get('report_status_report') ?? TRUE
+      : $form_state->getValue('report_status_report');
     $config
       ->set('enabled', (bool) $form_state->getValue('enabled'))
       ->set('report_scope', PayloadBuilder::normaliseScope($form_state->getValue('report_scope')))
       ->set('report_config_drift', (bool) $form_state->getValue('report_config_drift'))
       ->set('report_platform', (bool) $form_state->getValue('report_platform'))
-      ->set('report_upgrade_status', (bool) $reportUpgradeStatus);
+      ->set('report_upgrade_status', (bool) $reportUpgradeStatus)
+      ->set('report_status_report', (bool) $reportStatusReport);
     if (!$this->uuidResolver->isOverridden()) {
       $config->set('site_uuid', (string) $form_state->getValue('site_uuid'));
     }

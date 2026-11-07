@@ -21,5 +21,14 @@ parameters:
       path: sentinel_connector.install
       reportUnmatched: false
     - message: '#^Attribute class Drupal\\Core\\Hook\\Attribute\\Hook does not exist\.$#'
-      path: src/Hook/SentinelHooks.php
+      paths:
+        - src/Hook/SentinelHooks.php
+        - tests/modules/sentinel_status_report_test/src/Hook/StatusReportTestHooks.php
+      reportUnmatched: false
+    - message: '#^Attribute class Drupal\\Core\\Hook\\Attribute\\LegacyRequirementsHook does not exist\.$#'
+      path: tests/modules/sentinel_status_report_test/sentinel_status_report_test.install
+      reportUnmatched: false
+    # The test module's hooks also run as procedural wrappers on Drupal 10.
+    - message: '#^\\Drupal calls should be avoided in classes, use dependency injection instead$#'
+      path: tests/modules/sentinel_status_report_test/src/Hook/StatusReportTestHooks.php
       reportUnmatched: false

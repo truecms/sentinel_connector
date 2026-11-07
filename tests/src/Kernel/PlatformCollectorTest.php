@@ -351,7 +351,7 @@ class PlatformCollectorTest extends KernelTestBase {
     $result = $this->container->get('Drupal\sentinel_connector\SyncService')->sync();
     $this->assertTrue($result->isOk());
     $body = json_decode((string) $transactions[0]['request']->getBody(), TRUE);
-    $this->assertSame(4, $body['schema_version']);
+    $this->assertSame(5, $body['schema_version']);
     $this->assertSame('enabled', $body['platform_reporting']);
     $this->assertSame(['version' => PHP_VERSION, 'sapi' => PHP_SAPI], $body['platform']['php']);
     $this->assertSame('nginx/1.24.0', $body['platform']['web_server']['raw']);
