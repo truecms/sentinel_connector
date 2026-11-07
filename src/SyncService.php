@@ -518,10 +518,10 @@ class SyncService {
    * The part of the status report block that counts as an inventory change.
    *
    * The items, the context and the left-out keys count; the time of the
-   * check does not, so a changed list pushes at the next cron and an
-   * unchanged one does not. A build that timed out or failed counts as the
-   * block of the last accepted push; one that is sent counts by its status
-   * and reason.
+   * check and the "last run" value of the cron item do not, so a changed
+   * list pushes at the next cron and an unchanged one does not. A build
+   * that timed out or failed counts as the block of the last accepted push;
+   * one that is sent counts by its status and reason.
    *
    * @param array<string, mixed> $payload
    *   The payload sent to Sentinel.
@@ -534,6 +534,12 @@ class SyncService {
   protected function statusReportPart(array $payload, bool $sent = FALSE): ?string {
     $block = $payload['status_report'] ?? NULL;
     if (!is_array($block)) {
+      // A web request before the first snapshot sends no block; that says
+      // nothing new, so it counts as the last accepted one.
+      if (($payload['status_reporting'] ?? NULL) === 'enabled') {
+        $last = $this->state->get(self::STATE_LAST_STATUS_REPORT);
+        return is_string($last) && $last !== '' ? $last : NULL;
+      }
       return NULL;
     }
     $transient = ($block['status'] ?? NULL) === StatusReportCollector::STATUS_UNAVAILABLE;
@@ -544,6 +550,13 @@ class SyncService {
     $part = $transient
       ? array_intersect_key($block, array_flip(['status', 'reason']))
       : array_intersect_key($block, array_flip(['status', 'context', 'left_out', 'items']));
+    // Cron's value says how long ago it last ran, which changes with every
+    // build; its severity and description still count.
+    foreach ($part['items'] ?? [] as $index => $item) {
+      if (is_array($item) && ($item['key'] ?? NULL) === 'cron') {
+        unset($part['items'][$index]['value']);
+      }
+    }
     ksort($part);
     return hash('sha256', json_encode($part, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
   }

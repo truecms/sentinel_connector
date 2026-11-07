@@ -169,6 +169,7 @@ class StatusReportCollectorTest extends KernelTestBase {
       'kept' => [
         'title' => 'Kept',
         'description' => 'Needs PHP &lt;8.3 or later. Not a site path: /srv/example-privateer/x.',
+        'value' => 'memory <64M, see a <= b',
         'severity' => 1,
       ],
       'escaped' => [
@@ -186,6 +187,7 @@ class StatusReportCollectorTest extends KernelTestBase {
     $this->assertStringNotContainsString($root, $description);
     $this->assertSame('alert(1) click', $items['escaped']['description']);
     $this->assertSame('Needs PHP <8.3 or later. Not a site path: /srv/example-privateer/x.', $items['kept']['description']);
+    $this->assertSame('memory <64M, see a <= b', $items['kept']['value']);
     $this->assertSchemaBlock($this->collector()->build(StatusReportCollector::CONTEXT_WEB));
   }
 
@@ -566,10 +568,36 @@ class StatusReportCollectorTest extends KernelTestBase {
     $state->set(StatusReportCollector::STATE_SNAPSHOT, ['checked_at' => self::START + 3600, 'items' => $items]);
     $this->assertFalse($this->syncService()->hasInventoryChanged());
 
-    // A changed value.
+    // Cron's "last run" value changes with every build: not a change.
     $items[0]['value'] = 'Last run 4 days ago';
     $state->set(StatusReportCollector::STATE_SNAPSHOT, ['checked_at' => self::START + 3600, 'items' => $items]);
+    $this->assertFalse($this->syncService()->hasInventoryChanged());
+
+    // A changed item.
+    $items[0]['severity'] = 'error';
+    $state->set(StatusReportCollector::STATE_SNAPSHOT, ['checked_at' => self::START + 3600, 'items' => $items]);
     $this->assertTrue($this->syncService()->hasInventoryChanged());
+    $items[0]['severity'] = 'warning';
+    $items[] = [
+      'key' => 'update',
+      'severity' => 'error',
+      'title' => 'Database updates',
+      'value' => 'Out of date',
+      'description' => '',
+      'provider' => 'system',
+    ];
+    $state->set(StatusReportCollector::STATE_SNAPSHOT, ['checked_at' => self::START + 3600, 'items' => $items]);
+    $this->assertTrue($this->syncService()->hasInventoryChanged());
+
+    // A web sync before the first snapshot sends no block: that counts as
+    // the last accepted list, sent or not.
+    $last = $state->get(SyncService::STATE_LAST_STATUS_REPORT);
+    $this->assertIsString($last);
+    $part = new \ReflectionMethod(SyncService::class, 'statusReportPart');
+    foreach ([FALSE, TRUE] as $sent) {
+      $this->assertSame($last, $part->invoke($this->syncService(), ['status_reporting' => 'enabled'], $sent));
+    }
+    $this->assertNull($part->invoke($this->syncService(), ['status_reporting' => 'disabled'], FALSE));
   }
 
   /**

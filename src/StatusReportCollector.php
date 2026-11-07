@@ -568,6 +568,8 @@ class StatusReportCollector {
     $text = (string) $text;
     // Inline tags go; any other tag becomes a space, so the words of two
     // paragraphs or a link and the next paragraph do not join.
+    // A "<" that starts no tag, as in "PHP <8.3", is text.
+    $text = preg_replace('#<(?![a-zA-Z/!?])#', '&lt;', $text) ?? $text;
     // A link next to a word keeps a space between them.
     $text = preg_replace(['#</a>(?=[^\s.,;:!?)\]<])#i', '#(?<=[^\s(\[>])<a\b#i'], ['</a> ', ' <a'], $text) ?? $text;
     $text = preg_replace('#</?(a|abbr|b|cite|code|em|i|kbd|mark|q|s|samp|small|span|strong|sub|sup|time|u|var)\b[^>]*>#i', '', $text) ?? $text;
