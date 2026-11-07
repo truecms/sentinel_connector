@@ -191,12 +191,16 @@ class StatusReportCollector {
   /**
    * Returns the payload's status_report block.
    *
-   * Sends the web snapshot while it is newer than a day. Otherwise builds
-   * the list now: from the command line with the web-only checks left out.
-   * A failed build is sent as unavailable and keeps the last snapshot.
+   * Sends the web snapshot while it is newer than a day. Otherwise, from
+   * the command line, builds the list now with the web-only checks left out;
+   * a failed build is sent as unavailable and keeps the last snapshot. A
+   * sync in a web request ("Sync now") never builds the list while someone
+   * waits: it sends the last snapshot, however old, or no block before the
+   * first one.
    *
    * @return array<string, mixed>|null
-   *   The block, or NULL when reporting is off.
+   *   The block, or NULL when reporting is off or a web request has no
+   *   snapshot yet.
    */
   public function collect(): ?array {
     if (!$this->isReportingEnabled()) {
@@ -207,12 +211,10 @@ class StatusReportCollector {
       if ($snapshot !== NULL && $this->now() - $snapshot['checked_at'] < self::SNAPSHOT_MAX_AGE) {
         return $this->block($snapshot);
       }
-      $context = PHP_SAPI === 'cli' ? self::CONTEXT_CLI : self::CONTEXT_WEB;
-      $report = $this->build($context);
-      if ($context === self::CONTEXT_WEB && $report['status'] === self::STATUS_REPORTED) {
-        $this->store($report);
+      if (!$this->isCli()) {
+        return $snapshot === NULL ? NULL : $this->block($snapshot);
       }
-      return $report;
+      return $this->build(self::CONTEXT_CLI);
     }
     catch (\Throwable) {
       return $this->unavailable(self::REASON_FAILED);
@@ -366,16 +368,17 @@ class StatusReportCollector {
     foreach (array_keys($this->moduleHandler->getModuleList()) as $module) {
       $this->moduleHandler->loadInclude($module, 'install');
     }
-    // Like core: the results of one hook are merged deeply, the two hooks'
-    // lists shallowly. A key two modules return keeps its first provider.
+    // Like core: the results of one hook are merged deeply, so numeric keys
+    // are appended; the two hooks' lists are merged shallowly.
     $add = function (array &$list, mixed $items, string $module) use ($start): void {
       if (is_array($items)) {
+        $tagged = [];
         foreach ($items as $key => $item) {
           if (is_array($item)) {
-            $key = (string) $key;
-            $list[$key] = isset($list[$key]) ? NestedArray::mergeDeep($list[$key], $item) : ['#provider' => $module] + $item;
+            $tagged[$key] = ['#provider' => $module] + $item;
           }
         }
+        $list = NestedArray::mergeDeep($list, $tagged);
       }
       $this->checkBudget($start);
     };
@@ -594,7 +597,8 @@ class StatusReportCollector {
     if ($replacements === []) {
       return $text;
     }
-    $pattern = '#(' . implode('|', array_map(fn (string $path): string => preg_quote($path, '#'), array_keys($replacements))) . ')(?![A-Za-z0-9_-])#';
+    $paths = implode('|', array_map(fn (string $path): string => preg_quote($path, '#'), array_keys($replacements)));
+    $pattern = '#(?<![A-Za-z0-9_.-])(' . $paths . ')(?![A-Za-z0-9_-])#';
     return preg_replace_callback($pattern, fn (array $match): string => $replacements[$match[1]], $text) ?? $text;
   }
 
@@ -636,12 +640,13 @@ class StatusReportCollector {
       if (!is_string($path) || $path === '') {
         return;
       }
-      // A relative path, such as ../private, is shown resolved.
+      // A relative path, such as ../private, is replaced as configured and
+      // as resolved.
       $real = @realpath($path);
       foreach ([$path, $real] as $candidate) {
         $candidate = is_string($candidate) ? rtrim($candidate, '/\\') : '';
-        // Only absolute paths: a fragment would replace parts of words.
-        if (strlen($candidate) >= 2 && preg_match('#^([a-zA-Z]:)?[/\\\\]#', $candidate)) {
+        // A path, not a word: absolute, or relative with a directory in it.
+        if (strlen($candidate) >= 2 && preg_match('#^([a-zA-Z]:)?[/\\\\]|[/\\\\]#', $candidate)) {
           $paths[$candidate] ??= $label;
         }
       }
@@ -717,9 +722,16 @@ class StatusReportCollector {
       'status' => self::STATUS_UNAVAILABLE,
       'reason' => $reason,
       'checked_at' => $this->format($this->now()),
-      'context' => PHP_SAPI === 'cli' ? self::CONTEXT_CLI : self::CONTEXT_WEB,
+      'context' => $this->isCli() ? self::CONTEXT_CLI : self::CONTEXT_WEB,
       'left_out' => [],
     ];
+  }
+
+  /**
+   * Whether this process runs from the command line, such as Drush or cron.
+   */
+  protected function isCli(): bool {
+    return PHP_SAPI === 'cli';
   }
 
   /**

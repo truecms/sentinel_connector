@@ -449,6 +449,71 @@ class StatusReportCollectorTest extends KernelTestBase {
   }
 
   /**
+   * A sync in a web request never builds the list while someone waits.
+   */
+  public function testWebSyncDoesNotBuild(): void {
+    $this->setItems(['web_item' => ['title' => 'Web item', 'severity' => 1]]);
+    $web = new WebStatusReportCollector(
+      $this->container->get('module_handler'),
+      $this->container->get('renderer'),
+      $this->container->get('state'),
+      $this->container->get('lock'),
+      $this->container->get('config.factory'),
+      $this->container->get('settings'),
+      $this->container->get('file_system'),
+      $this->container->get('datetime.time'),
+      $this->container->get('logger.channel.sentinel_connector'),
+      $this->container->getParameter('app.root'),
+    );
+    // No snapshot yet: no block, and nothing built.
+    $this->assertNull($web->collect());
+    $this->assertSame(0, $this->calls());
+
+    // An old snapshot is sent as it is, with its own time.
+    $old = self::START - 3 * 86400;
+    $this->container->get('state')->set(StatusReportCollector::STATE_SNAPSHOT, ['checked_at' => $old, 'items' => []]);
+    /** @var array<string, mixed> $block */
+    $block = $web->collect();
+    $this->assertSame('web', $block['context']);
+    $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', $old), $block['checked_at']);
+    $this->assertSame(0, $this->calls());
+  }
+
+  /**
+   * A relative temporary path is replaced as configured.
+   */
+  public function testRelativePathIsReplaced(): void {
+    $this->setSetting('file_temp_path', '../example-temp-relative');
+    $this->container->set('file_system', NULL);
+    $this->setItems([
+      'relative' => [
+        'title' => 'Relative',
+        'description' => 'The directory ../example-temp-relative/x does not exist.',
+        'severity' => 2,
+      ],
+    ]);
+    $items = $this->byKey($this->collector()->build(StatusReportCollector::CONTEXT_WEB));
+    $this->assertSame('The directory [temporary files]/x does not exist.', $items['relative']['description']);
+  }
+
+  /**
+   * Numeric keys from two modules are both kept, as core keeps them.
+   */
+  public function testNumericKeysAreAppended(): void {
+    $this->setItems([
+      0 => ['title' => 'First numeric', 'severity' => 2],
+    ]);
+    $this->container->get('state')->set('sentinel_status_report_test.alter', [
+      'named' => ['title' => 'Named', 'severity' => 1],
+    ]);
+    $block = $this->collector()->build(StatusReportCollector::CONTEXT_WEB);
+    $titles = array_column($block['items'], 'title');
+    $this->assertContains('First numeric', $titles);
+    $this->assertContains('Named', $titles);
+    $this->assertSchemaBlock($block);
+  }
+
+  /**
    * With the setting off, the payload says so and has no block.
    */
   public function testSettingOff(): void {
@@ -524,7 +589,7 @@ class StatusReportCollectorTest extends KernelTestBase {
   /**
    * Stores the requirements the test module returns.
    *
-   * @param array<string, array<string, mixed>> $items
+   * @param array<array-key, array<string, mixed>> $items
    *   The requirements.
    */
   protected function setItems(array $items): void {
