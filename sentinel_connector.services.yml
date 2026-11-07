@@ -21,6 +21,30 @@ services:
       - '@Drupal\sentinel_connector\ConfigDriftCollector'
       - '@config.factory'
       - '@Drupal\sentinel_connector\UpgradeStatusCollector'
+      - '@Drupal\sentinel_connector\StatusReportCollector'
+
+  Drupal\sentinel_connector\StatusReportCollector:
+    class: Drupal\sentinel_connector\StatusReportCollector
+    arguments:
+      - '@module_handler'
+      - '@renderer'
+      - '@state'
+      - '@lock'
+      - '@config.factory'
+      - '@settings'
+      - '@file_system'
+      - '@datetime.time'
+      - '@logger.channel.sentinel_connector'
+      - '%app.root%'
+      - '@language_manager'
+      - '@string_translation'
+      - '@account_switcher'
+
+  Drupal\sentinel_connector\EventSubscriber\StatusReportSubscriber:
+    class: Drupal\sentinel_connector\EventSubscriber\StatusReportSubscriber
+    arguments: ['@Drupal\sentinel_connector\StatusReportCollector']
+    tags:
+      - { name: event_subscriber }
 
   Drupal\sentinel_connector\UpgradeStatusCollector:
     class: Drupal\sentinel_connector\UpgradeStatusCollector

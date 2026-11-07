@@ -1,0 +1,6 @@
+name: 'Sentinel status report (test)'
+type: module
+description: 'Adds status report requirements that Sentinel Connector tests store in state.'
+package: Testing
+core_version_requirement: ^10.3 || ^11 || ^12
+hidden: true

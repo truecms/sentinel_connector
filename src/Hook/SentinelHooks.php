@@ -5,6 +5,7 @@ namespace Drupal\sentinel_connector\Hook;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\sentinel_connector\ApiKeyMigrator;
 use Drupal\sentinel_connector\PushHealth;
+use Drupal\sentinel_connector\StatusReportCollector;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -69,6 +70,23 @@ class SentinelHooks {
       $requirements['sentinel_connector_connection'] = $connection;
     }
     return $requirements;
+  }
+
+  /**
+   * Forgets the status report snapshot when caches are rebuilt.
+   *
+   * A deployment or a module change rebuilds caches, and can fix or cause
+   * status report errors: the next sync builds a fresh list, and the next
+   * web response a fresh snapshot.
+   */
+  #[Hook('rebuild')]
+  public function rebuild(): void {
+    try {
+      $this->container->get(StatusReportCollector::class)->forgetSnapshot();
+    }
+    catch (\Throwable) {
+      // A cache rebuild must never fail over a value only the sync needs.
+    }
   }
 
   /**
