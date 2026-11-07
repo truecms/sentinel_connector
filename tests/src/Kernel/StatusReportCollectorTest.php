@@ -4,7 +4,11 @@ namespace Drupal\Tests\sentinel_connector\Kernel;
 
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\Language\Language;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManager;
 use Drupal\Core\Lock\DatabaseLockBackend;
+use Drupal\Core\StringTranslation\Translator\StaticTranslation;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\Core\Url;
 use Drupal\KernelTests\KernelTestBase;
@@ -162,6 +166,11 @@ class StatusReportCollectorTest extends KernelTestBase {
         ],
         'severity' => 1,
       ],
+      'kept' => [
+        'title' => 'Kept',
+        'description' => 'Needs PHP &lt;8.3 or later. Not a site path: /srv/example-privateer/x.',
+        'severity' => 1,
+      ],
       'escaped' => [
         'title' => 'Escaped',
         'description' => '&lt;script&gt;alert(1)&lt;/script&gt; <a href="https://evil.example">click</a>',
@@ -176,6 +185,7 @@ class StatusReportCollectorTest extends KernelTestBase {
     $this->assertStringNotContainsString('https://www.drupal.org', $description);
     $this->assertStringNotContainsString($root, $description);
     $this->assertSame('alert(1) click', $items['escaped']['description']);
+    $this->assertSame('Needs PHP <8.3 or later. Not a site path: /srv/example-privateer/x.', $items['kept']['description']);
     $this->assertSchemaBlock($this->collector()->build(StatusReportCollector::CONTEXT_WEB));
   }
 
@@ -224,6 +234,86 @@ class StatusReportCollectorTest extends KernelTestBase {
       $this->assertMatchesRegularExpression('/ word…$/u', $long[$field]);
     }
     $this->assertSchemaBlock($block);
+  }
+
+  /**
+   * A text that cannot be rendered is sent empty; the list is kept.
+   */
+  public function testUnrenderableTextKeepsTheList(): void {
+    $this->setItems([
+      'broken_link' => [
+        'title' => 'Broken link',
+        'value' => 'Bad',
+        'description' => [
+          '#type' => 'link',
+          '#title' => 'Missing',
+          '#url' => Url::fromRoute('sentinel_status_report_test.missing_route'),
+        ],
+        'severity' => 2,
+      ],
+      'fine' => ['title' => 'Fine', 'severity' => 1],
+    ]);
+    $block = $this->collector()->build(StatusReportCollector::CONTEXT_WEB);
+    $this->assertSame('reported', $block['status']);
+    $items = $this->byKey($block);
+    $this->assertSame('', $items['broken_link']['description']);
+    $this->assertSame('Bad', $items['broken_link']['value']);
+    $this->assertArrayHasKey('fine', $items);
+    $this->assertCount(1, $this->logger()->cleanLogs());
+  }
+
+  /**
+   * The list is built in the default language, whatever the request's is.
+   */
+  public function testBuiltInTheDefaultLanguage(): void {
+    $translator = new class() extends StaticTranslation {
+
+      /**
+       * {@inheritdoc}
+       *
+       * @return array<string, array<string, string>>
+       *   Translations keyed by context, then by source string.
+       */
+      protected function getLanguage($langcode) {
+        return $langcode === 'fr' ? ['' => ['Translated title' => 'Titre traduit']] : [];
+      }
+
+    };
+    /** @var \Drupal\Core\StringTranslation\TranslationManager $translation */
+    $translation = $this->container->get('string_translation');
+    $translation->addTranslator($translator);
+    // The visitor's request is in French.
+    $this->container->set('language_manager', new class($this->container->get('language.default')) extends LanguageManager {
+
+      /**
+       * {@inheritdoc}
+       */
+      public function getCurrentLanguage($type = LanguageInterface::TYPE_INTERFACE) {
+        return new Language(['id' => 'fr']);
+      }
+
+    });
+    $translation->setDefaultLangcode('fr');
+    $this->assertSame('Titre traduit', (string) new TranslatableMarkup('Translated title'));
+    $this->setItems(['translated' => ['title' => new TranslatableMarkup('Translated title'), 'severity' => 1]]);
+    $items = $this->byKey($this->collector()->build(StatusReportCollector::CONTEXT_WEB));
+    $this->assertSame('Translated title', $items['translated']['title']);
+    // The request's language is back.
+    $this->assertSame('Titre traduit', (string) new TranslatableMarkup('Translated title'));
+  }
+
+  /**
+   * A cache rebuild forgets the snapshot, so a deployment is seen at once.
+   */
+  public function testRebuildForgetsSnapshot(): void {
+    $state = $this->container->get('state');
+    $state->set(StatusReportCollector::STATE_SNAPSHOT, ['checked_at' => self::START, 'items' => []]);
+    $state->set(StatusReportCollector::STATE_ATTEMPT, self::START);
+    $this->container->get('module_handler')->loadAll();
+    $this->container->get('module_handler')->invoke('sentinel_connector', 'rebuild');
+    $state->resetCache();
+    $this->assertNull($state->get(StatusReportCollector::STATE_SNAPSHOT));
+    $this->assertNull($state->get(StatusReportCollector::STATE_ATTEMPT));
   }
 
   /**

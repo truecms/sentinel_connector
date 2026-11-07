@@ -5,11 +5,14 @@ namespace Drupal\sentinel_connector;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Component\Utility\NestedArray;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Render\RendererInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
+use Drupal\Core\StringTranslation\TranslationInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -136,6 +139,11 @@ class StatusReportCollector {
    *   Receives one warning for each module whose hook throws.
    * @param string $appRoot
    *   The Drupal root, replaced in every text.
+   * @param \Drupal\Core\Language\LanguageManagerInterface|null $languageManager
+   *   Gives the site's default language, in which the list is built.
+   * @param \Drupal\Core\StringTranslation\TranslationInterface|null $translation
+   *   The translation service, switched to the default language while the
+   *   list is built, so the request's language does not change the texts.
    */
   public function __construct(
     protected ModuleHandlerInterface $moduleHandler,
@@ -148,6 +156,8 @@ class StatusReportCollector {
     protected TimeInterface $time,
     protected LoggerInterface $logger,
     protected string $appRoot,
+    protected ?LanguageManagerInterface $languageManager = NULL,
+    protected ?TranslationInterface $translation = NULL,
   ) {}
 
   /**
@@ -245,6 +255,13 @@ class StatusReportCollector {
   }
 
   /**
+   * Forgets the web snapshot, so the next sync and response build anew.
+   */
+  public function forgetSnapshot(): void {
+    $this->state->deleteMultiple([self::STATE_SNAPSHOT, self::STATE_ATTEMPT]);
+  }
+
+  /**
    * Whether the last snapshot attempt is older than the interval.
    */
   public function isSnapshotDue(): bool {
@@ -283,25 +300,20 @@ class StatusReportCollector {
    */
   public function build(string $context): array {
     $context = $context === self::CONTEXT_CLI ? self::CONTEXT_CLI : self::CONTEXT_WEB;
-    $start = $this->microtime();
-    try {
-      $requirements = $this->requirements($start);
-    }
-    catch (StatusReportTimeoutException) {
-      return $this->unavailable(self::REASON_TIMEOUT);
-    }
-    catch (\Throwable) {
-      return $this->unavailable(self::REASON_FAILED);
-    }
     $leftOut = $context === self::CONTEXT_CLI ? self::CLI_LEFT_OUT : [];
+    $start = $this->microtime();
+    $restore = $this->useDefaultLanguage();
     try {
-      $items = $this->clean($requirements, $leftOut, $start);
+      $items = $this->clean($this->requirements($start), $leftOut, $start);
     }
     catch (StatusReportTimeoutException) {
       return $this->unavailable(self::REASON_TIMEOUT);
     }
     catch (\Throwable) {
       return $this->unavailable(self::REASON_FAILED);
+    }
+    finally {
+      $restore();
     }
     return $this->block([
       'checked_at' => $this->now(),
@@ -309,6 +321,36 @@ class StatusReportCollector {
       'left_out' => $leftOut,
       'items' => $items,
     ]);
+  }
+
+  /**
+   * Translates into the site's default language until the returned call.
+   *
+   * A web snapshot is built in whatever request comes along; in the
+   * visitor's language the texts would change with each snapshot.
+   *
+   * @return \Closure
+   *   Restores the request's language.
+   */
+  protected function useDefaultLanguage(): \Closure {
+    try {
+      if ($this->languageManager === NULL || $this->translation === NULL || !method_exists($this->translation, 'setDefaultLangcode')) {
+        return static function (): void {};
+      }
+      $default = $this->languageManager->getDefaultLanguage()->getId();
+      $current = $this->languageManager->getCurrentLanguage()->getId();
+      if ($default === $current) {
+        return static function (): void {};
+      }
+      $translation = $this->translation;
+      $translation->setDefaultLangcode($default);
+      return static function () use ($translation, $current): void {
+        $translation->setDefaultLangcode($current);
+      };
+    }
+    catch (\Throwable) {
+      return static function (): void {};
+    }
   }
 
   /**
@@ -324,28 +366,33 @@ class StatusReportCollector {
     foreach (array_keys($this->moduleHandler->getModuleList()) as $module) {
       $this->moduleHandler->loadInclude($module, 'install');
     }
-    $requirements = [];
-    $add = function (mixed $items, string $module) use (&$requirements, $start): void {
+    // Like core: the results of one hook are merged deeply, the two hooks'
+    // lists shallowly. A key two modules return keeps its first provider.
+    $add = function (array &$list, mixed $items, string $module) use ($start): void {
       if (is_array($items)) {
         foreach ($items as $key => $item) {
           if (is_array($item)) {
-            $requirements[(string) $key] = ['#provider' => $module] + $item;
+            $key = (string) $key;
+            $list[$key] = isset($list[$key]) ? NestedArray::mergeDeep($list[$key], $item) : ['#provider' => $module] + $item;
           }
         }
       }
       $this->checkBudget($start);
     };
-    $this->moduleHandler->invokeAllWith('requirements', function (callable $hook, string $module) use ($add): void {
-      $add($this->guard($module, fn () => $hook('runtime')), $module);
+    $legacy = [];
+    $this->moduleHandler->invokeAllWith('requirements', function (callable $hook, string $module) use ($add, &$legacy): void {
+      $add($legacy, $this->guard($module, fn () => $hook('runtime')), $module);
     });
+    $runtime = [];
     // Drupal 11.2 adds a runtime hook and an alter hook of its own.
-    $runtime = version_compare(\Drupal::VERSION, '11.1.99', '>');
-    if ($runtime) {
-      $this->moduleHandler->invokeAllWith('runtime_requirements', function (callable $hook, string $module) use ($add): void {
-        $add($this->guard($module, fn () => $hook()), $module);
+    $isRuntime = version_compare(\Drupal::VERSION, '11.1.99', '>');
+    if ($isRuntime) {
+      $this->moduleHandler->invokeAllWith('runtime_requirements', function (callable $hook, string $module) use ($add, &$runtime): void {
+        $add($runtime, $this->guard($module, fn () => $hook()), $module);
       });
     }
-    foreach ($runtime ? ['requirements_alter', 'runtime_requirements_alter'] : ['requirements_alter'] as $alter) {
+    $requirements = array_merge($legacy, $runtime);
+    foreach ($isRuntime ? ['requirements_alter', 'runtime_requirements_alter'] : ['requirements_alter'] as $alter) {
       $this->moduleHandler->invokeAllWith($alter, function (callable $hook, string $module) use (&$requirements, $start): void {
         $altered = $requirements;
         $result = $this->guard($module, function () use ($hook, &$altered): bool {
@@ -440,14 +487,18 @@ class StatusReportCollector {
         $unique = substr($key, 0, self::MAX_KEY - strlen($suffix)) . $suffix;
       }
       $seen[$unique] = TRUE;
-      $title = $this->text($requirement['title'] ?? '', self::MAX_TITLE, $replacements);
+      $provider = $this->provider($requirement['#provider'] ?? '');
+      // A text that cannot be rendered, such as a link to a missing route,
+      // is sent empty; the rest of the list is kept.
+      $text = fn (string $field, int $limit): string => (string) $this->guard($provider, fn () => $this->text($requirement[$field] ?? '', $limit, $replacements));
+      $title = $text('title', self::MAX_TITLE);
       $items[] = [
         'key' => $unique,
         'severity' => $severity,
         'title' => $title === '' ? $unique : $title,
-        'value' => $this->text($requirement['value'] ?? '', self::MAX_VALUE, $replacements),
-        'description' => $this->text($requirement['description'] ?? '', self::MAX_DESCRIPTION, $replacements),
-        'provider' => $this->provider($requirement['#provider'] ?? ''),
+        'value' => $text('value', self::MAX_VALUE),
+        'description' => $text('description', self::MAX_DESCRIPTION),
+        'provider' => $provider,
       ];
       $this->checkBudget($start);
     }
@@ -520,14 +571,31 @@ class StatusReportCollector {
     $text = preg_replace('#<[^>]*>#', ' ', $text) ?? $text;
     $text = strip_tags($text);
     $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    // Decoding can produce tags again from escaped markup.
-    $text = strip_tags($text);
+    // Escaped markup decodes to tags again; remove what looks like a tag,
+    // but keep text such as "PHP <8.3".
+    $text = preg_replace('#<[a-zA-Z/!][^<>]*>#', ' ', $text) ?? $text;
     if (!mb_check_encoding($text, 'UTF-8')) {
       $text = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
     }
-    $text = strtr($text, $replacements);
+    $text = $this->replacePaths($text, $replacements);
     $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
     return $this->cut($text, $limit);
+  }
+
+  /**
+   * Replaces whole site paths: /app in /app/x, not in /apple.
+   *
+   * @param string $text
+   *   The text.
+   * @param array<string, string> $replacements
+   *   Replacement labels keyed by path, longest first.
+   */
+  protected function replacePaths(string $text, array $replacements): string {
+    if ($replacements === []) {
+      return $text;
+    }
+    $pattern = '#(' . implode('|', array_map(fn (string $path): string => preg_quote($path, '#'), array_keys($replacements))) . ')(?![A-Za-z0-9_-])#';
+    return preg_replace_callback($pattern, fn (array $match): string => $replacements[$match[1]], $text) ?? $text;
   }
 
   /**

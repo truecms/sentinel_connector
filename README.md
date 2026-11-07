@@ -435,7 +435,9 @@ module builds the list and keeps it in state
 that snapshot (`context: "web"`) while it is newer than 24 hours. Otherwise the
 sync builds the list itself from the command line (`context: "cli"`) and
 leaves out the checks that are wrong there, listing their keys in
-`left_out`.
+`left_out`. A cache rebuild (`drush cr`, `drush deploy`, enabling a module)
+forgets the snapshot, so the next sync reports the deployed site. The list is
+built in the site's default language, whatever the language of the request.
 
 A build over 20 seconds, or one that fails, is sent as
 `"status": "unavailable"` with `reason` `timeout` or `collector_failed` and no

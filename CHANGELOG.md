@@ -20,7 +20,8 @@ refuses the push, so deploy truecms/sentinel#2314 first.
   items are sent, errors first. Works with `hook_requirements('runtime')` and
   the Drupal 11.2 `hook_runtime_requirements()` and severity enum.
 - The list is built after a web response at most every 12 hours, under a
-  lock, and kept in state; page cache hits and `update.php` never build it.
+  lock, in the site's default language, and kept in state; page cache hits
+  and `update.php` never build it. A cache rebuild forgets it.
   Without a web snapshot from the last 24 hours, the sync builds it from the
   command line and lists the left-out web-only checks in `left_out`. A build
   over 20 seconds or a failed one sends `unavailable` with `timeout` or

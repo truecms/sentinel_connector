@@ -36,6 +36,8 @@ services:
       - '@datetime.time'
       - '@logger.channel.sentinel_connector'
       - '%app.root%'
+      - '@language_manager'
+      - '@string_translation'
 
   Drupal\sentinel_connector\EventSubscriber\StatusReportSubscriber:
     class: Drupal\sentinel_connector\EventSubscriber\StatusReportSubscriber
