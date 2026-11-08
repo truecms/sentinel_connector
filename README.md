@@ -370,8 +370,9 @@ your site image and a sanitised copy of your database. Sentinel's
 `truecms/sentinel-upgrade-scan` action runs the scan, then calls:
 
 ```bash
+started=$(date +%s)
 drush upgrade_status:analyze --all
-SENTINEL_SCAN_KEY=sk_scan_... drush sentinel_connector:upgrade-status --scan-report
+SENTINEL_SCAN_KEY=sk_scan_... drush sentinel_connector:upgrade-status --scan-report --scan-started="$started"
 ```
 
 - It runs no scan. It reads the result Upgrade Status stored and sends it to
@@ -384,6 +385,10 @@ SENTINEL_SCAN_KEY=sk_scan_... drush sentinel_connector:upgrade-status --scan-rep
 - It ignores the off switch and the reporting switch, so it works in a build
   that shares `settings.php` with production.
 - It sends counts only, like a push.
+- A custom project with no good scan since `--scan-started` (a failed scan,
+  or a result older than this scan) is not sent as a result: Sentinel is told
+  the scan did not finish (`scan_failed`) and the command fails. Without
+  `--scan-started` only failed and missing scans are caught.
 - Exit codes: 0 when Sentinel accepted the scan, or when Sentinel does not
   take CI scans for the site yet. Not 0 when the key is missing or refused,
   the result cannot be read (Sentinel is told the scan failed), or Sentinel

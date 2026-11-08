@@ -22,8 +22,9 @@ it answers 404 and the command exits 0, so this release is safe before it.
     off, because CI builds usually share `settings.php` with production.
   - It sends the same counts-only block as a push: no project names, paths
     or messages.
-  - A result that cannot be read tells Sentinel the scan failed
-    (`scan_failed`) and fails the command. A closed scan route exits 0. A
+  - A result that cannot be read, or a custom project with no good scan
+    since `--scan-started`, tells Sentinel the scan failed (`scan_failed`)
+    and fails the command. A closed scan route exits 0. A
     refused key, a site that has not reported yet, or another refusal fails
     the command.
 

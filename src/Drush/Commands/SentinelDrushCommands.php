@@ -161,11 +161,12 @@ class SentinelDrushCommands extends DrushCommands {
    */
   #[CLI\Command(name: 'sentinel_connector:upgrade-status', aliases: ['sc-upgrade-status'])]
   #[CLI\Option(name: 'scan-report', description: 'In CI: send the result Upgrade Status stored to the scan route with the key in SENTINEL_SCAN_KEY. Runs no scan and ignores the off switch.')]
+  #[CLI\Option(name: 'scan-started', description: 'With --scan-report: the Unix time the CI scan started. A custom project with no good scan from then on fails the report.')]
   #[CLI\Usage(name: 'drush sentinel_connector:upgrade-status', description: 'Scan custom projects with Upgrade Status, then push the readiness to Sentinel.')]
-  #[CLI\Usage(name: 'drush sentinel_connector:upgrade-status --scan-report', description: 'In CI, after "drush upgrade_status:analyze --all": send the stored result to Sentinel.')]
-  public function upgradeStatus(array $options = ['scan-report' => FALSE]): void {
+  #[CLI\Usage(name: 'drush sentinel_connector:upgrade-status --scan-report --scan-started=1793000000', description: 'In CI, after "drush upgrade_status:analyze --all": send the stored result to Sentinel.')]
+  public function upgradeStatus(array $options = ['scan-report' => FALSE, 'scan-started' => self::REQ]): void {
     if (!empty($options['scan-report'])) {
-      $this->scanReport();
+      $this->scanReport($options['scan-started'] ?? NULL);
       return;
     }
     // First: shared deploy scripts run this where nothing reports.
@@ -219,8 +220,20 @@ class SentinelDrushCommands extends DrushCommands {
    * builds normally set, and needs no connector API key: the scan key in
    * SENTINEL_SCAN_KEY is the only credential, and it is never printed. Only
    * counts, dates and versions are sent, as in a push.
+   *
+   * @param mixed $started
+   *   The Unix time the CI scan started, from --scan-started. Without it,
+   *   only failed and missing scans are caught, not a result older than the
+   *   scan.
    */
-  protected function scanReport(): void {
+  protected function scanReport(mixed $started): void {
+    $since = 0;
+    if ($started !== NULL && $started !== '' && $started !== TRUE) {
+      if (!is_scalar($started) || !ctype_digit((string) $started)) {
+        throw new \RuntimeException(dt('--scan-started must be a Unix time in seconds. Nothing was sent.'));
+      }
+      $since = (int) $started;
+    }
     $key = getenv(self::SCAN_KEY_ENV);
     if (!is_string($key) || $key === '') {
       throw new \RuntimeException(dt('Set @env to the site\'s scan key, from the site\'s Setup tab in Sentinel. Nothing was sent.', ['@env' => self::SCAN_KEY_ENV]));
@@ -251,6 +264,23 @@ class SentinelDrushCommands extends DrushCommands {
       ]);
       throw new \RuntimeException(dt('The Upgrade Status result could not be read (@reason). @sent', [
         '@reason' => $block['reason'],
+        '@sent' => $sent->isAccepted() ? dt('Sentinel was told the scan did not finish.') : $sent->message,
+      ]));
+    }
+    // As for the scan this command runs: a custom project whose scan failed,
+    // or that kept a result older than this scan, must not be reported as
+    // current. Sentinel is told the scan did not finish instead.
+    $unscanned = $this->upgradeStatus->customProjectsNotScannedSince($since);
+    if ($unscanned === NULL || $unscanned > 0) {
+      $sent = $this->client->sendScan($url, $uuid, $key, ['problem' => [
+        'reason' => 'scan_failed',
+        'generated_at' => $block['generated_at'],
+      ],
+      ]);
+      throw new \RuntimeException(dt('@what @sent', [
+        '@what' => $unscanned === NULL
+          ? dt('The Upgrade Status result could not be checked.')
+          : dt('The Upgrade Status scan did not finish for @count custom project(s).', ['@count' => $unscanned]),
         '@sent' => $sent->isAccepted() ? dt('Sentinel was told the scan did not finish.') : $sent->message,
       ]));
     }

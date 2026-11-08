@@ -632,7 +632,7 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->mockSentinel(new Response(200, [], '{"outcome":"stored"}'));
 
     $command = $this->command(0);
-    $command->upgradeStatus(['scan-report' => TRUE]);
+    $command->upgradeStatus(['scan-report' => TRUE, 'scan-started' => '1792880000']);
     $this->assertFalse($command->scanned);
     $this->assertCount(1, $this->transactions);
     $request = $this->transactions[0]['request'];
@@ -651,6 +651,56 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->assertStringContainsString('readiness: not_ready', $messages);
     $this->assertStringContainsString('shows this scan', $messages);
     $this->assertStringNotContainsString('sk_scan_', $messages);
+  }
+
+  /**
+   * A custom project the CI scan did not cover is reported as a failed scan.
+   */
+  public function testScanReportIncompleteScan(): void {
+    putenv('SENTINEL_SCAN_KEY=' . self::SCAN_KEY);
+    // site_b kept a result from before this scan started.
+    $this->setProjects([
+      'site_a' => ['custom', 'relax'],
+      'site_b' => ['custom', 'relax'],
+    ], ['site_a' => 1792890000, 'site_b' => 1792800000]);
+    $this->mockSentinel(new Response(200, [], '{"outcome":"problem_stored"}'));
+    try {
+      $this->command(0)->upgradeStatus(['scan-report' => TRUE, 'scan-started' => '1792880000']);
+      $this->fail('A stale project result must fail the report.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('did not finish for 1 custom', $e->getMessage());
+    }
+    $this->assertCount(1, $this->transactions);
+    $body = json_decode((string) $this->transactions[0]['request']->getBody(), TRUE);
+    $this->assertSame(['problem'], array_keys($body));
+    $this->assertSame('scan_failed', $body['problem']['reason']);
+
+    // Without the start time a stale result is not caught, but a missing
+    // scan still is.
+    $this->setProjects([
+      'site_a' => ['custom', 'relax'],
+      'site_b' => ['custom', 'relax'],
+    ], ['site_a' => 1792890000]);
+    $this->mockSentinel(new Response(200, [], '{"outcome":"problem_stored"}'));
+    try {
+      $this->command(0)->upgradeStatus(['scan-report' => TRUE]);
+      $this->fail('A missing project scan must fail the report.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('did not finish for 1 custom', $e->getMessage());
+    }
+
+    // A start time that is not a Unix time sends nothing.
+    $this->mockSentinel();
+    try {
+      $this->command(0)->upgradeStatus(['scan-report' => TRUE, 'scan-started' => 'yesterday']);
+      $this->fail('A malformed start time must fail the report.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('Unix time', $e->getMessage());
+    }
+    $this->assertCount(0, $this->transactions);
   }
 
   /**
