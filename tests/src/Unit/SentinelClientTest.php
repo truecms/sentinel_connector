@@ -716,7 +716,11 @@ class SentinelClientTest extends TestCase {
       ],
       'invalid body' => [new Response(422, [], '{"detail":[{"msg":"bad"}]}'), ScanReportResult::FAILED, FALSE],
       'rate limited' => [new Response(429, [], '{"detail":"Too many"}'), ScanReportResult::RATE_LIMITED, FALSE],
-      'redirect' => [new Response(302, ['Location' => 'https://elsewhere.example.com']), ScanReportResult::FAILED, FALSE],
+      'redirect' => [
+        new Response(302, ['Location' => 'https://elsewhere.example.com']),
+        ScanReportResult::FAILED,
+        FALSE,
+      ],
       'server error' => [new Response(500, [], 'oops'), ScanReportResult::FAILED, FALSE],
     ];
   }
