@@ -5,6 +5,7 @@ namespace Drupal\sentinel_connector\Drush\Commands;
 use Drupal\sentinel_connector\ConnectionChecker;
 use Drupal\sentinel_connector\ConnectionCheckResult;
 use Drupal\sentinel_connector\PushLimitFormatter;
+use Drupal\sentinel_connector\StatusReportCollector;
 use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
 use Drupal\sentinel_connector\UpgradeStatusCollector;
@@ -32,12 +33,15 @@ class SentinelDrushCommands extends DrushCommands {
    *   Reads the Upgrade Status result after a scan.
    * @param \Drupal\sentinel_connector\ConnectionChecker $connectionChecker
    *   Runs the connection check.
+   * @param \Drupal\sentinel_connector\StatusReportCollector $statusReport
+   *   Builds the status report block.
    */
   public function __construct(
     protected SyncService $syncService,
     protected PushLimitFormatter $pushLimitFormatter,
     protected UpgradeStatusCollector $upgradeStatus,
     protected ConnectionChecker $connectionChecker,
+    protected StatusReportCollector $statusReport,
   ) {
     parent::__construct();
   }
@@ -124,6 +128,58 @@ class SentinelDrushCommands extends DrushCommands {
       return;
     }
     throw new \RuntimeException($message);
+  }
+
+  /**
+   * Print the Drupal status report block a push would send.
+   *
+   * Builds a fresh list from the command line, with the checks that only
+   * work on the web server left out. Sends nothing.
+   *
+   * @param array $options
+   *   The command options.
+   *
+   * @phpstan-param array{format: string} $options
+   */
+  #[CLI\Command(name: 'sentinel_connector:status-report', aliases: ['sc-status-report', 'sentinel:status-report'])]
+  #[CLI\Option(name: 'format', description: 'Output format: table or json.')]
+  #[CLI\Usage(name: 'drush sentinel_connector:status-report', description: 'Show the status report errors and warnings Sentinel would receive.')]
+  #[CLI\Usage(name: 'drush sentinel_connector:status-report --format=json', description: 'Print the status_report block as JSON.')]
+  public function statusReport(array $options = ['format' => 'table']): void {
+    $format = $options['format'] ?: 'table';
+    if (!in_array($format, ['table', 'json'], TRUE)) {
+      throw new \InvalidArgumentException(dt('Unknown format "@format": use table or json.', ['@format' => $format]));
+    }
+    if (!$this->statusReport->isReportingEnabled()) {
+      $this->logger()->warning(dt('Status report reporting is off: a push sends status_reporting "disabled" and no block. This is what it would send when on.'));
+    }
+    $block = $this->statusReport->build(StatusReportCollector::CONTEXT_CLI);
+    if ($format === 'json') {
+      $this->output()->writeln(json_encode($block, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) ?: '{}');
+      return;
+    }
+    if ($block['status'] !== StatusReportCollector::STATUS_REPORTED) {
+      $this->logger()->warning(dt('The status report could not be built (@reason): a push sends it as unavailable.', ['@reason' => $block['reason']]));
+      return;
+    }
+    $this->output()->writeln(dt('Checked @time from the command line. Left out: @keys.', [
+      '@time' => $block['checked_at'],
+      '@keys' => implode(', ', $block['left_out']) ?: dt('none'),
+    ]));
+    if ($block['items'] === []) {
+      $this->logger()->success(dt('No errors or warnings.'));
+      return;
+    }
+    $rows = [];
+    foreach ($block['items'] as $item) {
+      $rows[] = [$item['severity'], $item['key'], $item['title'], $item['value'], $item['provider']];
+    }
+    $this->io()->table([dt('Severity'), dt('Key'), dt('Title'), dt('Value'), dt('Provider')], $rows);
+    foreach ($block['items'] as $item) {
+      if ($item['description'] !== '') {
+        $this->output()->writeln($item['key'] . ': ' . $item['description']);
+      }
+    }
   }
 
   /**

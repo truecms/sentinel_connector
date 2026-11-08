@@ -1,0 +1,365 @@
+{
+    "_comment": "Sync payload v5 examples shared with the Sentinel backend (truecms/sentinel#2314). Connector 1.6.0. All validate against drupal_sync.schema.json. status_reporting is always sent; status_report is left out when it is disabled. Items are errors and warnings only, errors first then by key, keys unique. An unavailable block carries reason and no items; checked_at is when the build was tried. In cli context left_out lists the checks that are not built from the command line; in web context it is empty.",
+    "reported_web": {
+        "site": {
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.6.0",
+        "schema_version": 5,
+        "platform_reporting": "enabled",
+        "status_reporting": "enabled",
+        "status_report": {
+            "status": "reported",
+            "checked_at": "2026-11-07T01:02:03Z",
+            "context": "web",
+            "left_out": [],
+            "items": [
+                {
+                    "key": "file_system",
+                    "severity": "error",
+                    "title": "File system",
+                    "value": "Not writable",
+                    "description": "The directory [site root]/sites/default/files is not writable. You may need to set the correct directory at the file system settings page or change the current directory's permissions so that it is writable.",
+                    "provider": "system"
+                },
+                {
+                    "key": "trusted_host_patterns",
+                    "severity": "error",
+                    "title": "Trusted Host Settings",
+                    "value": "Not enabled",
+                    "description": "The trusted_host_patterns setting is not configured in settings.php. This can lead to security vulnerabilities. It is highly recommended that you configure this. See Protecting against HTTP HOST Header attacks for more information.",
+                    "provider": "system"
+                },
+                {
+                    "key": "update",
+                    "severity": "error",
+                    "title": "Database updates",
+                    "value": "Out of date",
+                    "description": "Some modules have database schema updates to install. You should run the database update script immediately.",
+                    "provider": "system"
+                },
+                {
+                    "key": "cron",
+                    "severity": "warning",
+                    "title": "Cron maintenance tasks",
+                    "value": "Last run 3 days ago",
+                    "description": "Cron has not run recently. For more information, see the online handbook entry for configuring cron jobs.",
+                    "provider": "system"
+                },
+                {
+                    "key": "search_api_server_unavailable",
+                    "severity": "warning",
+                    "title": "Search API",
+                    "value": "",
+                    "description": "The following search servers are not available: Solr (solr.example.internal:8983).",
+                    "provider": "search_api"
+                },
+                {
+                    "key": "update_contrib",
+                    "severity": "warning",
+                    "title": "Module and theme update status",
+                    "value": "Updates available",
+                    "description": "There are updates available for one or more of your modules or themes. To ensure the proper functioning of your site, you should update as soon as possible.",
+                    "provider": "update"
+                }
+            ]
+        }
+    },
+    "reported_cli": {
+        "site": {
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.6.0",
+        "schema_version": 5,
+        "platform_reporting": "enabled",
+        "status_reporting": "enabled",
+        "status_report": {
+            "status": "reported",
+            "checked_at": "2026-11-07T02:00:00Z",
+            "context": "cli",
+            "left_out": [
+                "file_progress",
+                "output_buffering",
+                "php_apcu_available",
+                "php_apcu_enabled",
+                "php_memory_limit",
+                "php_opcache",
+                "php_session_samesite",
+                "upload_progress"
+            ],
+            "items": [
+                {
+                    "key": "trusted_host_patterns",
+                    "severity": "error",
+                    "title": "Trusted Host Settings",
+                    "value": "Not enabled",
+                    "description": "The trusted_host_patterns setting is not configured in settings.php. This can lead to security vulnerabilities. It is highly recommended that you configure this. See Protecting against HTTP HOST Header attacks for more information.",
+                    "provider": "system"
+                },
+                {
+                    "key": "update",
+                    "severity": "error",
+                    "title": "Database updates",
+                    "value": "Out of date",
+                    "description": "Some modules have database schema updates to install. You should run the database update script immediately.",
+                    "provider": "system"
+                },
+                {
+                    "key": "cron",
+                    "severity": "warning",
+                    "title": "Cron maintenance tasks",
+                    "value": "Last run 3 days ago",
+                    "description": "Cron has not run recently. For more information, see the online handbook entry for configuring cron jobs.",
+                    "provider": "system"
+                },
+                {
+                    "key": "search_api_server_unavailable",
+                    "severity": "warning",
+                    "title": "Search API",
+                    "value": "",
+                    "description": "The following search servers are not available: Solr (solr.example.internal:8983).",
+                    "provider": "search_api"
+                },
+                {
+                    "key": "update_contrib",
+                    "severity": "warning",
+                    "title": "Module and theme update status",
+                    "value": "Updates available",
+                    "description": "There are updates available for one or more of your modules or themes. To ensure the proper functioning of your site, you should update as soon as possible.",
+                    "provider": "update"
+                }
+            ]
+        }
+    },
+    "clear": {
+        "site": {
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.6.0",
+        "schema_version": 5,
+        "platform_reporting": "enabled",
+        "status_reporting": "enabled",
+        "status_report": {
+            "status": "reported",
+            "checked_at": "2026-11-07T01:02:03Z",
+            "context": "web",
+            "left_out": [],
+            "items": []
+        }
+    },
+    "unavailable_timeout": {
+        "site": {
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.6.0",
+        "schema_version": 5,
+        "platform_reporting": "enabled",
+        "status_reporting": "enabled",
+        "status_report": {
+            "status": "unavailable",
+            "reason": "timeout",
+            "checked_at": "2026-11-07T02:00:00Z",
+            "context": "cli",
+            "left_out": []
+        }
+    },
+    "unavailable_collector_failed": {
+        "site": {
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.6.0",
+        "schema_version": 5,
+        "platform_reporting": "enabled",
+        "status_reporting": "enabled",
+        "status_report": {
+            "status": "unavailable",
+            "reason": "collector_failed",
+            "checked_at": "2026-11-07T02:00:00Z",
+            "context": "cli",
+            "left_out": []
+        }
+    },
+    "disabled": {
+        "site": {
+            "uuid": "11111111-1111-4111-8111-111111111111"
+        },
+        "drupal_info": {
+            "core_version": "11.2.5",
+            "php_version": "8.4.12",
+            "ip_address": "203.0.113.4"
+        },
+        "modules": [
+            {
+                "machine_name": "token",
+                "display_name": "Token",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "8.x-1.15",
+                "version_known": true,
+                "reported_project": "token",
+                "description": "Tokens."
+            },
+            {
+                "machine_name": "upgrade_status",
+                "display_name": "Upgrade Status",
+                "module_type": "contrib",
+                "enabled": true,
+                "version": "4.3.10",
+                "version_known": true,
+                "reported_project": "upgrade_status",
+                "description": "Review Drupal major upgrade readiness."
+            }
+        ],
+        "full_sync": true,
+        "inventory_scope": "all",
+        "connector_version": "1.6.0",
+        "schema_version": 5,
+        "platform_reporting": "enabled",
+        "status_reporting": "disabled"
+    }
+}

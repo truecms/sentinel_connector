@@ -1,0 +1,33 @@
+<?php
+
+/**
+ * @file
+ * Requirements hooks of the status report test module.
+ */
+
+use Drupal\Core\Hook\Attribute\LegacyRequirementsHook;
+use Drupal\sentinel_status_report_test\Hook\StatusReportTestHooks;
+
+/**
+ * Implements hook_requirements().
+ *
+ * Drupal before 11.2 calls this; later versions call the hook class.
+ *
+ * @phpstan-return array<string, array<string, mixed>>
+ *   Runtime requirement entries.
+ */
+#[LegacyRequirementsHook]
+function sentinel_status_report_test_requirements(string $phase): array {
+  return $phase === 'runtime' ? (new StatusReportTestHooks())->runtimeRequirements() : [];
+}
+
+/**
+ * Implements hook_requirements_alter().
+ *
+ * @param array<string, array<string, mixed>> $requirements
+ *   The requirements.
+ */
+#[LegacyRequirementsHook]
+function sentinel_status_report_test_requirements_alter(array &$requirements): void {
+  (new StatusReportTestHooks())->runtimeRequirementsAlter($requirements);
+}

@@ -172,7 +172,7 @@ class SyncServiceTest extends KernelTestBase {
     $this->assertTrue($body['full_sync']);
     // Since payload v4 the site is named by its UUID only.
     $this->assertSame(['uuid' => '11111111-1111-4111-8111-111111111111'], $body['site']);
-    $this->assertSame(4, $body['schema_version']);
+    $this->assertSame(5, $body['schema_version']);
     $this->assertSame('enabled', $body['platform_reporting']);
     $this->assertNotEmpty($body['modules']);
     $this->assertSame('success', \Drupal::state()->get('sentinel_connector.last_result'));

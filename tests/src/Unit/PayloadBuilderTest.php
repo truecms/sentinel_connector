@@ -372,7 +372,7 @@ class PayloadBuilderTest extends TestCase {
     $list->method('getList')->willReturn([]);
 
     $payload = (new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4'))->build('all');
-    $this->assertSame(4, $payload['schema_version']);
+    $this->assertSame(PayloadBuilder::SCHEMA_VERSION, $payload['schema_version']);
     $this->assertArrayNotHasKey('platform', $payload);
     $this->assertSame('enabled', $payload['platform_reporting']);
 
@@ -428,7 +428,7 @@ class PayloadBuilderTest extends TestCase {
     $this->assertCount(0, $calls);
     $payload = $builder->build('all');
     $this->assertSame($drift, $payload['config_drift']);
-    $this->assertSame(4, $payload['schema_version']);
+    $this->assertSame(PayloadBuilder::SCHEMA_VERSION, $payload['schema_version']);
     // The sync and its change check see the same drift, compared once.
     $this->assertSame($drift, $builder->build('core_contrib')['config_drift']);
     $this->assertCount(1, $calls);

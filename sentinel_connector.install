@@ -140,3 +140,16 @@ function sentinel_connector_update_10006(): string {
 
   return (string) t('Sentinel Connector now reports Drupal upgrade readiness from Upgrade Status when that module is enabled: counts only, never project names. Export configuration with drush cex. Turn it off on the settings form.');
 }
+
+/**
+ * Turn on Drupal status report reporting.
+ */
+function sentinel_connector_update_10007(): string {
+  // Errors and warnings only, as plain text with site paths replaced.
+  $config = \Drupal::configFactory()->getEditable('sentinel_connector.settings');
+  if ($config->get('report_status_report') === NULL) {
+    $config->set('report_status_report', TRUE)->save();
+  }
+
+  return (string) t('Sentinel Connector now reports the errors and warnings of the Drupal status report: OK and information items are never sent, and site paths are replaced. Export configuration with drush cex. Turn it off on the settings form, or with $settings[@key] in settings.php.', ['@key' => "'sentinel_connector.report_status_report'"]);
+}
