@@ -1,3 +1,25 @@
+# Release 1.6.0: CI upgrade scan report
+
+1.6.0 adds `drush sentinel_connector:upgrade-status --scan-report`
+(truecms/sentinel#2012). Pushes do not change.
+
+1. Nothing has to be deployed first: a Sentinel without the scan route, or
+   with it switched off, answers 404 and the command exits 0.
+2. Date the changelog, run `php scripts/check-release.php 1.6.0`, tag 1.6.0 and
+   publish it on Drupal.org.
+3. Record 1.6.0 as the minimum connector version in the
+   `truecms/sentinel-upgrade-scan` action (truecms/sentinel#2013), which posts
+   `connector_outdated` for an older one.
+
+Before tagging, on a canary site with a UAT Sentinel where the CI scan is on:
+
+- A normal push is unchanged: same payload and `connector_version` 1.6.0.
+- With `SENTINEL_CONNECTOR_DISABLED=1`, a scan key in `SENTINEL_SCAN_KEY`
+  and Upgrade Status enabled, `drush upgrade_status:analyze --all` then
+  `drush sentinel_connector:upgrade-status --scan-report` prints the readiness
+  and "Sentinel shows this scan on the site". The key is not printed.
+- A wrong key fails with "refused the scan key".
+
 # Release 1.5.0: Drupal upgrade readiness
 
 1.5.0 keeps payload v4 and adds the optional `upgrade_status` block. Tracked by

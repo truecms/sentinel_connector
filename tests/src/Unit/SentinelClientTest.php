@@ -2,9 +2,11 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use GuzzleHttp\Middleware;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\sentinel_connector\ScanReportResult;
 use Drupal\sentinel_connector\SentinelClient;
 use Drupal\sentinel_connector\SyncResult;
 use GuzzleHttp\Client;
@@ -26,6 +28,11 @@ use PHPUnit\Framework\TestCase;
 #[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
 #[Group('sentinel_connector')]
 class SentinelClientTest extends TestCase {
+
+  /**
+   * A scan key in the server's format.
+   */
+  private const SCAN_KEY = 'sk_scan_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
   /**
    * Structured authentication errors remain typed failures.
@@ -637,6 +644,93 @@ class SentinelClientTest extends TestCase {
       $this->assertTrue($plain->isOk());
       $this->assertSame([], $plain->modules);
     }
+  }
+
+  /**
+   * A scan report goes to the scan route with the scan key alone.
+   */
+  public function testScanReportRequest(): void {
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler([new Response(200, [], '{"outcome":"stored"}')]));
+    $stack->push(Middleware::history($history));
+    $client = new SentinelClient(new Client(['handler' => $stack]));
+    $result = $client->sendScan('https://sentinel.example.com/', 'uuid-1', self::SCAN_KEY, ['upgrade_status' => ['status' => 'ready']]);
+    $this->assertTrue($result->isAccepted());
+    $this->assertSame(ScanReportResult::STORED, $result->outcome);
+    $request = $history[0]['request'];
+    $this->assertSame('https://sentinel.example.com/api/v1/sites/uuid-1/upgrade-readiness/scan', (string) $request->getUri());
+    $this->assertSame(self::SCAN_KEY, $request->getHeaderLine('X-Scan-Key'));
+    $this->assertSame('', $request->getHeaderLine('X-API-Key'));
+    $this->assertSame(['upgrade_status' => ['status' => 'ready']], json_decode((string) $request->getBody(), TRUE));
+    $this->assertFalse($history[0]['options']['allow_redirects']);
+  }
+
+  /**
+   * Each answer maps to its outcome; no message holds the key.
+   *
+   * @param \GuzzleHttp\Psr7\Response $response
+   *   What Sentinel answers.
+   * @param string $outcome
+   *   The expected outcome.
+   * @param bool $accepted
+   *   Whether the report counts as accepted.
+   *
+   * @dataProvider scanAnswers
+   */
+  #[DataProvider('scanAnswers')]
+  public function testScanReportAnswers(Response $response, string $outcome, bool $accepted): void {
+    $result = $this->client($response)->sendScan('https://sentinel.example.com', 'uuid-1', self::SCAN_KEY, ['problem' => ['reason' => 'no_database']]);
+    $this->assertSame($outcome, $result->outcome);
+    $this->assertSame($accepted, $result->isAccepted());
+    $this->assertStringNotContainsString('sk_scan_', $result->message);
+  }
+
+  /**
+   * Sentinel's answers to a scan report.
+   *
+   * @return array<string, array{0: \GuzzleHttp\Psr7\Response, 1: string, 2: bool}>
+   *   The cases.
+   */
+  public static function scanAnswers(): array {
+    return [
+      'stored' => [new Response(200, [], '{"outcome":"stored"}'), ScanReportResult::STORED, TRUE],
+      'older' => [new Response(200, [], '{"outcome":"older"}'), ScanReportResult::OLDER, TRUE],
+      'problem' => [new Response(200, [], '{"outcome":"problem_stored"}'), ScanReportResult::PROBLEM_STORED, TRUE],
+      'unknown outcome' => [
+        new Response(200, [], '{"outcome":"maybe"}'),
+        ScanReportResult::FAILED,
+        FALSE,
+      ],
+      'html' => [new Response(200, [], '<html>'), ScanReportResult::FAILED, FALSE],
+      'closed' => [new Response(404, [], '{"detail":"Not Found"}'), ScanReportResult::CLOSED, FALSE],
+      'key refused' => [new Response(401, [], '{"detail":"Invalid scan key"}'), ScanReportResult::KEY_REFUSED, FALSE],
+      'not reported' => [
+        new Response(409, [], '{"detail":"scan_site_not_reported"}'),
+        ScanReportResult::SITE_NOT_REPORTED,
+        FALSE,
+      ],
+      'other major' => [
+        new Response(422, [], '{"detail":"scan_major_mismatch"}'),
+        ScanReportResult::MAJOR_MISMATCH,
+        FALSE,
+      ],
+      'invalid body' => [new Response(422, [], '{"detail":[{"msg":"bad"}]}'), ScanReportResult::FAILED, FALSE],
+      'rate limited' => [new Response(429, [], '{"detail":"Too many"}'), ScanReportResult::RATE_LIMITED, FALSE],
+      'redirect' => [new Response(302, ['Location' => 'https://elsewhere.example.com']), ScanReportResult::FAILED, FALSE],
+      'server error' => [new Response(500, [], 'oops'), ScanReportResult::FAILED, FALSE],
+    ];
+  }
+
+  /**
+   * An unreachable Sentinel is a failure with no request detail kept.
+   */
+  public function testScanReportTransportError(): void {
+    $error = new ConnectException('cURL error 6 for ' . self::SCAN_KEY, new Request('POST', 'https://sentinel.example.com'));
+    $client = new SentinelClient(new Client(['handler' => HandlerStack::create(new MockHandler([$error]))]));
+    $result = $client->sendScan('https://sentinel.example.com', 'uuid-1', self::SCAN_KEY, []);
+    $this->assertSame(ScanReportResult::FAILED, $result->outcome);
+    $this->assertNull($result->httpCode);
+    $this->assertStringNotContainsString('sk_scan_', $result->message);
   }
 
   /**

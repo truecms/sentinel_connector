@@ -40,6 +40,19 @@ Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
+## Upgrading to 1.6.0
+
+Release `1.6.0` adds
+[`--scan-report`](#full-scan-in-ci---scan-report) for a full upgrade scan in
+your own CI. Pushes do not change, there is no update hook and no
+configuration to export:
+
+```bash
+composer require drupal/sentinel_connector:^1.6 --with-all-dependencies
+```
+
+Sites upgrading from a release before 1.5.0 also follow the 1.5.0 steps below.
+
 ## Upgrading to 1.5.0
 
 Release `1.5.0` keeps payload v4 and adds the optional `upgrade_status` block
@@ -349,6 +362,33 @@ drush sentinel_connector:sync
 
 With the [off switch](#several-environments) set, the command exits 0 and scans
 nothing.
+
+#### Full scan in CI (`--scan-report`)
+
+A full scan can run in your own CI pipeline instead of on production, with
+your site image and a sanitised copy of your database. Sentinel's
+`truecms/sentinel-upgrade-scan` action runs the scan, then calls:
+
+```bash
+drush upgrade_status:analyze --all
+SENTINEL_SCAN_KEY=sk_scan_... drush sentinel_connector:upgrade-status --scan-report
+```
+
+- It runs no scan. It reads the result Upgrade Status stored and sends it to
+  Sentinel's CI scan route.
+- The only credential is the site's scan key, from the site's Setup tab in
+  Sentinel, in `SENTINEL_SCAN_KEY`. Keep it in your CI secrets. It is never
+  printed. The connector API key is not needed.
+- The Site UUID and the API base URL come from the usual settings, for
+  example `SENTINEL_CONNECTOR_SITE_UUID`.
+- It ignores the off switch and the reporting switch, so it works in a build
+  that shares `settings.php` with production.
+- It sends counts only, like a push.
+- Exit codes: 0 when Sentinel accepted the scan, or when Sentinel does not
+  take CI scans for the site yet. Not 0 when the key is missing or refused,
+  the result cannot be read (Sentinel is told the scan failed), or Sentinel
+  refuses the scan.
+- Needs connector 1.6.0 or later in the build.
 
 Turn reporting off with **Report Upgrade Status readiness to Sentinel** in the
 Integrations section of the settings form (`report_upgrade_status: false`), or

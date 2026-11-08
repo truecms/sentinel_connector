@@ -249,6 +249,66 @@ class SentinelClient {
   }
 
   /**
+   * Sends a CI upgrade scan result, or why the scan could not run.
+   *
+   * Authenticated by the site's scan key alone, in the X-Scan-Key header.
+   * The key, the request and the response body are never kept or logged.
+   *
+   * @param string $baseUrl
+   *   Sentinel base URL, already validated.
+   * @param string $siteUuid
+   *   Site UUID; also the path segment.
+   * @param string $scanKey
+   *   The site's scan key (sk_scan_...).
+   * @param array<string, mixed> $report
+   *   Either ['upgrade_status' => block] or ['problem' => ['reason' => ...,
+   *   'generated_at' => ...]].
+   */
+  public function sendScan(string $baseUrl, string $siteUuid, string $scanKey, array $report): ScanReportResult {
+    $url = rtrim($baseUrl, '/') . '/api/v1/sites/' . $siteUuid . '/upgrade-readiness/scan';
+    try {
+      $response = $this->httpClient->request('POST', $url, [
+        'headers' => [
+          'X-Scan-Key' => $scanKey,
+          'Content-Type' => 'application/json',
+          'Accept' => 'application/json',
+        ],
+        'json' => $report,
+        'timeout' => 30,
+        'http_errors' => FALSE,
+        // The key is in a custom header, which Guzzle keeps on a redirect to
+        // another host.
+        'allow_redirects' => FALSE,
+      ]);
+    }
+    catch (TransferException) {
+      return new ScanReportResult(ScanReportResult::FAILED, NULL, 'Could not connect to Sentinel. Check the API URL and network, then retry.');
+    }
+
+    $code = $response->getStatusCode();
+    $decoded = json_decode((string) $response->getBody(), TRUE);
+    $detail = is_array($decoded) && is_string($decoded['detail'] ?? NULL) ? $decoded['detail'] : '';
+    if ($code === 200) {
+      $outcome = is_array($decoded) ? ($decoded['outcome'] ?? NULL) : NULL;
+      return match ($outcome) {
+        ScanReportResult::STORED => new ScanReportResult($outcome, $code, 'Sentinel shows this scan on the site.'),
+        ScanReportResult::OLDER => new ScanReportResult($outcome, $code, 'Sentinel accepted the scan, but shows a newer one for this site.'),
+        ScanReportResult::PROBLEM_STORED => new ScanReportResult($outcome, $code, 'Sentinel recorded why the scan could not run.'),
+        default => new ScanReportResult(ScanReportResult::FAILED, $code, 'Sentinel sent an answer this connector does not understand.'),
+      };
+    }
+    return match (TRUE) {
+      $code === 404 => new ScanReportResult(ScanReportResult::CLOSED, $code, 'Sentinel does not take CI upgrade scans for this site. Nothing was sent.'),
+      $code === 401 => new ScanReportResult(ScanReportResult::KEY_REFUSED, $code, 'Sentinel refused the scan key. Create a new key on the site\'s Setup tab and save it as SENTINEL_SCAN_KEY.'),
+      $code === 409 && $detail === 'scan_site_not_reported' => new ScanReportResult(ScanReportResult::SITE_NOT_REPORTED, $code, 'The site has not reported its Drupal version to Sentinel yet. Let the site sync once, then run the scan again.'),
+      $code === 422 && $detail === 'scan_major_mismatch' => new ScanReportResult(ScanReportResult::MAJOR_MISMATCH, $code, 'The scan is for another Drupal major version than the site runs. Scan a build of the same version as the site.'),
+      $code === 429 => new ScanReportResult(ScanReportResult::RATE_LIMITED, $code, 'Too many scans for this site. Try again later.'),
+      $code >= 300 && $code < 400 => new ScanReportResult(ScanReportResult::FAILED, $code, 'The Sentinel API base URL redirects elsewhere. Set the final address as the base URL.'),
+      default => new ScanReportResult(ScanReportResult::FAILED, $code, 'Sentinel did not accept the scan.'),
+    };
+  }
+
+  /**
    * Whether an error code decides the outcome of a response.
    *
    * @param string $errorCode
