@@ -254,6 +254,11 @@ class SentinelDrushCommands extends DrushCommands {
     if ($block === NULL) {
       throw new \RuntimeException(dt('Upgrade Status is not enabled in this build. Nothing was sent.'));
     }
+    if ($since > 0) {
+      // Sentinel orders CI jobs by generated_at: the job's start, so a job
+      // that finishes late does not pass a newer one, result or failure.
+      $block['generated_at'] = gmdate('Y-m-d\TH:i:s\Z', $since);
+    }
     if ($block['status'] === UpgradeStatusCollector::STATUS_UNAVAILABLE) {
       // Tell Sentinel the scan did not finish, then fail: this is a fault.
       throw new \RuntimeException(dt('The Upgrade Status result could not be read (@reason). @sent', [

@@ -371,7 +371,8 @@ your site image and a sanitised copy of your database. Sentinel's
 
 ```bash
 started=$(date +%s)
-drush upgrade_status:analyze --all
+# Exit code 3 means the scan found problems: that is a result, not a failure.
+drush upgrade_status:analyze --all || [ $? -eq 3 ]
 SENTINEL_SCAN_KEY=sk_scan_... drush sentinel_connector:upgrade-status --scan-report --scan-started="$started"
 ```
 
@@ -389,6 +390,9 @@ SENTINEL_SCAN_KEY=sk_scan_... drush sentinel_connector:upgrade-status --scan-rep
   or a result older than this scan) is not sent as a result: Sentinel is told
   the scan did not finish (`scan_failed`) and the command fails. Without
   `--scan-started` only failed and missing scans are caught.
+- With `--scan-started`, the report and any failure carry that time as
+  `generated_at`, so Sentinel orders CI jobs that finish out of order by when
+  they started.
 - Exit codes: 0 when Sentinel accepted the scan, or when Sentinel does not
   take CI scans for the site yet. Not 0 when the key is missing or refused,
   the result cannot be read (Sentinel is told the scan failed), or Sentinel

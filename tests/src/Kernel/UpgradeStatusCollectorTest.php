@@ -642,7 +642,8 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $body = json_decode((string) $request->getBody(), TRUE);
     $this->assertSame(['upgrade_status'], array_keys($body));
     $this->assertSame('not_ready', $body['upgrade_status']['status']);
-    $this->assertNotNull($body['upgrade_status']['generated_at']);
+    // Ordered by the job's start, not by when the report was built.
+    $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', 1792880000), $body['upgrade_status']['generated_at']);
     // Counts only: no project name leaves the build.
     $this->assertStringNotContainsString('site_a', (string) $request->getBody());
     $this->assertStringNotContainsString('token', (string) $request->getBody());
@@ -675,6 +676,7 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $body = json_decode((string) $this->transactions[0]['request']->getBody(), TRUE);
     $this->assertSame(['problem'], array_keys($body));
     $this->assertSame('scan_failed', $body['problem']['reason']);
+    $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', 1792880000), $body['problem']['generated_at']);
 
     // Without the start time a stale result is not caught, but a missing
     // scan still is.
