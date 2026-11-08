@@ -256,15 +256,9 @@ class SentinelDrushCommands extends DrushCommands {
     }
     if ($block['status'] === UpgradeStatusCollector::STATUS_UNAVAILABLE) {
       // Tell Sentinel the scan did not finish, then fail: this is a fault.
-      $sent = $this->client->sendScan($url, $uuid, $key, [
-        'problem' => [
-          'reason' => 'scan_failed',
-          'generated_at' => $block['generated_at'],
-        ],
-      ]);
       throw new \RuntimeException(dt('The Upgrade Status result could not be read (@reason). @sent', [
         '@reason' => $block['reason'],
-        '@sent' => $sent->isAccepted() ? dt('Sentinel was told the scan did not finish.') : $sent->message,
+        '@sent' => $this->reportScanFailed($url, $uuid, $key, $block['generated_at']),
       ]));
     }
     // As for the scan this command runs: a custom project whose scan failed,
@@ -272,16 +266,11 @@ class SentinelDrushCommands extends DrushCommands {
     // current. Sentinel is told the scan did not finish instead.
     $unscanned = $this->upgradeStatus->customProjectsNotScannedSince($since);
     if ($unscanned === NULL || $unscanned > 0) {
-      $sent = $this->client->sendScan($url, $uuid, $key, ['problem' => [
-        'reason' => 'scan_failed',
-        'generated_at' => $block['generated_at'],
-      ],
-      ]);
       throw new \RuntimeException(dt('@what @sent', [
         '@what' => $unscanned === NULL
           ? dt('The Upgrade Status result could not be checked.')
           : dt('The Upgrade Status scan did not finish for @count custom project(s).', ['@count' => $unscanned]),
-        '@sent' => $sent->isAccepted() ? dt('Sentinel was told the scan did not finish.') : $sent->message,
+        '@sent' => $this->reportScanFailed($url, $uuid, $key, $block['generated_at']),
       ]));
     }
     $this->logReadiness($block);
@@ -296,6 +285,15 @@ class SentinelDrushCommands extends DrushCommands {
       return;
     }
     throw new \RuntimeException(dt('Sentinel scan report failed: @msg', ['@msg' => $result->message]));
+  }
+
+  /**
+   * Tells Sentinel the CI scan did not finish, and says whether it heard.
+   */
+  protected function reportScanFailed(string $url, string $uuid, string $key, string $generatedAt): string {
+    $problem = ['reason' => 'scan_failed', 'generated_at' => $generatedAt];
+    $sent = $this->client->sendScan($url, $uuid, $key, ['problem' => $problem]);
+    return $sent->isAccepted() ? (string) dt('Sentinel was told the scan did not finish.') : $sent->message;
   }
 
   /**
