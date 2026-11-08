@@ -1,3 +1,34 @@
+# Release 1.6.0: Drupal status report and CI upgrade scan report
+
+1.6.0 sends payload v5 with the optional `status_report` block
+(truecms/sentinel_connector#52, truecms/sentinel#2313) and adds
+`drush sentinel_connector:upgrade-status --scan-report`
+(truecms/sentinel#2012).
+
+1. Deploy Sentinel #2314 (payload v5) to production. A Sentinel that does not
+   know version 5 refuses the push. The scan report needs nothing deployed
+   first: a Sentinel without the scan route, or with it switched off, answers
+   404 and the command exits 0.
+2. Only then date the changelog, run `php scripts/check-release.php 1.6.0`, tag
+   1.6.0 and publish it on Drupal.org.
+3. Update `latest_connector_version` in Sentinel.
+4. Record 1.6.0 as the minimum connector version in the
+   `truecms/sentinel-upgrade-scan` action (truecms/sentinel#2013), which posts
+   `connector_outdated` for an older one.
+
+Before tagging, on a canary site with a UAT Sentinel that accepts payload v5
+and has the CI scan on:
+
+- `drush updb` runs update `10007`; export configuration afterwards.
+- An accepted push carries `schema_version: 5`, `status_reporting` and, when
+  the report has errors or warnings, the `status_report` block.
+- `drush sentinel_connector:status-report` prints the block and sends nothing.
+- With `SENTINEL_CONNECTOR_DISABLED=1`, a scan key in `SENTINEL_SCAN_KEY`
+  and Upgrade Status enabled, `drush upgrade_status:analyze --all` then
+  `drush sentinel_connector:upgrade-status --scan-report` prints the readiness
+  and "Sentinel shows this scan on the site". The key is not printed.
+- A wrong key fails with "refused the scan key".
+
 # Release 1.5.0: Drupal upgrade readiness
 
 1.5.0 keeps payload v4 and adds the optional `upgrade_status` block. Tracked by

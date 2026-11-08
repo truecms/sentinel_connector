@@ -6,7 +6,10 @@ All notable changes to this project are documented here. Versions follow
 ## 1.6.0 - Unreleased
 
 Sends payload `schema_version: 5`. A Sentinel that does not know version 5
-refuses the push, so deploy truecms/sentinel#2314 first.
+refuses the push, so deploy truecms/sentinel#2314 first. The new
+`--scan-report` mode talks only to the CI scan route of Sentinel
+truecms/sentinel#2010; while that route is closed it answers 404 and the
+command exits 0.
 
 ### Added
 
@@ -36,6 +39,22 @@ refuses the push, so deploy truecms/sentinel#2314 first.
 - `drush sentinel_connector:status-report` (`--format=json`) prints the block
   a push would send, from a fresh command line build. It sends nothing.
 - Shared payload v5 examples in `tests/fixtures/drupal_sync_v5.json`.
+- `drush sentinel_connector:upgrade-status --scan-report` sends the result
+  Upgrade Status stored to Sentinel's CI scan route, for a full upgrade scan
+  run in the customer's own CI (truecms/sentinel#2012). It runs no scan: the CI
+  job runs `drush upgrade_status:analyze --all` first.
+  - The only credential is the site's scan key, read from
+    `SENTINEL_SCAN_KEY` and sent in `X-Scan-Key`. It is never printed or
+    logged, and no connector API key is needed.
+  - It works with the off switch set and with readiness reporting turned
+    off, because CI builds usually share `settings.php` with production.
+  - It sends the same counts-only block as a push: no project names, paths
+    or messages.
+  - A result that cannot be read, or a custom project with no good scan
+    since `--scan-started`, tells Sentinel the scan failed (`scan_failed`)
+    and fails the command. A closed scan route exits 0. A
+    refused key, a site that has not reported yet, or another refusal fails
+    the command.
 
 ### Requires
 
