@@ -42,7 +42,9 @@ The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
 ## Upgrading to 1.6.0
 
-Release `1.6.0` sends payload v5: it adds the `status_reporting` field and the
+Release `1.6.0` sends payload v5 and adds
+[`--scan-report`](#full-scan-in-ci---scan-report) for a full upgrade scan in
+your own CI. Payload v5 adds the `status_reporting` field and the
 optional `status_report` block
 ([Drupal status report](#drupal-status-report-errors-and-warnings)). Upgrade
 only after the receiving Sentinel accepts payload v5: an older Sentinel
@@ -59,6 +61,8 @@ Update `10007` turns on `report_status_report`, also on sites upgraded from
 so a later import keeps it. To keep it off, set it to `false` before the
 import, or in `settings.php`. Preview what would be sent with
 `drush sentinel_connector:status-report`.
+
+Sites upgrading from a release before 1.5.0 also follow the 1.5.0 steps below.
 
 ## Upgrading to 1.5.0
 
@@ -371,6 +375,42 @@ drush sentinel_connector:sync
 
 With the [off switch](#several-environments) set, the command exits 0 and scans
 nothing.
+
+#### Full scan in CI (`--scan-report`)
+
+A full scan can run in your own CI pipeline instead of on production, with
+your site image and a sanitised copy of your database. Sentinel's
+`truecms/sentinel-upgrade-scan` action runs the scan, then calls:
+
+```bash
+started=$(date +%s)
+# Exit code 3 means the scan found problems: that is a result, not a failure.
+drush upgrade_status:analyze --all || [ $? -eq 3 ]
+SENTINEL_SCAN_KEY=sk_scan_... drush sentinel_connector:upgrade-status --scan-report --scan-started="$started"
+```
+
+- It runs no scan. It reads the result Upgrade Status stored and sends it to
+  Sentinel's CI scan route.
+- The only credential is the site's scan key, from the site's Setup tab in
+  Sentinel, in `SENTINEL_SCAN_KEY`. Keep it in your CI secrets. It is never
+  printed. The connector API key is not needed.
+- The Site UUID and the API base URL come from the usual settings, for
+  example `SENTINEL_CONNECTOR_SITE_UUID`.
+- It ignores the off switch and the reporting switch, so it works in a build
+  that shares `settings.php` with production.
+- It sends counts only, like a push.
+- A custom project with no good scan since `--scan-started` (a failed scan,
+  or a result older than this scan) is not sent as a result: Sentinel is told
+  the scan did not finish (`scan_failed`) and the command fails. Without
+  `--scan-started` only failed and missing scans are caught.
+- With `--scan-started`, the report and any failure carry that time as
+  `generated_at`, so Sentinel orders CI jobs that finish out of order by when
+  they started.
+- Exit codes: 0 when Sentinel accepted the scan, or when Sentinel does not
+  take CI scans for the site yet. Not 0 when the key is missing or refused,
+  the result cannot be read (Sentinel is told the scan failed), or Sentinel
+  refuses the scan.
+- Needs connector 1.6.0 or later in the build.
 
 Turn reporting off with **Report Upgrade Status readiness to Sentinel** in the
 Integrations section of the settings form (`report_upgrade_status: false`), or

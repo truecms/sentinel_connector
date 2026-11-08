@@ -382,6 +382,28 @@ class UpgradeStatusCollector {
   }
 
   /**
+   * Returns the block for a CI scan report.
+   *
+   * Unlike collect(), it ignores the reporting switch: a scan report is asked
+   * for on purpose, and a CI build usually shares settings.php with
+   * production. A failed read is an unavailable block, as in collect().
+   *
+   * @return array<string, mixed>|null
+   *   The block, or NULL when Upgrade Status is not enabled.
+   */
+  public function collectForScan(): ?array {
+    if (!$this->isDetected()) {
+      return NULL;
+    }
+    try {
+      return $this->report();
+    }
+    catch (\Throwable) {
+      return $this->unavailable(self::REASON_ERROR);
+    }
+  }
+
+  /**
    * The current Unix time.
    */
   public function now(): int {

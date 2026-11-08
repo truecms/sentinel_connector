@@ -2,9 +2,13 @@
 
 namespace Drupal\sentinel_connector\Drush\Commands;
 
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ConnectionChecker;
 use Drupal\sentinel_connector\ConnectionCheckResult;
 use Drupal\sentinel_connector\PushLimitFormatter;
+use Drupal\sentinel_connector\ScanReportResult;
+use Drupal\sentinel_connector\SentinelClient;
+use Drupal\sentinel_connector\SiteUuidResolver;
 use Drupal\sentinel_connector\StatusReportCollector;
 use Drupal\sentinel_connector\SyncResult;
 use Drupal\sentinel_connector\SyncService;
@@ -23,6 +27,16 @@ class SentinelDrushCommands extends DrushCommands {
   use AutowireTrait;
 
   /**
+   * The environment variable that holds the site's scan key in CI.
+   */
+  public const SCAN_KEY_ENV = 'SENTINEL_SCAN_KEY';
+
+  /**
+   * A scan key: the marker, then 64 hex characters.
+   */
+  protected const SCAN_KEY_PATTERN = '/^sk_scan_[0-9a-f]{64}$/D';
+
+  /**
    * Constructs the commands.
    *
    * @param \Drupal\sentinel_connector\SyncService $syncService
@@ -35,6 +49,12 @@ class SentinelDrushCommands extends DrushCommands {
    *   Runs the connection check.
    * @param \Drupal\sentinel_connector\StatusReportCollector $statusReport
    *   Builds the status report block.
+   * @param \Drupal\sentinel_connector\ApiBaseUrlResolver $urlResolver
+   *   The Sentinel API base URL, for a scan report.
+   * @param \Drupal\sentinel_connector\SiteUuidResolver $uuidResolver
+   *   The Site UUID, for a scan report.
+   * @param \Drupal\sentinel_connector\SentinelClient $client
+   *   Sends a scan report.
    */
   public function __construct(
     protected SyncService $syncService,
@@ -42,6 +62,9 @@ class SentinelDrushCommands extends DrushCommands {
     protected UpgradeStatusCollector $upgradeStatus,
     protected ConnectionChecker $connectionChecker,
     protected StatusReportCollector $statusReport,
+    protected ApiBaseUrlResolver $urlResolver,
+    protected SiteUuidResolver $uuidResolver,
+    protected SentinelClient $client,
   ) {
     parent::__construct();
   }
@@ -188,10 +211,20 @@ class SentinelDrushCommands extends DrushCommands {
    * Opt-in: a scan runs PHPStan over custom code, which takes minutes and
    * uses CPU. It never runs on cron or during a push. Contributed projects
    * are not scanned: their next steps come from release data.
+   *
+   * @param array<string, mixed> $options
+   *   The command options.
    */
   #[CLI\Command(name: 'sentinel_connector:upgrade-status', aliases: ['sc-upgrade-status'])]
+  #[CLI\Option(name: 'scan-report', description: 'In CI: send the result Upgrade Status stored to the scan route with the key in SENTINEL_SCAN_KEY. Runs no scan and ignores the off switch.')]
+  #[CLI\Option(name: 'scan-started', description: 'With --scan-report: the Unix time the CI scan started. A custom project with no good scan from then on fails the report.')]
   #[CLI\Usage(name: 'drush sentinel_connector:upgrade-status', description: 'Scan custom projects with Upgrade Status, then push the readiness to Sentinel.')]
-  public function upgradeStatus(): void {
+  #[CLI\Usage(name: 'drush sentinel_connector:upgrade-status --scan-report --scan-started=1793000000', description: 'In CI, after "drush upgrade_status:analyze --all": send the stored result to Sentinel.')]
+  public function upgradeStatus(array $options = ['scan-report' => FALSE, 'scan-started' => self::REQ]): void {
+    if (!empty($options['scan-report'])) {
+      $this->scanReport($options['scan-started'] ?? NULL);
+      return;
+    }
     // First: shared deploy scripts run this where nothing reports.
     if ($this->syncService->isDisabled()) {
       $this->logger()->notice($this->syncService->disabledMessage());
@@ -231,17 +264,115 @@ class SentinelDrushCommands extends DrushCommands {
       $this->logger()->warning(dt('Upgrade Status reporting is switched off in the Sentinel connector settings; the push carries no readiness.'));
     }
     else {
-      $counts = [];
-      foreach ($block['counts'] as $step => $count) {
-        $counts[] = $step . ' ' . $count;
-      }
-      $this->logger()->notice(dt('Drupal @target readiness: @status (@counts).', [
-        '@target' => $block['target_major'],
-        '@status' => $block['status'] . ($block['reason'] ? ', ' . $block['reason'] : ''),
-        '@counts' => implode(', ', $counts),
-      ]));
+      $this->logReadiness($block);
     }
     $this->report($this->syncService->sync(SyncService::TRIGGER_DRUSH));
+  }
+
+  /**
+   * Sends the stored Upgrade Status result as a CI scan report.
+   *
+   * Runs no scan: the CI job has run one. Ignores the off switch, which CI
+   * builds normally set, and needs no connector API key: the scan key in
+   * SENTINEL_SCAN_KEY is the only credential, and it is never printed. Only
+   * counts, dates and versions are sent, as in a push.
+   *
+   * @param mixed $started
+   *   The Unix time the CI scan started, from --scan-started. Without it,
+   *   only failed and missing scans are caught, not a result older than the
+   *   scan.
+   */
+  protected function scanReport(mixed $started): void {
+    $since = 0;
+    if ($started !== NULL && $started !== '' && $started !== TRUE) {
+      if (!is_scalar($started) || !ctype_digit((string) $started)) {
+        throw new \RuntimeException(dt('--scan-started must be a Unix time in seconds. Nothing was sent.'));
+      }
+      $since = (int) $started;
+    }
+    $key = getenv(self::SCAN_KEY_ENV);
+    if (!is_string($key) || $key === '') {
+      throw new \RuntimeException(dt('Set @env to the site\'s scan key, from the site\'s Setup tab in Sentinel. Nothing was sent.', ['@env' => self::SCAN_KEY_ENV]));
+    }
+    if (!preg_match(self::SCAN_KEY_PATTERN, trim($key))) {
+      throw new \RuntimeException(dt('@env does not hold a scan key. Scan keys start with sk_scan_. Nothing was sent.', ['@env' => self::SCAN_KEY_ENV]));
+    }
+    $key = trim($key);
+    $url = $this->urlResolver->getUrl();
+    if ($url === NULL) {
+      throw new \RuntimeException(dt('The Sentinel API base URL is not valid. Nothing was sent.'));
+    }
+    $uuid = $this->uuidResolver->getUuid();
+    if ($uuid === NULL) {
+      throw new \RuntimeException(dt('Set @env to the site\'s Site UUID. Nothing was sent.', ['@env' => SiteUuidResolver::ENV_VAR]));
+    }
+    $block = $this->upgradeStatus->collectForScan();
+    if ($block === NULL) {
+      throw new \RuntimeException(dt('Upgrade Status is not enabled in this build. Nothing was sent.'));
+    }
+    if ($since > 0) {
+      // Sentinel orders CI jobs by generated_at: the job's start, so a job
+      // that finishes late does not pass a newer one, result or failure.
+      $block['generated_at'] = gmdate('Y-m-d\TH:i:s\Z', $since);
+    }
+    if ($block['status'] === UpgradeStatusCollector::STATUS_UNAVAILABLE) {
+      // Tell Sentinel the scan did not finish, then fail: this is a fault.
+      throw new \RuntimeException(dt('The Upgrade Status result could not be read (@reason). @sent', [
+        '@reason' => $block['reason'],
+        '@sent' => $this->reportScanFailed($url, $uuid, $key, $block['generated_at']),
+      ]));
+    }
+    // As for the scan this command runs: a custom project whose scan failed,
+    // or that kept a result older than this scan, must not be reported as
+    // current. Sentinel is told the scan did not finish instead.
+    $unscanned = $this->upgradeStatus->customProjectsNotScannedSince($since);
+    if ($unscanned === NULL || $unscanned > 0) {
+      throw new \RuntimeException(dt('@what @sent', [
+        '@what' => $unscanned === NULL
+          ? dt('The Upgrade Status result could not be checked.')
+          : dt('The Upgrade Status scan did not finish for @count custom project(s).', ['@count' => $unscanned]),
+        '@sent' => $this->reportScanFailed($url, $uuid, $key, $block['generated_at']),
+      ]));
+    }
+    $this->logReadiness($block);
+    $result = $this->client->sendScan($url, $uuid, $key, ['upgrade_status' => $block]);
+    if ($result->isAccepted()) {
+      $this->logger()->success(dt('Sentinel scan report: @msg', ['@msg' => $result->message]));
+      return;
+    }
+    if ($result->outcome === ScanReportResult::CLOSED) {
+      // Not switched on yet for this site: a pipeline must not fail on it.
+      $this->logger()->notice($result->message);
+      return;
+    }
+    throw new \RuntimeException(dt('Sentinel scan report failed: @msg', ['@msg' => $result->message]));
+  }
+
+  /**
+   * Tells Sentinel the CI scan did not finish, and says whether it heard.
+   */
+  protected function reportScanFailed(string $url, string $uuid, string $key, string $generatedAt): string {
+    $problem = ['reason' => 'scan_failed', 'generated_at' => $generatedAt];
+    $sent = $this->client->sendScan($url, $uuid, $key, ['problem' => $problem]);
+    return $sent->isAccepted() ? (string) dt('Sentinel was told the scan did not finish.') : $sent->message;
+  }
+
+  /**
+   * Logs the readiness a block reports, in counts.
+   *
+   * @param array<string, mixed> $block
+   *   The upgrade_status block.
+   */
+  protected function logReadiness(array $block): void {
+    $counts = [];
+    foreach ($block['counts'] as $step => $count) {
+      $counts[] = $step . ' ' . $count;
+    }
+    $this->logger()->notice(dt('Drupal @target readiness: @status (@counts).', [
+      '@target' => $block['target_major'],
+      '@status' => $block['status'] . ($block['reason'] ? ', ' . $block['reason'] : ''),
+      '@counts' => implode(', ', $counts),
+    ]));
   }
 
   /**
