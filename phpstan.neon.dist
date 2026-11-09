@@ -19,6 +19,10 @@ parameters:
         - tests/src/Unit/TranslationStubTrait.php
         - modules/*/tests/src/*/*Test.php
       reportUnmatched: false
+    # The stub keeps the untyped array parameters of TranslationInterface.
+    - identifier: missingType.iterableValue
+      path: tests/src/Unit/TranslationStubTrait.php
+      reportUnmatched: false
     # Drupal 10 runs the procedural wrappers and ignores newer hook attributes.
     - message: '#^Attribute class Drupal\\Core\\Hook\\Attribute\\LegacyHook does not exist\.$#'
       paths:
