@@ -5,15 +5,22 @@ All notable changes to this project are documented here. Versions follow
 
 ## 1.6.1 - 2026-11-09
 
-Documentation only. Payload `schema_version: 5`, configuration and database
-are unchanged; there is no update hook.
+Changes from the Drupal.org security advisory coverage application review
+(truecms/sentinel_connector#55). Payload `schema_version: 5`, the settings and
+the database are unchanged; there is no update hook.
 
 ### Changed
 
 - README: a new Installation section (Composer, enabling the module,
   permissions, Site UUID and API key, test connection, first sync and
-  configuration export), as asked in the Drupal.org security advisory coverage
-  application (truecms/sentinel_connector#55).
+  configuration export).
+- Hooks are autowired services. `SentinelHooks` takes service closures instead
+  of the service container, and the Config PR submodule's cron and drift
+  alter hooks move to `ConfigPrHooks`. The `.module` and `.install` functions
+  are `#[LegacyHook]` wrappers for Drupal 10.3 only.
+- Both settings forms use `#config_target`, so `ConfigFormBase` loads and
+  saves the settings. A setting that `settings.php` overrides is still shown
+  read-only and its saved value is kept.
 
 ## 1.6.0 - 2026-11-09
 

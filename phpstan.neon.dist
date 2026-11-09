@@ -20,7 +20,9 @@ parameters:
       reportUnmatched: false
     # Drupal 10 runs the procedural wrappers and ignores newer hook attributes.
     - message: '#^Attribute class Drupal\\Core\\Hook\\Attribute\\LegacyHook does not exist\.$#'
-      path: sentinel_connector.module
+      paths:
+        - sentinel_connector.module
+        - modules/sentinel_connector_config_pr/sentinel_connector_config_pr.module
       reportUnmatched: false
     - message: '#^Attribute class Drupal\\Core\\Hook\\Attribute\\LegacyRequirementsHook does not exist\.$#'
       path: sentinel_connector.install
@@ -28,6 +30,7 @@ parameters:
     - message: '#^Attribute class Drupal\\Core\\Hook\\Attribute\\Hook does not exist\.$#'
       paths:
         - src/Hook/SentinelHooks.php
+        - modules/sentinel_connector_config_pr/src/Hook/ConfigPrHooks.php
         - tests/modules/sentinel_status_report_test/src/Hook/StatusReportTestHooks.php
       reportUnmatched: false
     - message: '#^Attribute class Drupal\\Core\\Hook\\Attribute\\LegacyRequirementsHook does not exist\.$#'

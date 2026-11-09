@@ -36,9 +36,10 @@ The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
 ## Upgrading to 1.6.1
 
-Release `1.6.1` changes documentation only: the README has an
-[Installation](#installation) section. The payload, configuration and database
-are unchanged, so there is no database update. Sites on 1.5.x or earlier
+Release `1.6.1` adds an [Installation](#installation) section, moves the hooks
+to autowired classes and saves both settings forms through `#config_target`.
+The payload, settings and database are unchanged, so there is no database
+update. Sites on 1.5.x or earlier
 follow the 1.6.0 steps below.
 
 ```bash

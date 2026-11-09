@@ -641,13 +641,16 @@ class SettingsFormTest extends KernelTestBase {
   }
 
   /**
-   * Builds the settings form without rendering it.
+   * Builds and processes the settings form without rendering it.
+   *
+   * Processing fills in the default values of elements with a
+   * #config_target.
    *
    * @return array<string, mixed>
    *   The form structure.
    */
   protected function buildSettingsForm(): array {
-    return SettingsForm::create($this->container)->buildForm([], new FormState());
+    return \Drupal::formBuilder()->getForm(SettingsForm::class);
   }
 
   /**
