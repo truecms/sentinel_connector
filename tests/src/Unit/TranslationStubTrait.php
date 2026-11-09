@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use Drupal\Component\Gettext\PoItem;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\StringTranslation\PluralTranslatableMarkup;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -89,7 +90,7 @@ trait TranslationStubTrait {
        * Picks the English singular or plural form (Drupal 12).
        */
       public function selectPluralForm(int|float $count, string $string, ?string $langcode = NULL): string {
-        $forms = explode(PluralTranslatableMarkup::DELIMITER, $string);
+        $forms = explode(PoItem::DELIMITER, $string);
         return $count == 1 ? $forms[0] : ($forms[1] ?? $forms[0]);
       }
 
