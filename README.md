@@ -680,8 +680,9 @@ and `error_code: push_limit_reached`. The connector treats this as an expected
 outcome, not as a connection or authentication failure:
 
 - **Sync now** and `drush sentinel_connector:sync` show a warning with
-  Sentinel's message and the time the next push is accepted, in the site's
-  default time zone. The Drush command still exits with 0.
+  Sentinel's explanation and a single retry time in the site's default time
+  zone. Retry times are rounded up to the next whole minute so they never
+  suggest trying before the exact cutoff. The Drush command still exits with 0.
 - **Cron** shows nothing.
 - Every rejection is logged at notice level on the `sentinel_connector`
   channel with the plan, the limit and the next allowed time. A push held

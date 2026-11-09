@@ -54,6 +54,38 @@ class PushLimitFormatter {
   }
 
   /**
+   * Formats a retry time, rounding up so the displayed minute is safe to use.
+   *
+   * @param int $timestamp
+   *   The exact Unix timestamp used to hold pushes back.
+   *
+   * @return string
+   *   The next whole minute in the site's default time zone.
+   */
+  public function formatRetryTime(int $timestamp): string {
+    return $this->formatTime((int) (ceil($timestamp / 60) * 60));
+  }
+
+  /**
+   * Keeps the explanation without repeating the server's retry sentence.
+   *
+   * @param \Drupal\sentinel_connector\SyncResult $result
+   *   The push-limit result, including its structured retry time if known.
+   *
+   * @return string
+   *   Plain text, which must still be escaped on output.
+   */
+  public function limitMessage(SyncResult $result): string {
+    if ($result->nextAllowedAt === NULL) {
+      return $result->message;
+    }
+    // Replace only Sentinel's known date sentence. Keep the original response
+    // for diagnostics, and keep unrelated server text and its escaping intact.
+    $message = trim((string) preg_replace('/(?:^|\s+)Next push accepted after \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC(?: \([^)]*\))?\.?(?=\s|$)/', '', $result->message));
+    return $message !== '' ? $message : (string) $this->t('The push limit for this site has been reached.');
+  }
+
+  /**
    * Builds the warning for a manual push that the push limit stopped.
    *
    * @param \Drupal\sentinel_connector\SyncResult $result
@@ -63,11 +95,11 @@ class PushLimitFormatter {
    *   The warning. The server message and the time are escaped placeholders.
    */
   public function warning(SyncResult $result): TranslatableMarkup {
-    $arguments = ['@message' => $result->message];
+    $arguments = ['@message' => $this->limitMessage($result)];
     if ($result->nextAllowedAt === NULL) {
       return $this->t('Sentinel did not accept this push. @message Try again later.', $arguments);
     }
-    $arguments['@time'] = $this->formatTime($result->nextAllowedAt);
+    $arguments['@time'] = $this->formatRetryTime($result->nextAllowedAt);
     if ($result->deferred) {
       return $this->t('No push was sent, because Sentinel has already refused one. @message The next push will be accepted after @time.', $arguments);
     }

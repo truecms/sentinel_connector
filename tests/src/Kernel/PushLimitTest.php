@@ -11,6 +11,7 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\Form\SettingsForm;
 use Drupal\sentinel_connector\PushLimitFormatter;
 use Drupal\sentinel_connector\SyncService;
+use Drupal\sentinel_connector\SyncResult;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -204,6 +205,82 @@ class PushLimitTest extends KernelTestBase {
     $this->assertSame('form', $this->logRecords[0]['context']['@trigger']);
     $this->assertSame(RfcLogLevel::DEBUG, $this->logRecords[1]['level']);
     $this->assertSame('push_deferred', $this->logRecords[1]['context']['@outcome']);
+  }
+
+  /**
+   * Retry times appear once and never advertise a minute before the cutoff.
+   *
+   * @dataProvider retryTimeMessages
+   */
+  #[DataProvider('retryTimeMessages')]
+  public function testRetryTimeShownOnce(string $serverTime): void {
+    $this->container->set('datetime.time', new StatusReportTestTime(strtotime('2026-11-09T07:30:00Z')));
+    $next = strtotime('2026-11-09T08:09:40Z');
+    $explanation = 'This site can send data to Sentinel once every hour with baseline access.';
+    $message = $explanation . ' ' . $serverTime;
+    $this->mockResponses([$this->pushLimitResponse($next, $message)]);
+    $sync = \Drupal::service(SyncService::class);
+    $formatter = \Drupal::service(PushLimitFormatter::class);
+
+    $result = $sync->sync();
+    $this->assertSame($next, $result->nextAllowedAt);
+    // Keep the original response for diagnostics; normalise only the display.
+    $this->assertSame($message, $result->message);
+    $retry = 'The next push will be accepted after 9 Nov 2026 19:10 AEDT.';
+    $this->assertSame('Sentinel did not accept this push. ' . $explanation . ' ' . $retry, (string) $formatter->warning($result));
+
+    $held = $sync->sync();
+    $this->assertCount(1, $this->transactions);
+    $this->assertSame('No push was sent, because Sentinel has already refused one. ' . $explanation . ' ' . $retry, (string) $formatter->warning($held));
+
+    $form = SettingsForm::create($this->container)->buildForm([], new FormState());
+    $this->assertSame($explanation . ' Next push accepted after 9 Nov 2026 19:10 AEDT. Cron and "Sync now" send nothing before then.', (string) $form['push_limit_status']['#markup']);
+  }
+
+  /**
+   * Server retry sentences with and without a local-time annotation.
+   *
+   * @return array<string, array{string}>
+   *   The server retry sentences.
+   */
+  public static function retryTimeMessages(): array {
+    return [
+      'UTC only' => ['Next push accepted after 2026-11-09 08:10 UTC.'],
+      'UTC and site time' => ['Next push accepted after 2026-11-09 08:10 UTC (2026-11-09 19:10 AEDT).'],
+    ];
+  }
+
+  /**
+   * Whole minutes stay unchanged; rounding handles date and DST transitions.
+   */
+  public function testRetryTimeRounding(): void {
+    $formatter = \Drupal::service(PushLimitFormatter::class);
+    $cases = [
+      '2026-11-09T08:09:00Z' => '9 Nov 2026 19:09 AEDT',
+      '2026-11-09T08:09:01Z' => '9 Nov 2026 19:10 AEDT',
+      '2026-11-09T12:59:59Z' => '10 Nov 2026 00:00 AEDT',
+      '2026-10-03T15:59:59Z' => '4 Oct 2026 03:00 AEDT',
+      '2026-04-04T15:59:59Z' => '5 Apr 2026 02:00 AEST',
+    ];
+    foreach ($cases as $time => $expected) {
+      $this->assertSame($expected, $formatter->formatRetryTime(strtotime($time)));
+    }
+    // Past event times still display the minute in which they happened.
+    $this->assertSame('9 Nov 2026 19:09 AEDT', $formatter->formatTime(strtotime('2026-11-09T08:09:40Z')));
+  }
+
+  /**
+   * Only the known retry sentence is replaced, when a cutoff is available.
+   */
+  public function testRetryMessagePreservesOtherText(): void {
+    $formatter = \Drupal::service(PushLimitFormatter::class);
+    $sentence = 'Next push accepted after 2026-11-09 08:10 UTC.';
+    $explanation = 'Once an hour on the <b>Example</b> plan.';
+    $next = strtotime('2026-11-09T08:09:40Z');
+    $this->assertSame($explanation . ' Contact the administrator.', $formatter->limitMessage(SyncResult::pushLimited($explanation . ' ' . $sentence . ' Contact the administrator.', $next)));
+    $this->assertSame($explanation, $formatter->limitMessage(SyncResult::pushLimited($explanation, $next)));
+    $this->assertSame('The push limit for this site has been reached.', $formatter->limitMessage(SyncResult::pushLimited($sentence, $next)));
+    $this->assertSame($sentence, $formatter->limitMessage(SyncResult::pushLimited($sentence)));
   }
 
   /**
