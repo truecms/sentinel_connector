@@ -209,6 +209,8 @@ class PushLimitTest extends KernelTestBase {
 
   /**
    * Retry times appear once and never advertise a minute before the cutoff.
+   *
+   * @dataProvider retryTimeMessages
    */
   #[DataProvider('retryTimeMessages')]
   public function testRetryTimeShownOnce(string $serverTime): void {
