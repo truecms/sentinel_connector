@@ -387,7 +387,8 @@ class StatusReportCollectorTest extends KernelTestBase {
     // A page cache hit builds nothing.
     $this->terminate('HIT');
     $this->assertSame(0, $this->calls());
-    $this->assertNull($state->get(StatusReportCollector::STATE_SNAPSHOT));
+    $none = $state->get(StatusReportCollector::STATE_SNAPSHOT);
+    $this->assertNull($none);
 
     $this->terminate();
     $this->assertSame(1, $this->calls());
@@ -483,7 +484,8 @@ class StatusReportCollectorTest extends KernelTestBase {
       $this->container->getParameter('app.root'),
     );
     // No snapshot yet: no block, and nothing built.
-    $this->assertNull($web->collect());
+    $none = $web->collect();
+    $this->assertNull($none);
     $this->assertSame(0, $this->calls());
 
     // An old snapshot is sent as it is, with its own time.
