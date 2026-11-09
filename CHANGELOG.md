@@ -11,8 +11,10 @@ there is no update hook (truecms/sentinel_connector#58).
 ### Added
 
 - Uninstalling either module deletes the values it keeps in State, including
-  the deprecated API key saved on the settings form. A Key module key the
-  connector created stays; delete it on the Keys page.
+  the deprecated API key saved on the settings form. Two kinds of value stay:
+  the saved non-production host from a pre-1.4 install, so a reinstall never
+  sends to production by mistake, and any value a Key module key still reads.
+  A Key module key the connector created stays; delete it on the Keys page.
 
 ### Changed
 

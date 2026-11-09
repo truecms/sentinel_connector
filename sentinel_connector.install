@@ -5,6 +5,7 @@
  * Install, update and requirements hooks for Sentinel Connector.
  */
 
+use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Core\Hook\Attribute\LegacyRequirementsHook;
 use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyMigrator;
@@ -28,6 +29,9 @@ function sentinel_connector_uninstall(bool $is_syncing): void {
   $keep = [ApiBaseUrlResolver::STATE_LEGACY_HOST];
   if (\Drupal::moduleHandler()->moduleExists('key')) {
     foreach (\Drupal::entityTypeManager()->getStorage('key')->loadMultiple() as $key) {
+      if (!$key instanceof ConfigEntityInterface) {
+        continue;
+      }
       $settings = $key->get('key_provider_settings');
       if ($key->get('key_provider') === 'state' && is_array($settings) && is_string($settings['state_key'] ?? NULL)) {
         $keep[] = $settings['state_key'];
