@@ -6,7 +6,9 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Form\ConfigFormBase;
+use Drupal\Core\Form\ConfigTarget;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Form\ToConfig;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
 use Drupal\sentinel_connector\ApiBaseUrlResolver;
@@ -28,6 +30,11 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * Settings form for the Sentinel Connector module.
  */
 final class SettingsForm extends ConfigFormBase {
+
+  /**
+   * The configuration this form edits.
+   */
+  public const CONFIG_NAME = 'sentinel_connector.settings';
 
   /**
    * Constructs the settings form.
@@ -106,7 +113,7 @@ final class SettingsForm extends ConfigFormBase {
    *   The editable configuration names.
    */
   protected function getEditableConfigNames(): array {
-    return ['sentinel_connector.settings'];
+    return [self::CONFIG_NAME];
   }
 
   /**
@@ -128,8 +135,6 @@ final class SettingsForm extends ConfigFormBase {
    *   The populated form structure.
    */
   public function buildForm(array $form, FormStateInterface $form_state): array {
-    $config = $this->config('sentinel_connector.settings');
-
     $help = [':help' => ConnectionChecker::ENVIRONMENTS_HELP_URL];
 
     // Shown first: nothing below is sent while either holds.
@@ -154,7 +159,7 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Enable automatic sync on cron'),
       '#description' => $this->t('Cron sends at most one push an hour. How often Sentinel accepts a push depends on the plan.'),
-      '#default_value' => $config->get('enabled'),
+      '#config_target' => self::CONFIG_NAME . ':enabled',
     ];
 
     // Read-only: only settings.php or the server environment can send the
@@ -194,7 +199,7 @@ final class SettingsForm extends ConfigFormBase {
         '#type' => 'textfield',
         '#title' => $this->t('Site UUID'),
         '#description' => $this->t("Copy it from the site's Connection tab in Sentinel. Can also be set in settings.php or @env for each environment.", ['@env' => SiteUuidResolver::ENV_VAR]),
-        '#default_value' => $config->get('site_uuid'),
+        '#config_target' => new ConfigTarget(self::CONFIG_NAME, 'site_uuid', toConfig: fn (mixed $value): string => (string) $value),
         '#required' => TRUE,
       ];
     }
@@ -205,19 +210,19 @@ final class SettingsForm extends ConfigFormBase {
         'all' => $this->t('All: Drupal core, contrib and custom modules'),
         'core_contrib' => $this->t('Drupal core and contrib (custom modules are not sent)'),
       ],
-      '#default_value' => PayloadBuilder::normaliseScope($config->get('report_scope')),
+      '#config_target' => new ConfigTarget(self::CONFIG_NAME, 'report_scope', PayloadBuilder::normaliseScope(...), PayloadBuilder::normaliseScope(...)),
     ];
     $form['report_config_drift'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Report configuration drift'),
       '#description' => $this->t('Sends the names of configuration objects that differ from the sync directory, and the type of change. Configuration values are never sent.'),
-      '#default_value' => $config->get('report_config_drift') ?? TRUE,
+      '#config_target' => $this->switchTarget('report_config_drift'),
     ];
     $form['report_platform'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Report platform versions'),
       '#description' => $this->t('Sends the web server, database and operating system versions, and their system package versions, so Sentinel can warn you about known vulnerabilities in your server software. The PHP version is always sent, because Drupal core support depends on it.'),
-      '#default_value' => $config->get('report_platform') ?? TRUE,
+      '#config_target' => $this->switchTarget('report_platform'),
     ];
     $statusOverridden = $this->statusReport->isReportingOverridden();
     $form['report_status_report'] = [
@@ -226,10 +231,14 @@ final class SettingsForm extends ConfigFormBase {
       '#description' => $statusOverridden
         ? $this->t('Set in settings.php by $settings[@key], which takes precedence over this checkbox.', ['@key' => "'" . StatusReportCollector::SETTINGS_KEY . "'"])
         : $this->t('Sends the title, value and description of each error and warning on Reports, Status report, as plain text. OK and information items are never sent. Site paths are replaced with [site root]. Preview what is sent: <code>@command</code>', ['@command' => 'drush sentinel_connector:status-report']),
-      '#default_value' => $statusOverridden ? $this->statusReport->isReportingEnabled() : $config->get('report_status_report') ?? TRUE,
+      '#config_target' => $this->switchTarget('report_status_report', $statusOverridden),
       '#disabled' => $statusOverridden,
     ];
-    $form['integrations'] = $this->integrations($config->get('report_upgrade_status') ?? TRUE);
+    if ($statusOverridden) {
+      // Shows the value settings.php sets; the stored value is kept.
+      $form['report_status_report']['#default_value'] = $this->statusReport->isReportingEnabled();
+    }
+    $form['integrations'] = $this->integrations();
     // API key status: the source is shown, the key never is.
     $source = $this->apiKeyResolver->getSource();
     $keyModule = $this->apiKeyResolver->keyModuleEnabled();
@@ -268,7 +277,7 @@ final class SettingsForm extends ConfigFormBase {
         '#type' => 'key_select',
         '#title' => $this->t('API key'),
         '#empty_option' => $this->t('- None -'),
-        '#default_value' => $this->apiKeyResolver->getKeyId(),
+        '#config_target' => new ConfigTarget(self::CONFIG_NAME, 'api_key_id', fn (mixed $value): string => trim((string) $value), fn (mixed $value): string => (string) $value),
         '#description' => $source === 'settings.php'
           ? $this->t('Sync requests use the key from settings.php, not the selected key. <a href=":add">Add a key</a> or <a href=":list">manage keys</a>.', $links)
           : $this->t('The key from the site dashboard in Sentinel, stored with the Key module. Use a provider that reads a file, an environment variable or a vault; keys that keep the value in configuration are refused. <a href=":add">Add a key</a> or <a href=":list">manage keys</a>.', $links),
@@ -378,15 +387,32 @@ final class SettingsForm extends ConfigFormBase {
   }
 
   /**
-   * The Integrations section: one row per optional module.
+   * The config target of an on/off setting that is on when not yet saved.
    *
-   * @param mixed $reportUpgradeStatus
-   *   The stored Upgrade Status reporting switch.
+   * @param string $key
+   *   The setting in sentinel_connector.settings.
+   * @param bool $overridden
+   *   TRUE when settings.php sets it: the stored value is then kept.
+   *
+   * @return \Drupal\Core\Form\ConfigTarget
+   *   The config target.
+   */
+  protected function switchTarget(string $key, bool $overridden = FALSE): ConfigTarget {
+    return new ConfigTarget(
+      self::CONFIG_NAME,
+      $key,
+      fn (mixed $value): bool => (bool) ($value ?? TRUE),
+      fn (mixed $value): bool|ToConfig => $overridden ? ToConfig::NoOp : (bool) $value,
+    );
+  }
+
+  /**
+   * The Integrations section: one row per optional module.
    *
    * @return array<string, mixed>
    *   The section's form elements.
    */
-  protected function integrations(mixed $reportUpgradeStatus): array {
+  protected function integrations(): array {
     $detected = $this->upgradeStatus->isDetected();
     $section = [
       '#type' => 'details',
@@ -428,9 +454,13 @@ final class SettingsForm extends ConfigFormBase {
       '#description' => $overridden
         ? $this->t('Set in settings.php by $settings[@key], which takes precedence over this checkbox.', ['@key' => "'" . UpgradeStatusCollector::SETTINGS_KEY . "'"])
         : $this->t('Sends how many projects are at each Upgrade Status next step and when they were scanned. Project names, paths and messages are never sent.'),
-      '#default_value' => $overridden ? $this->upgradeStatus->isReportingEnabled() : (bool) $reportUpgradeStatus,
+      '#config_target' => $this->switchTarget('report_upgrade_status', $overridden),
       '#disabled' => $overridden,
     ];
+    if ($overridden) {
+      // Shows the value settings.php sets; the stored value is kept.
+      $section['upgrade_status']['report_upgrade_status']['#default_value'] = $this->upgradeStatus->isReportingEnabled();
+    }
     $section['upgrade_status']['scan'] = [
       '#type' => 'item',
       '#title' => $this->t('Scan command'),
@@ -500,40 +530,12 @@ final class SettingsForm extends ConfigFormBase {
    *   The form state.
    */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
-    $config = $this->config('sentinel_connector.settings');
-    // While settings.php sets the switch, the stored value is kept.
-    $reportUpgradeStatus = $this->upgradeStatus->isReportingOverridden()
-      ? $config->get('report_upgrade_status') ?? TRUE
-      : $form_state->getValue('report_upgrade_status');
-    $reportStatusReport = $this->statusReport->isReportingOverridden()
-      ? $config->get('report_status_report') ?? TRUE
-      : $form_state->getValue('report_status_report');
-    $config
-      ->set('enabled', (bool) $form_state->getValue('enabled'))
-      ->set('report_scope', PayloadBuilder::normaliseScope($form_state->getValue('report_scope')))
-      ->set('report_config_drift', (bool) $form_state->getValue('report_config_drift'))
-      ->set('report_platform', (bool) $form_state->getValue('report_platform'))
-      ->set('report_upgrade_status', (bool) $reportUpgradeStatus)
-      ->set('report_status_report', (bool) $reportStatusReport);
-    if (!$this->uuidResolver->isOverridden()) {
-      $config->set('site_uuid', (string) $form_state->getValue('site_uuid'));
-    }
-    $config->save();
-    // The other settings are saved; the URL is fixed outside this form.
-    if ($this->urlResolver->getUrl() === NULL && !$this->sendingSwitch->isDisabled()) {
-      $this->messenger()->addWarning($this->connectionChecker->invalidUrlMessage());
-    }
-
+    // Compared with the saved key before the parent class saves the new one.
+    $keyId = NULL;
     $changed = FALSE;
     if (isset($form['api_key_id'])) {
-      $keyId = (string) $form_state->getValue('api_key_id');
+      $keyId = trim((string) $form_state->getValue('api_key_id'));
       $changed = $keyId !== $this->apiKeyResolver->getKeyId();
-      $this->config('sentinel_connector.settings')->set('api_key_id', $keyId)->save();
-      // The selected key replaces the deprecated State key.
-      if ($keyId !== '' && $this->apiKeyResolver->getKeyProblem() === NULL && $this->state->get(ApiKeyResolver::STATE_KEY) !== NULL) {
-        $this->state->delete(ApiKeyResolver::STATE_KEY);
-        $this->messenger()->addStatus($this->t('The API key saved in State was deleted. The selected key replaces it.'));
-      }
     }
     else {
       $key = (string) $form_state->getValue('api_key_state');
@@ -542,6 +544,19 @@ final class SettingsForm extends ConfigFormBase {
         $changed = TRUE;
       }
     }
+
+    // Saves every element with a #config_target.
+    parent::submitForm($form, $form_state);
+
+    // The other settings are saved; the URL is fixed outside this form.
+    if ($this->urlResolver->getUrl() === NULL && !$this->sendingSwitch->isDisabled()) {
+      $this->messenger()->addWarning($this->connectionChecker->invalidUrlMessage());
+    }
+    // The selected key replaces the deprecated State key.
+    if ($keyId !== NULL && $keyId !== '' && $this->apiKeyResolver->getKeyProblem() === NULL && $this->state->get(ApiKeyResolver::STATE_KEY) !== NULL) {
+      $this->state->delete(ApiKeyResolver::STATE_KEY);
+      $this->messenger()->addStatus($this->t('The API key saved in State was deleted. The selected key replaces it.'));
+    }
     if ($changed) {
       // Nothing was accepted with the new key yet: cron pushes on its next
       // due run, so a wrong key shows up within the hour.
@@ -549,8 +564,6 @@ final class SettingsForm extends ConfigFormBase {
     }
     // The status report allows a newly configured site a day to push.
     $this->syncService->markConfigured();
-
-    parent::submitForm($form, $form_state);
   }
 
   /**

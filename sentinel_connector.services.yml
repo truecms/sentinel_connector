@@ -1,7 +1,9 @@
 services:
+  # Drupal 11.1 and later register hook classes on their own. Drupal 10.3 calls
+  # this service from the #[LegacyHook] wrappers.
   Drupal\sentinel_connector\Hook\SentinelHooks:
     class: Drupal\sentinel_connector\Hook\SentinelHooks
-    arguments: ['@service_container']
+    autowire: true
 
   logger.channel.sentinel_connector:
     parent: logger.channel_base

@@ -13,7 +13,7 @@ use Drupal\sentinel_connector\Hook\SentinelHooks;
  */
 #[LegacyHook]
 function sentinel_connector_cron(): void {
-  (new SentinelHooks(\Drupal::getContainer()))->cron();
+  \Drupal::service(SentinelHooks::class)->cron();
 }
 
 /**
@@ -24,7 +24,7 @@ function sentinel_connector_cron(): void {
  */
 #[LegacyHook]
 function sentinel_connector_modules_installed(array $modules): void {
-  (new SentinelHooks(\Drupal::getContainer()))->modulesInstalled($modules);
+  \Drupal::service(SentinelHooks::class)->modulesInstalled($modules);
 }
 
 /**
@@ -32,5 +32,5 @@ function sentinel_connector_modules_installed(array $modules): void {
  */
 #[LegacyHook]
 function sentinel_connector_rebuild(): void {
-  (new SentinelHooks(\Drupal::getContainer()))->rebuild();
+  \Drupal::service(SentinelHooks::class)->rebuild();
 }

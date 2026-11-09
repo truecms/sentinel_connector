@@ -1,4 +1,10 @@
 services:
+  # Drupal 11.1 and later register hook classes on their own. Drupal 10.3 calls
+  # this service from the #[LegacyHook] wrappers.
+  Drupal\sentinel_connector_config_pr\Hook\ConfigPrHooks:
+    class: Drupal\sentinel_connector_config_pr\Hook\ConfigPrHooks
+    autowire: true
+
   Drupal\sentinel_connector_config_pr\TokenResolver:
     class: Drupal\sentinel_connector_config_pr\TokenResolver
     arguments: ['@config.factory', '@settings', '@?key.repository']

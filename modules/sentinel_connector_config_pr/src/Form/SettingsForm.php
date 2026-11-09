@@ -6,6 +6,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Form\ConfigFormBase;
+use Drupal\Core\Form\ConfigTarget;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\sentinel_connector_config_pr\Host\HostFactory;
 use Drupal\sentinel_connector_config_pr\PullRequestTracker;
@@ -21,6 +22,11 @@ final class SettingsForm extends ConfigFormBase {
    * The intervals offered for cron runs, in seconds.
    */
   protected const INTERVALS = [3600, 21600, 43200, 86400, 604800];
+
+  /**
+   * The configuration this form edits.
+   */
+  public const CONFIG_NAME = 'sentinel_connector_config_pr.settings';
 
   /**
    * Constructs the settings form.
@@ -92,8 +98,6 @@ final class SettingsForm extends ConfigFormBase {
    *   The populated form structure.
    */
   public function buildForm(array $form, FormStateInterface $form_state): array {
-    $config = $this->config('sentinel_connector_config_pr.settings');
-
     $form['intro'] = [
       '#markup' => '<p>' . $this->t('Writes the configuration that differs from the sync directory to an export branch and opens one pull request (GitHub) or merge request (GitLab), or updates the open one. Your team reviews and merges it; this module never merges. Run it with <code>drush sentinel_connector:config-pr</code>, or on cron below.') . '</p>',
     ];
@@ -107,51 +111,51 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'select',
       '#title' => $this->t('Git host'),
       '#options' => ['github' => $this->t('GitHub'), 'gitlab' => $this->t('GitLab')],
-      '#default_value' => $config->get('provider') ?: 'github',
+      '#config_target' => $this->text('provider', 'github'),
       '#description' => $this->t('Enable the matching config_pr submodule too: config_pr_github or config_pr_gitlab.'),
       '#required' => TRUE,
     ];
     $form['repository']['api_base_url'] = [
       '#type' => 'url',
       '#title' => $this->t('Host URL for GitHub Enterprise or self-managed GitLab'),
-      '#default_value' => $config->get('api_base_url'),
+      '#config_target' => new ConfigTarget(self::CONFIG_NAME, 'api_base_url', toConfig: fn (mixed $value): string => rtrim(trim((string) $value), '/')),
       '#description' => $this->t('For example https://github.example.com or https://gitlab.example.com. Leave empty for github.com or gitlab.com.'),
     ];
     $form['repository']['repo_owner'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Repository owner'),
-      '#default_value' => $config->get('repo_owner'),
+      '#config_target' => $this->text('repo_owner'),
       '#description' => $this->t('The GitHub user or organisation, or the GitLab group path (subgroups separated by /).'),
     ];
     $form['repository']['repo_name'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Repository name'),
-      '#default_value' => $config->get('repo_name'),
+      '#config_target' => $this->text('repo_name'),
     ];
     $form['repository']['gitlab_project_id'] = [
       '#type' => 'textfield',
       '#title' => $this->t('GitLab project id'),
-      '#default_value' => $config->get('gitlab_project_id'),
+      '#config_target' => $this->text('gitlab_project_id'),
       '#description' => $this->t('GitLab only: the numeric project id, used instead of the owner and name when set.'),
       '#states' => ['visible' => [':input[name="provider"]' => ['value' => 'gitlab']]],
     ];
     $form['repository']['base_branch'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Base branch'),
-      '#default_value' => $config->get('base_branch'),
+      '#config_target' => $this->text('base_branch'),
       '#description' => $this->t("The branch the pull request merges into. Leave empty for the repository's default branch."),
     ];
     $form['repository']['branch'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Export branch'),
-      '#default_value' => $config->get('branch') ?: 'sentinel/config-export',
+      '#config_target' => $this->text('branch', 'sentinel/config-export'),
       '#description' => $this->t('This module owns the branch: it updates the branch while its pull request is open and starts it again from the base branch after the pull request is merged or closed. Do not push other work to it. A run refuses a branch that already exists and was not created by this module.'),
       '#required' => TRUE,
     ];
     $form['repository']['sync_path'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Sync directory in the repository'),
-      '#default_value' => $config->get('sync_path') ?: 'config/sync',
+      '#config_target' => new ConfigTarget(self::CONFIG_NAME, 'sync_path', fn (mixed $value): string => (string) $value ?: 'config/sync', fn (mixed $value): string => trim(trim((string) $value), '/')),
       '#description' => $this->t('The path of the configuration sync directory from the repository root, for example config/sync.'),
       '#required' => TRUE,
     ];
@@ -164,20 +168,20 @@ final class SettingsForm extends ConfigFormBase {
     $form['pull_request']['pr_title'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Title'),
-      '#default_value' => $config->get('pr_title'),
+      '#config_target' => $this->text('pr_title'),
       '#description' => $this->t('{site} is replaced by the site name and {date} by the date of the run.'),
       '#required' => TRUE,
     ];
     $form['pull_request']['committer_name'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Committer name'),
-      '#default_value' => $config->get('committer_name'),
+      '#config_target' => $this->text('committer_name'),
       '#description' => $this->t('Leave empty for "Sentinel Connector".'),
     ];
     $form['pull_request']['committer_email'] = [
       '#type' => 'email',
       '#title' => $this->t('Committer email'),
-      '#default_value' => $config->get('committer_email'),
+      '#config_target' => $this->text('committer_email'),
       '#description' => $this->t("Leave empty for the site's email address."),
     ];
     $pull = $this->tracker->get();
@@ -217,7 +221,7 @@ final class SettingsForm extends ConfigFormBase {
         '#type' => 'key_select',
         '#title' => $this->t('Key'),
         '#empty_option' => $this->t('- None: use settings.php -'),
-        '#default_value' => $config->get('token_key_id'),
+        '#config_target' => $this->text('token_key_id'),
         '#description' => $this->t('A key whose provider reads a file or an environment variable. Keys that keep the value in configuration are refused.'),
       ];
     }
@@ -233,7 +237,7 @@ final class SettingsForm extends ConfigFormBase {
     $form['schedule']['cron_enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Run on cron'),
-      '#default_value' => $config->get('cron_enabled'),
+      '#config_target' => new ConfigTarget(self::CONFIG_NAME, 'cron_enabled', toConfig: fn (mixed $value): bool => (bool) $value),
       '#description' => $this->t('Cron runs only while Sentinel Connector cron reporting is enabled too, which the README keeps to production.'),
     ];
     $options = [];
@@ -246,7 +250,7 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'select',
       '#title' => $this->t('Run at most every'),
       '#options' => $options,
-      '#default_value' => (int) $config->get('interval') ?: 86400,
+      '#config_target' => new ConfigTarget(self::CONFIG_NAME, 'interval', fn (mixed $value): int => (int) $value ?: 86400, fn (mixed $value): int => (int) $value),
     ];
 
     return parent::buildForm($form, $form_state);
@@ -296,31 +300,23 @@ final class SettingsForm extends ConfigFormBase {
   }
 
   /**
-   * {@inheritdoc}
+   * The config target of a text setting, saved without surrounding spaces.
    *
-   * @param array<mixed> $form
-   *   The form structure.
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The form state.
+   * @param string $key
+   *   The setting in sentinel_connector_config_pr.settings.
+   * @param string $default
+   *   Shown while the setting is empty.
+   *
+   * @return \Drupal\Core\Form\ConfigTarget
+   *   The config target.
    */
-  public function submitForm(array &$form, FormStateInterface $form_state): void {
-    $this->config('sentinel_connector_config_pr.settings')
-      ->set('provider', (string) $form_state->getValue('provider'))
-      ->set('api_base_url', rtrim(trim((string) $form_state->getValue('api_base_url')), '/'))
-      ->set('repo_owner', trim((string) $form_state->getValue('repo_owner')))
-      ->set('repo_name', trim((string) $form_state->getValue('repo_name')))
-      ->set('gitlab_project_id', trim((string) $form_state->getValue('gitlab_project_id')))
-      ->set('base_branch', trim((string) $form_state->getValue('base_branch')))
-      ->set('branch', trim((string) $form_state->getValue('branch')))
-      ->set('sync_path', trim(trim((string) $form_state->getValue('sync_path')), '/'))
-      ->set('pr_title', trim((string) $form_state->getValue('pr_title')))
-      ->set('committer_name', trim((string) $form_state->getValue('committer_name')))
-      ->set('committer_email', trim((string) $form_state->getValue('committer_email')))
-      ->set('token_key_id', (string) ($form_state->getValue('token_key_id') ?? $this->config('sentinel_connector_config_pr.settings')->get('token_key_id')))
-      ->set('cron_enabled', (bool) $form_state->getValue('cron_enabled'))
-      ->set('interval', (int) $form_state->getValue('interval'))
-      ->save();
-    parent::submitForm($form, $form_state);
+  protected function text(string $key, string $default = ''): ConfigTarget {
+    return new ConfigTarget(
+      self::CONFIG_NAME,
+      $key,
+      fn (mixed $value): string => (string) $value ?: $default,
+      fn (mixed $value): string => trim((string) $value),
+    );
   }
 
 }
