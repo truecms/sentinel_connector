@@ -391,8 +391,8 @@ class StatusReportCollectorTest extends KernelTestBase {
 
     $this->terminate();
     $this->assertSame(1, $this->calls());
-    /** @var array{checked_at: int, items: list<array<string, string>>} $snapshot */
     $snapshot = $state->get(StatusReportCollector::STATE_SNAPSHOT);
+    $this->assertIsArray($snapshot);
     $this->assertSame(self::START, $snapshot['checked_at']);
     $this->assertSame('snapshot_item', $this->byKey(['items' => $snapshot['items']])['snapshot_item']['key']);
 
@@ -489,8 +489,8 @@ class StatusReportCollectorTest extends KernelTestBase {
     // An old snapshot is sent as it is, with its own time.
     $old = self::START - 3 * 86400;
     $this->container->get('state')->set(StatusReportCollector::STATE_SNAPSHOT, ['checked_at' => $old, 'items' => []]);
-    /** @var array<string, mixed> $block */
     $block = $web->collect();
+    $this->assertIsArray($block);
     $this->assertSame('web', $block['context']);
     $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', $old), $block['checked_at']);
     $this->assertSame(0, $this->calls());
