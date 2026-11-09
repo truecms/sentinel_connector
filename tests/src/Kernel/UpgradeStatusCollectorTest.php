@@ -669,8 +669,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
       'site_b' => ['custom', 'relax'],
     ], ['site_a' => 1792890000, 'site_b' => 1792800000]);
     $this->mockSentinel(new Response(200, [], '{"outcome":"problem_stored"}'));
+    $command = $this->command(0);
     try {
-      $this->command(0)->upgradeStatus(['scan-report' => TRUE, 'scan-started' => '1792880000']);
+      $command->upgradeStatus(['scan-report' => TRUE, 'scan-started' => '1792880000']);
       $this->fail('A stale project result must fail the report.');
     }
     catch (\RuntimeException $e) {
@@ -689,8 +690,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
       'site_b' => ['custom', 'relax'],
     ], ['site_a' => 1792890000]);
     $this->mockSentinel(new Response(200, [], '{"outcome":"problem_stored"}'));
+    $command = $this->command(0);
     try {
-      $this->command(0)->upgradeStatus(['scan-report' => TRUE]);
+      $command->upgradeStatus(['scan-report' => TRUE]);
       $this->fail('A missing project scan must fail the report.');
     }
     catch (\RuntimeException $e) {
@@ -699,8 +701,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
 
     // A start time that is not a Unix time sends nothing.
     $this->mockSentinel();
+    $command = $this->command(0);
     try {
-      $this->command(0)->upgradeStatus(['scan-report' => TRUE, 'scan-started' => 'yesterday']);
+      $command->upgradeStatus(['scan-report' => TRUE, 'scan-started' => 'yesterday']);
       $this->fail('A malformed start time must fail the report.');
     }
     catch (\RuntimeException $e) {
@@ -716,8 +719,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->mockSentinel();
     foreach (['', 'sk_scan_short', 'sk_live_' . str_repeat('a', 64)] as $value) {
       putenv('SENTINEL_SCAN_KEY=' . $value);
+      $command = $this->command(0);
       try {
-        $this->command(0)->upgradeStatus(['scan-report' => TRUE]);
+        $command->upgradeStatus(['scan-report' => TRUE]);
         $this->fail('A missing or malformed key must fail the command.');
       }
       catch (\RuntimeException $e) {
@@ -739,8 +743,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->container->get('state')->set(ProjectCollector::STATE_MODE, 'throw');
     putenv('SENTINEL_SCAN_KEY=' . self::SCAN_KEY);
     $this->mockSentinel(new Response(200, [], '{"outcome":"problem_stored"}'));
+    $command = $this->command(0);
     try {
-      $this->command(0)->upgradeStatus(['scan-report' => TRUE]);
+      $command->upgradeStatus(['scan-report' => TRUE]);
       $this->fail('An unreadable result must fail the command.');
     }
     catch (\RuntimeException $e) {
@@ -771,8 +776,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
       [new Response(500, [], 'oops'), 'did not accept'],
     ] as [$response, $text]) {
       $this->mockSentinel($response);
+      $command = $this->command(0);
       try {
-        $this->command(0)->upgradeStatus(['scan-report' => TRUE]);
+        $command->upgradeStatus(['scan-report' => TRUE]);
         $this->fail('A refused report must fail the command.');
       }
       catch (\RuntimeException $e) {
@@ -789,8 +795,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->container->get('module_installer')->uninstall(['upgrade_status']);
     putenv('SENTINEL_SCAN_KEY=' . self::SCAN_KEY);
     $this->mockSentinel();
+    $command = $this->command(0);
     try {
-      $this->command(0)->upgradeStatus(['scan-report' => TRUE]);
+      $command->upgradeStatus(['scan-report' => TRUE]);
       $this->fail('A build without Upgrade Status must fail the command.');
     }
     catch (\RuntimeException $e) {
