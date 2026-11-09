@@ -31,6 +31,8 @@ use Psr\Log\LoggerInterface;
 #[Group('sentinel_connector')]
 class SyncServiceFingerprintTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * The in-memory state values.
    *

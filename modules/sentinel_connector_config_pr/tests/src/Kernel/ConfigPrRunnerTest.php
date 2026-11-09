@@ -377,4 +377,20 @@ class ConfigPrRunnerTest extends KernelTestBase {
     $this->assertSame([], $this->host->calls);
   }
 
+  /**
+   * Uninstalling deletes the module's State values and keeps the others.
+   */
+  public function testUninstallDeletesState(): void {
+    $state = $this->container->get('state');
+    $state->set(PullRequestTracker::STATE_BRANCH, 'sentinel/config-export');
+    $state->set(PullRequestTracker::STATE_LAST_RUN, 1792800000);
+    $state->set('sentinel_connector.last_message', 'Accepted.');
+
+    $this->container->get('module_installer')->uninstall(['sentinel_connector_config_pr']);
+
+    $names = array_keys($this->container->get('keyvalue')->get('state')->getAll());
+    $this->assertSame([], array_values(array_filter($names, static fn (string $name): bool => str_starts_with($name, 'sentinel_connector_config_pr.'))));
+    $this->assertSame('Accepted.', $this->container->get('state')->get('sentinel_connector.last_message'));
+  }
+
 }

@@ -20,6 +20,8 @@ use PHPUnit\Framework\TestCase;
 #[Group('sentinel_connector')]
 class PayloadContractTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * Validates the full payload against the documented API contract.
    */

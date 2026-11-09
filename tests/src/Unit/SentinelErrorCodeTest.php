@@ -36,6 +36,8 @@ use Psr\Log\LogLevel;
 #[Group('sentinel_connector')]
 class SentinelErrorCodeTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * The fixed "now" of the test: 2026-10-09T13:00:00Z.
    */
@@ -882,7 +884,7 @@ class SentinelErrorCodeTest extends TestCase {
     // A push limit that has the header and no body fields.
     $limited = $this->push(new Response(429, $headers, '{"error_code": "push_limit_reached"}'));
     $this->assertTrue($limited->isPushLimited());
-    $this->assertSame(SentinelClient::PUSH_LIMIT_FALLBACK_MESSAGE, $limited->message);
+    $this->assertSame('The push limit for this site has been reached.', $limited->message);
     $this->assertSame($seconds, $limited->retryAfterSeconds);
     $stored = $seconds !== NULL ? self::NOW + $seconds : $time;
     $this->assertSame($stored, $limited->nextAllowedAt);

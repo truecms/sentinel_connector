@@ -22,6 +22,8 @@ use PHPUnit\Framework\TestCase;
 #[Group('sentinel_connector')]
 class ComposerProjectResolverTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * Temporary project root holding a fake 'web' app root.
    */
