@@ -386,6 +386,7 @@ class ConfigPrRunnerTest extends KernelTestBase {
     $state->set(PullRequestTracker::STATE_LAST_RUN, 1792800000);
     $state->set('sentinel_connector.last_message', 'Accepted.');
 
+    $this->installSchema('user', ['users_data']);
     $this->container->get('module_installer')->uninstall(['sentinel_connector_config_pr']);
 
     $names = array_keys($this->container->get('keyvalue')->get('state')->getAll());

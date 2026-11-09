@@ -3,6 +3,7 @@
 namespace Drupal\sentinel_connector_config_pr;
 
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Component\Utility\Html;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Lock\LockBackendInterface;
@@ -321,7 +322,7 @@ class ConfigPrRunner {
         // Only this module's own messages are safe to log.
         '@reason' => $error instanceof HostException ? $error->getMessage() : '',
       ]);
-      return new RunResult('failed', (string) $this->t('The Git host step "@step" failed. Check the Drupal log.', ['@step' => $step]));
+      return new RunResult('failed', Html::decodeEntities((string) $this->t('The Git host step "@step" failed. Check the Drupal log.', ['@step' => $step])));
     }
 
     $this->tracker->set($pull['url'], $pull['number'], $now);

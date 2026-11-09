@@ -437,6 +437,7 @@ class SyncServicePushLimitTest extends TestCase {
    *   The client's result, the trigger, the log level and the details.
    */
   public static function outcomes(): array {
+    self::setStringTranslationContainer();
     $transport = [
       'class' => 'GuzzleHttp\\Exception\\ConnectException',
       'host' => 'sentinel.example.com',
