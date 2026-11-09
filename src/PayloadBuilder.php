@@ -17,7 +17,7 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '1.5.0';
+  public const CONNECTOR_VERSION = '1.6.0';
 
   /**
    * Sync payload contract version.
@@ -25,9 +25,10 @@ class PayloadBuilder {
    * Version 2 adds the platform block, version 3 the config_drift block.
    * Version 4 sends the site block without url and name, adds the
    * core_contrib scope, the platform_reporting field and the optional
-   * upgrade_status block.
+   * upgrade_status block. Version 5 adds the status_reporting field and the
+   * optional status_report block.
    */
-  public const SCHEMA_VERSION = 4;
+  public const SCHEMA_VERSION = 5;
 
   /**
    * The report scopes: everything, or core and contrib without custom.
@@ -66,6 +67,11 @@ class PayloadBuilder {
    * @param \Closure|null $upgradeStatus
    *   Returns the upgrade_status block, or NULL to leave it out. Called on
    *   the first build only, so a failed read logs one warning.
+   * @param bool $statusReporting
+   *   FALSE when the site owner turned off status report reporting.
+   * @param \Closure|null $statusReport
+   *   Returns the status_report block, or NULL to leave it out. Called on
+   *   the first build only: a build can take seconds.
    */
   public function __construct(
     protected ModuleExtensionList $moduleList,
@@ -77,6 +83,8 @@ class PayloadBuilder {
     protected ?\Closure $configDrift = NULL,
     protected bool $platformReporting = TRUE,
     protected ?\Closure $upgradeStatus = NULL,
+    protected bool $statusReporting = FALSE,
+    protected ?\Closure $statusReport = NULL,
   ) {}
 
   /**
@@ -106,6 +114,13 @@ class PayloadBuilder {
    * @var array<string, mixed>|null|false
    */
   protected array|null|false $readiness = FALSE;
+
+  /**
+   * The status_report block of the first build, FALSE before it.
+   *
+   * @var array<string, mixed>|null|false
+   */
+  protected array|null|false $requirements = FALSE;
 
   /**
    * Build the modules array for the given scope.
@@ -190,6 +205,7 @@ class PayloadBuilder {
       'connector_version' => self::CONNECTOR_VERSION,
       'schema_version' => self::SCHEMA_VERSION,
       'platform_reporting' => $this->platformReporting ? 'enabled' : 'disabled',
+      'status_reporting' => $this->statusReporting ? 'enabled' : 'disabled',
     ];
     // PHP encodes an empty array as a list, which is not an object.
     if ($this->platformReporting && $this->platform !== []) {
@@ -206,6 +222,12 @@ class PayloadBuilder {
     }
     if ($this->readiness !== NULL) {
       $payload['upgrade_status'] = $this->readiness;
+    }
+    if ($this->requirements === FALSE) {
+      $this->requirements = $this->statusReporting && $this->statusReport ? ($this->statusReport)() : NULL;
+    }
+    if ($this->requirements !== NULL) {
+      $payload['status_report'] = $this->requirements;
     }
     return $payload;
   }

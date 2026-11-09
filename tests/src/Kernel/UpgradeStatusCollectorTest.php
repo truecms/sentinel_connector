@@ -8,10 +8,13 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Site\Settings;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ConnectionChecker;
 use Drupal\sentinel_connector\PayloadBuilder;
 use Drupal\sentinel_connector\PushLimitFormatter;
 use Drupal\sentinel_connector\SentinelClient;
+use Drupal\sentinel_connector\SiteUuidResolver;
+use Drupal\sentinel_connector\StatusReportCollector;
 use Drupal\sentinel_connector\SyncService;
 use Drupal\sentinel_connector\UpgradeStatusCollector;
 use Drupal\upgrade_status\ProjectCollector;
@@ -72,6 +75,9 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->setSetting('sentinel_connector.api_base_url', 'https://sentinel.example.com');
     $this->config('sentinel_connector.settings')
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
+      // These tests count log entries; StatusReportCollectorTest covers
+      // the status report.
+      ->set('report_status_report', FALSE)
       ->save();
     $this->container->get('state')->set('sentinel_connector.api_key', 'sk_test');
     $this->setClock($this->now);
@@ -213,7 +219,7 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
     $this->assertNull($this->collect());
     $body = $this->push();
     $this->assertArrayNotHasKey('upgrade_status', $body);
-    $this->assertSame(4, $body['schema_version']);
+    $this->assertSame(5, $body['schema_version']);
   }
 
   /**
@@ -603,6 +609,204 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
   }
 
   /**
+   * The scan key the CI scan report tests use.
+   */
+  protected const SCAN_KEY = 'sk_scan_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function tearDown(): void {
+    putenv('SENTINEL_SCAN_KEY');
+    parent::tearDown();
+  }
+
+  /**
+   * A scan report sends the stored result to the scan route and runs no scan.
+   *
+   * It works with the off switch set, reporting off and no connector API key,
+   * which is how a CI build usually looks.
+   */
+  public function testScanReport(): void {
+    $this->setProjects(['site_a' => ['custom', 'rector'], 'token' => ['contrib', 'relax']], ['site_a' => 1792890000]);
+    $this->setSetting('sentinel_connector.disabled', TRUE);
+    $this->config('sentinel_connector.settings')->set('report_upgrade_status', FALSE)->save();
+    $this->container->get('state')->delete('sentinel_connector.api_key');
+    putenv('SENTINEL_SCAN_KEY=' . self::SCAN_KEY);
+    $this->mockSentinel(new Response(200, [], '{"outcome":"stored"}'));
+
+    $command = $this->command(0);
+    $command->upgradeStatus(['scan-report' => TRUE, 'scan-started' => '1792880000']);
+    $this->assertFalse($command->scanned);
+    $this->assertCount(1, $this->transactions);
+    $request = $this->transactions[0]['request'];
+    $this->assertSame('https://sentinel.example.com/api/v1/sites/11111111-1111-4111-8111-111111111111/upgrade-readiness/scan', (string) $request->getUri());
+    $this->assertSame(self::SCAN_KEY, $request->getHeaderLine('X-Scan-Key'));
+    $this->assertSame('', $request->getHeaderLine('X-API-Key'));
+    $body = json_decode((string) $request->getBody(), TRUE);
+    $this->assertSame(['upgrade_status'], array_keys($body));
+    $this->assertSame('not_ready', $body['upgrade_status']['status']);
+    // Ordered by the job's start, not by when the report was built.
+    $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', 1792880000), $body['upgrade_status']['generated_at']);
+    // Counts only: no project name leaves the build.
+    $this->assertStringNotContainsString('site_a', (string) $request->getBody());
+    $this->assertStringNotContainsString('token', (string) $request->getBody());
+
+    $messages = implode("\n", array_column($command->buffer->cleanLogs(), 1));
+    $this->assertStringContainsString('readiness: not_ready', $messages);
+    $this->assertStringContainsString('shows this scan', $messages);
+    $this->assertStringNotContainsString('sk_scan_', $messages);
+  }
+
+  /**
+   * A custom project the CI scan did not cover is reported as a failed scan.
+   */
+  public function testScanReportIncompleteScan(): void {
+    putenv('SENTINEL_SCAN_KEY=' . self::SCAN_KEY);
+    // site_b kept a result from before this scan started.
+    $this->setProjects([
+      'site_a' => ['custom', 'relax'],
+      'site_b' => ['custom', 'relax'],
+    ], ['site_a' => 1792890000, 'site_b' => 1792800000]);
+    $this->mockSentinel(new Response(200, [], '{"outcome":"problem_stored"}'));
+    $command = $this->command(0);
+    try {
+      $command->upgradeStatus(['scan-report' => TRUE, 'scan-started' => '1792880000']);
+      $this->fail('A stale project result must fail the report.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('did not finish for 1 custom', $e->getMessage());
+    }
+    $this->assertCount(1, $this->transactions);
+    $body = json_decode((string) $this->transactions[0]['request']->getBody(), TRUE);
+    $this->assertSame(['problem'], array_keys($body));
+    $this->assertSame('scan_failed', $body['problem']['reason']);
+    $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', 1792880000), $body['problem']['generated_at']);
+
+    // Without the start time a stale result is not caught, but a missing
+    // scan still is.
+    $this->setProjects([
+      'site_a' => ['custom', 'relax'],
+      'site_b' => ['custom', 'relax'],
+    ], ['site_a' => 1792890000]);
+    $this->mockSentinel(new Response(200, [], '{"outcome":"problem_stored"}'));
+    $command = $this->command(0);
+    try {
+      $command->upgradeStatus(['scan-report' => TRUE]);
+      $this->fail('A missing project scan must fail the report.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('did not finish for 1 custom', $e->getMessage());
+    }
+
+    // A start time that is not a Unix time sends nothing.
+    $this->mockSentinel();
+    $command = $this->command(0);
+    try {
+      $command->upgradeStatus(['scan-report' => TRUE, 'scan-started' => 'yesterday']);
+      $this->fail('A malformed start time must fail the report.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('Unix time', $e->getMessage());
+    }
+    $this->assertCount(0, $this->transactions);
+  }
+
+  /**
+   * Without a usable key nothing is sent, and the value is never printed.
+   */
+  public function testScanReportNeedsKey(): void {
+    $this->mockSentinel();
+    foreach (['', 'sk_scan_short', 'sk_live_' . str_repeat('a', 64)] as $value) {
+      putenv('SENTINEL_SCAN_KEY=' . $value);
+      $command = $this->command(0);
+      try {
+        $command->upgradeStatus(['scan-report' => TRUE]);
+        $this->fail('A missing or malformed key must fail the command.');
+      }
+      catch (\RuntimeException $e) {
+        $this->assertStringContainsString('SENTINEL_SCAN_KEY', $e->getMessage());
+        $this->assertStringContainsString('Nothing was sent', $e->getMessage());
+        if ($value !== '') {
+          $this->assertStringNotContainsString($value, $e->getMessage());
+        }
+      }
+    }
+    $this->assertCount(0, $this->transactions);
+  }
+
+  /**
+   * A result that cannot be read tells Sentinel the scan failed, then fails.
+   */
+  public function testScanReportUnreadableResult(): void {
+    $this->setProjects(['site_a' => ['custom', 'relax']], ['site_a' => 1792890000]);
+    $this->container->get('state')->set(ProjectCollector::STATE_MODE, 'throw');
+    putenv('SENTINEL_SCAN_KEY=' . self::SCAN_KEY);
+    $this->mockSentinel(new Response(200, [], '{"outcome":"problem_stored"}'));
+    $command = $this->command(0);
+    try {
+      $command->upgradeStatus(['scan-report' => TRUE]);
+      $this->fail('An unreadable result must fail the command.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('could not be read', $e->getMessage());
+      $this->assertStringContainsString('told the scan did not finish', $e->getMessage());
+    }
+    $this->assertCount(1, $this->transactions);
+    $body = json_decode((string) $this->transactions[0]['request']->getBody(), TRUE);
+    $this->assertSame('scan_failed', $body['problem']['reason']);
+    $this->assertArrayNotHasKey('upgrade_status', $body);
+  }
+
+  /**
+   * A closed scan route passes; a refused key or another answer fails.
+   */
+  public function testScanReportAnswers(): void {
+    $this->setProjects(['site_a' => ['custom', 'relax']], ['site_a' => 1792890000]);
+    putenv('SENTINEL_SCAN_KEY=' . self::SCAN_KEY);
+
+    $this->mockSentinel(new Response(404, [], '{"detail":"Not Found"}'));
+    $closed = $this->command(0);
+    $closed->upgradeStatus(['scan-report' => TRUE]);
+    $this->assertStringContainsString('does not take CI upgrade scans', implode("\n", array_column($closed->buffer->cleanLogs(), 1)));
+
+    foreach ([
+      [new Response(401, [], '{"detail":"Invalid scan key"}'), 'refused the scan key'],
+      [new Response(409, [], '{"detail":"scan_site_not_reported"}'), 'has not reported its Drupal version'],
+      [new Response(500, [], 'oops'), 'did not accept'],
+    ] as [$response, $text]) {
+      $this->mockSentinel($response);
+      $command = $this->command(0);
+      try {
+        $command->upgradeStatus(['scan-report' => TRUE]);
+        $this->fail('A refused report must fail the command.');
+      }
+      catch (\RuntimeException $e) {
+        $this->assertStringContainsString($text, $e->getMessage());
+        $this->assertStringNotContainsString('sk_scan_', $e->getMessage());
+      }
+    }
+  }
+
+  /**
+   * Without Upgrade Status in the build nothing is sent.
+   */
+  public function testScanReportWithoutUpgradeStatus(): void {
+    $this->container->get('module_installer')->uninstall(['upgrade_status']);
+    putenv('SENTINEL_SCAN_KEY=' . self::SCAN_KEY);
+    $this->mockSentinel();
+    $command = $this->command(0);
+    try {
+      $command->upgradeStatus(['scan-report' => TRUE]);
+      $this->fail('A build without Upgrade Status must fail the command.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('not enabled in this build', $e->getMessage());
+    }
+    $this->assertCount(0, $this->transactions);
+  }
+
+  /**
    * The update hook turns reporting on for existing sites.
    */
   public function testUpdateHook(): void {
@@ -773,6 +977,10 @@ class UpgradeStatusCollectorTest extends KernelTestBase {
       $this->container->get(PushLimitFormatter::class),
       $this->container->get(UpgradeStatusCollector::class),
       $this->container->get(ConnectionChecker::class),
+      $this->container->get(StatusReportCollector::class),
+      $this->container->get(ApiBaseUrlResolver::class),
+      $this->container->get(SiteUuidResolver::class),
+      $this->container->get(SentinelClient::class),
     );
     $command->exit = $exit;
     $command->buffer = new BufferLogger();

@@ -40,6 +40,30 @@ Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
 
+## Upgrading to 1.6.0
+
+Release `1.6.0` sends payload v5 and adds
+[`--scan-report`](#full-scan-in-ci---scan-report) for a full upgrade scan in
+your own CI. Payload v5 adds the `status_reporting` field and the
+optional `status_report` block
+([Drupal status report](#drupal-status-report-errors-and-warnings)). Upgrade
+only after the receiving Sentinel accepts payload v5: an older Sentinel
+refuses the push. Then:
+
+```bash
+composer require drupal/sentinel_connector:^1.6 --with-all-dependencies
+drush updb
+```
+
+Update `10007` turns on `report_status_report`, also on sites upgraded from
+1.5.x. Export configuration afterwards (`drush cex`), or add
+`report_status_report: true` to the site's `sentinel_connector.settings.yml`,
+so a later import keeps it. To keep it off, set it to `false` before the
+import, or in `settings.php`. Preview what would be sent with
+`drush sentinel_connector:status-report`.
+
+Sites upgrading from a release before 1.5.0 also follow the 1.5.0 steps below.
+
 ## Upgrading to 1.5.0
 
 Release `1.5.0` keeps payload v4 and adds the optional `upgrade_status` block
@@ -192,10 +216,10 @@ A `POST` to `{api_base_url}/api/v1/sites/{site_uuid}/modules/sync` with an
 list of installed modules (machine name, display name, type, enabled, version,
 description). Every sync is a full snapshot (`full_sync: true`).
 
-The payload is `schema_version: 4`. The `site` block holds only the `uuid`:
-the site URL and name are not sent. `platform_reporting` is always sent,
-`"enabled"` or `"disabled"`, so Sentinel can tell a site that turned platform
-reporting off from one whose versions could not be read.
+The payload is `schema_version: 5`. The `site` block holds only the `uuid`:
+the site URL and name are not sent. `platform_reporting` and
+`status_reporting` are always sent, `"enabled"` or `"disabled"`, so Sentinel
+can tell a site that turned reporting off from one that could not read it.
 
 With **Report platform versions** on (the default), the `platform` block
 reports the stack Sentinel matches against known vulnerabilities. Turned off,
@@ -204,7 +228,9 @@ the stack is not read and no `platform` block is sent;
 on it.
 
 The optional `upgrade_status` block is described in
-[Drupal upgrade readiness](#drupal-upgrade-readiness-upgrade-status-integration).
+[Drupal upgrade readiness](#drupal-upgrade-readiness-upgrade-status-integration),
+the `status_report` block in
+[Drupal status report](#drupal-status-report-errors-and-warnings).
 
 | Part | Fields | Source |
 |------|--------|--------|
@@ -350,6 +376,42 @@ drush sentinel_connector:sync
 With the [off switch](#several-environments) set, the command exits 0 and scans
 nothing.
 
+#### Full scan in CI (`--scan-report`)
+
+A full scan can run in your own CI pipeline instead of on production, with
+your site image and a sanitised copy of your database. Sentinel's
+`truecms/sentinel-upgrade-scan` action runs the scan, then calls:
+
+```bash
+started=$(date +%s)
+# Exit code 3 means the scan found problems: that is a result, not a failure.
+drush upgrade_status:analyze --all || [ $? -eq 3 ]
+SENTINEL_SCAN_KEY=sk_scan_... drush sentinel_connector:upgrade-status --scan-report --scan-started="$started"
+```
+
+- It runs no scan. It reads the result Upgrade Status stored and sends it to
+  Sentinel's CI scan route.
+- The only credential is the site's scan key, from the site's Setup tab in
+  Sentinel, in `SENTINEL_SCAN_KEY`. Keep it in your CI secrets. It is never
+  printed. The connector API key is not needed.
+- The Site UUID and the API base URL come from the usual settings, for
+  example `SENTINEL_CONNECTOR_SITE_UUID`.
+- It ignores the off switch and the reporting switch, so it works in a build
+  that shares `settings.php` with production.
+- It sends counts only, like a push.
+- A custom project with no good scan since `--scan-started` (a failed scan,
+  or a result older than this scan) is not sent as a result: Sentinel is told
+  the scan did not finish (`scan_failed`) and the command fails. Without
+  `--scan-started` only failed and missing scans are caught.
+- With `--scan-started`, the report and any failure carry that time as
+  `generated_at`, so Sentinel orders CI jobs that finish out of order by when
+  they started.
+- Exit codes: 0 when Sentinel accepted the scan, or when Sentinel does not
+  take CI scans for the site yet. Not 0 when the key is missing or refused,
+  the result cannot be read (Sentinel is told the scan failed), or Sentinel
+  refuses the scan.
+- Needs connector 1.6.0 or later in the build.
+
 Turn reporting off with **Report Upgrade Status readiness to Sentinel** in the
 Integrations section of the settings form (`report_upgrade_status: false`), or
 in `settings.php`, which takes precedence:
@@ -359,6 +421,89 @@ $settings['sentinel_connector.report_upgrade_status'] = FALSE;
 ```
 
 The block is then left out, as it is when Upgrade Status is not enabled.
+
+### Drupal status report (errors and warnings)
+
+The `status_report` block carries the errors and warnings of the site's own
+status report (**Reports → Status report**, `/admin/reports/status`), so
+Sentinel can show "database updates not run" or "trusted host patterns not
+set" without anyone signing in to the site. OK and information items are
+never sent.
+
+```json
+"status_reporting": "enabled",
+"status_report": {
+  "status": "reported",
+  "checked_at": "2026-11-07T01:02:03Z",
+  "context": "web",
+  "left_out": [],
+  "items": [
+    {
+      "key": "trusted_host_patterns",
+      "severity": "error",
+      "title": "Trusted Host Settings",
+      "value": "Not enabled",
+      "description": "The trusted_host_patterns setting is not configured in settings.php. ...",
+      "provider": "system"
+    }
+  ]
+}
+```
+
+- The list is built as Drupal builds the status report: the runtime
+  requirement hooks (`hook_requirements('runtime')`, and on Drupal 11.2 and
+  later `hook_runtime_requirements()`), then their alter hooks. Each module's
+  hook is called on its own, so each item names the module that produced it
+  (`provider`). A hook that throws is skipped and logged once.
+- Each text is sent as plain text: render arrays are rendered, HTML and links
+  are removed and entities decoded. The Drupal root, the private files path
+  and the temporary path are replaced with `[site root]`, `[private files]`
+  and `[temporary files]`.
+- Limits: `key` 128 characters (`a-z`, `0-9`, `_ . : -`; other characters
+  become `_`), `title` 200, `value` 300, `description` 1,000 (cut on a word
+  with `…`), at most 100 items, errors first.
+- The connector's own Sentinel Connector check is not sent: it describes the
+  pushes, which Sentinel knows.
+
+**Where it is built.** Some checks are only right on the web server (OPcache,
+APCu, output buffering, upload progress, the PHP memory limit, the SameSite
+cookie attribute), and some contrib checks are slow. So, after a web response
+has been sent, at most once every 12 hours and by one request at a time, the
+module builds the list and keeps it in state
+(`sentinel_connector.status_report_snapshot`); page cache hits and
+`update.php` never build it. The visitor never waits for it. A sync sends
+that snapshot (`context: "web"`) while it is newer than 24 hours. Otherwise a
+sync from cron or Drush builds the list itself from the command line
+(`context: "cli"`) and leaves out the checks that are wrong there, listing
+their keys in `left_out`. **Sync now** on the settings form never builds it
+while you wait: it sends the last snapshot, or no block before the first
+one. A cache rebuild (`drush cr`, `drush deploy`, enabling a module)
+forgets the snapshot, so the next sync reports the deployed site. The list is
+built in the site's default language, whatever the language of the request.
+
+A build over 20 seconds, or one that fails, is sent as
+`"status": "unavailable"` with `reason` `timeout` or `collector_failed` and no
+items; the last good snapshot is kept. The push never fails because of it.
+
+The block is part of the push fingerprint except `checked_at`: a changed list
+is pushed at the next cron run, an unchanged one is not.
+
+Preview what would be sent (a fresh command line build; nothing is sent):
+
+```bash
+drush sentinel_connector:status-report
+drush sentinel_connector:status-report --format=json
+```
+
+Turn it off with **Report the Drupal status report (errors and warnings)** on
+the settings form (`report_status_report: false`), or in `settings.php`, which
+takes precedence:
+
+```php
+$settings['sentinel_connector.report_status_report'] = FALSE;
+```
+
+The payload then sends `status_reporting: "disabled"` and no block.
 
 ## Configuration
 
@@ -372,6 +517,7 @@ Admin UI: **Configuration → Web services → Sentinel Connector**
 | Report scope | `all` (default): Drupal core, contrib and custom modules. `core_contrib`: Drupal core and contrib; custom modules are not sent |
 | Report configuration drift | On by default. Sends the names of configuration objects that differ from the sync directory, never their values; see [Configuration drift](#configuration-drift) |
 | Report platform versions | On by default. Sends the web server, database and OS versions and their system package versions. The PHP version is always sent |
+| Report the Drupal status report (errors and warnings) | On by default. Sends the errors and warnings of the status report as plain text; see [Drupal status report](#drupal-status-report-errors-and-warnings). Can be set in `settings.php` |
 | Integrations | Closed until Upgrade Status is enabled. Upgrade Status: detected or not, version, last scan, **Report Upgrade Status readiness to Sentinel** (on by default) and the scan command. Config PR: detected or not, with a link to its settings |
 
 The form shows the Sentinel API base URL in use and where it comes from

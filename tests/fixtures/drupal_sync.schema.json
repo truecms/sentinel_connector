@@ -616,7 +616,8 @@
                 1,
                 2,
                 3,
-                4
+                4,
+                5
             ]
         },
         "platform_reporting": {
@@ -625,6 +626,148 @@
                 "enabled",
                 "disabled"
             ]
+        },
+        "status_reporting": {
+            "type": "string",
+            "enum": [
+                "enabled",
+                "disabled"
+            ]
+        },
+        "status_report": {
+            "type": "object",
+            "required": [
+                "status",
+                "checked_at",
+                "context",
+                "left_out"
+            ],
+            "additionalProperties": false,
+            "oneOf": [
+                {
+                    "required": [
+                        "items"
+                    ],
+                    "not": {
+                        "required": [
+                            "reason"
+                        ]
+                    },
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "reported"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "reason"
+                    ],
+                    "not": {
+                        "required": [
+                            "items"
+                        ]
+                    },
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "unavailable"
+                            ]
+                        }
+                    }
+                }
+            ],
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "reported",
+                        "unavailable"
+                    ]
+                },
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "timeout",
+                        "collector_failed"
+                    ]
+                },
+                "checked_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2})$"
+                },
+                "context": {
+                    "type": "string",
+                    "enum": [
+                        "web",
+                        "cli"
+                    ]
+                },
+                "left_out": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "uniqueItems": true,
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[a-z0-9_.:-]+$"
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "key",
+                            "severity",
+                            "title",
+                            "value",
+                            "description",
+                            "provider"
+                        ],
+                        "properties": {
+                            "key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[a-z0-9_.:-]+$"
+                            },
+                            "severity": {
+                                "type": "string",
+                                "enum": [
+                                    "error",
+                                    "warning"
+                                ]
+                            },
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                            },
+                            "value": {
+                                "type": "string",
+                                "maxLength": 300
+                            },
+                            "description": {
+                                "type": "string",
+                                "maxLength": 1000
+                            },
+                            "provider": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "pattern": "^[a-z0-9_]+$"
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -59,6 +59,9 @@ class PushLimitTest extends KernelTestBase {
     $this->config('sentinel_connector.settings')
       ->set('site_uuid', '11111111-1111-4111-8111-111111111111')
       ->set('enabled', TRUE)
+      // These tests count log entries; StatusReportCollectorTest covers
+      // the status report.
+      ->set('report_status_report', FALSE)
       ->save();
     \Drupal::state()->set('sentinel_connector.api_key', 'sk_test');
 

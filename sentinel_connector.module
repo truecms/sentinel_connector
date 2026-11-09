@@ -26,3 +26,11 @@ function sentinel_connector_cron(): void {
 function sentinel_connector_modules_installed(array $modules): void {
   (new SentinelHooks(\Drupal::getContainer()))->modulesInstalled($modules);
 }
+
+/**
+ * Implements hook_rebuild() for Drupal versions without OOP hooks.
+ */
+#[LegacyHook]
+function sentinel_connector_rebuild(): void {
+  (new SentinelHooks(\Drupal::getContainer()))->rebuild();
+}

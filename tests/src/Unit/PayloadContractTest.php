@@ -169,6 +169,102 @@ class PayloadContractTest extends TestCase {
   }
 
   /**
+   * Every case of the shared v5 fixture matches the schema.
+   */
+  public function testV5FixtureMatchesSchema(): void {
+    $cases = self::v5Cases();
+    $this->assertArrayHasKey('reported_web', $cases);
+    $this->assertArrayHasKey('disabled', $cases);
+    foreach ($cases as $case => $payload) {
+      $this->assertSame(5, $payload['schema_version']);
+      $this->assertSame('1.6.0', $payload['connector_version']);
+      $this->assertSame([], $this->errors($payload), "Fixture case $case must match the schema.");
+      $this->assertSame($payload['status_reporting'] === 'enabled', isset($payload['status_report']), "Case $case sends the block only when reporting is enabled.");
+    }
+  }
+
+  /**
+   * A built v5 payload with a status report matches the schema.
+   */
+  public function testBuiltStatusReportPayloadMatchesSchema(): void {
+    $list = $this->createMock(ModuleExtensionList::class);
+    $list->method('reset')->willReturnSelf();
+    $list->method('getList')->willReturn([]);
+    $block = self::v5Cases()['reported_cli']['status_report'];
+    $payload = (new PayloadBuilder($list, '11.2.5', '8.4.12', '203.0.113.4', NULL, [], NULL, TRUE, NULL, TRUE, fn () => $block))->build('all');
+    $payload['site'] = ['uuid' => '11111111-1111-4111-8111-111111111111'];
+    $this->assertSame(PayloadBuilder::SCHEMA_VERSION, $payload['schema_version']);
+    $this->assertSame('enabled', $payload['status_reporting']);
+    $this->assertSame($block, $payload['status_report']);
+    $this->assertSame([], $this->errors($payload));
+
+    $off = (new PayloadBuilder($list, '11.2.5', '8.4.12', '203.0.113.4', NULL, [], NULL, TRUE, NULL, FALSE, fn () => $block))->build('all');
+    $this->assertSame('disabled', $off['status_reporting']);
+    $this->assertArrayNotHasKey('status_report', $off);
+  }
+
+  /**
+   * The schema refuses status report blocks Sentinel would refuse.
+   *
+   * @param array<string, mixed> $block
+   *   The status_report block.
+   *
+   * @dataProvider invalidStatusReport
+   */
+  #[DataProvider('invalidStatusReport')]
+  public function testStatusReportSchemaRefusesBadBlocks(array $block): void {
+    $payload = self::v5Cases()['reported_web'];
+    $payload['status_report'] = $block;
+    $this->assertNotSame([], $this->errors($payload));
+  }
+
+  /**
+   * Status report blocks the schema refuses.
+   *
+   * @return array<string, array{array<string, mixed>}>
+   *   Blocks keyed by case.
+   */
+  public static function invalidStatusReport(): array {
+    $cases = self::v5Cases();
+    $block = $cases['reported_web']['status_report'];
+    $unavailable = $cases['unavailable_timeout']['status_report'];
+    $item = $block['items'][0];
+    return [
+      'ok item' => [['items' => [['severity' => 'ok'] + $item]] + $block],
+      'info item' => [['items' => [['severity' => 'info'] + $item]] + $block],
+      'extra item field' => [['items' => [$item + ['link' => 'https://example.com']]] + $block],
+      'upper case key' => [['items' => [['key' => 'Trusted_Host'] + $item]] + $block],
+      'long key' => [['items' => [['key' => str_repeat('a', 129)] + $item]] + $block],
+      'empty title' => [['items' => [['title' => ''] + $item]] + $block],
+      'long title' => [['items' => [['title' => str_repeat('a', 201)] + $item]] + $block],
+      'long value' => [['items' => [['value' => str_repeat('a', 301)] + $item]] + $block],
+      'long description' => [['items' => [['description' => str_repeat('a', 1001)] + $item]] + $block],
+      'bad provider' => [['items' => [['provider' => 'Search API'] + $item]] + $block],
+      'more than 100 items' => [['items' => array_fill(0, 101, $item)] + $block],
+      'unknown context' => [['context' => 'drush'] + $block],
+      'reported with a reason' => [['reason' => 'timeout'] + $block],
+      'unknown status' => [['status' => 'partial'] + $block],
+      'unavailable without a reason' => [array_diff_key($unavailable, ['reason' => TRUE])],
+      'unavailable with items' => [$unavailable + ['items' => []]],
+      'unknown reason' => [['reason' => 'error'] + $unavailable],
+      'local time' => [['checked_at' => '2026-11-07 01:02:03'] + $block],
+      'extra field' => [$block + ['html' => '<p>x</p>']],
+    ];
+  }
+
+  /**
+   * The cases of the shared v5 fixture, without the comment.
+   *
+   * @return array<string, array<string, mixed>>
+   *   Payloads keyed by case.
+   */
+  private static function v5Cases(): array {
+    $cases = json_decode((string) file_get_contents(dirname(__DIR__, 3) . '/tests/fixtures/drupal_sync_v5.json'), TRUE);
+    unset($cases['_comment']);
+    return $cases;
+  }
+
+  /**
    * The schema refuses names, unknown values or extra keys in upgrade_status.
    *
    * @param array<string, mixed> $block

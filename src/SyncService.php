@@ -145,6 +145,19 @@ class SyncService {
   protected ?string $pendingUpgradeStatus = NULL;
 
   /**
+   * State key: hash of the status report block in the last accepted push.
+   *
+   * A build that timed out or failed counts as this one, so a passing
+   * failure and its recovery do not push twice.
+   */
+  public const STATE_LAST_STATUS_REPORT = 'sentinel_connector.last_status_report';
+
+  /**
+   * Hash of the status report block in the fingerprint of the push sent.
+   */
+  protected ?string $pendingStatusReport = NULL;
+
+  /**
    * Constructs the sync service.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -223,6 +236,7 @@ class SyncService {
     $this->pendingFingerprint = NULL;
     $this->pendingDrift = NULL;
     $this->pendingUpgradeStatus = NULL;
+    $this->pendingStatusReport = NULL;
     if ($this->isDisabled()) {
       // Nothing is sent and nothing is recorded: the switch is not an outcome
       // of a push.
@@ -372,6 +386,7 @@ class SyncService {
     $this->pendingFingerprint = $this->fingerprint($payload, TRUE);
     $this->pendingDrift = $this->driftPart($payload, TRUE)['report'] ?? NULL;
     $this->pendingUpgradeStatus = $this->upgradeStatusPart($payload, TRUE);
+    $this->pendingStatusReport = $this->statusReportPart($payload, TRUE);
 
     $result = $this->client->sync($baseUrl, $uuid, $apiKey, $payload);
     return $result;
@@ -404,7 +419,8 @@ class SyncService {
    * a web request and the command line, and between containers, without
    * anything being deployed. The daily resend still reports them.
    * The drift report counts as returned by driftPart(), the readiness block
-   * as returned by upgradeStatusPart().
+   * as returned by upgradeStatusPart(), the status report as returned by
+   * statusReportPart().
    * The API base URL is added: a push accepted by one Sentinel says nothing
    * about another.
    *
@@ -417,6 +433,7 @@ class SyncService {
     unset($payload['drupal_info']['ip_address'], $payload['platform']['php'], $payload['platform']['os']);
     $payload['config_drift'] = $this->driftPart($payload, $sent);
     $payload['upgrade_status'] = $this->upgradeStatusPart($payload, $sent);
+    $payload['status_report'] = $this->statusReportPart($payload, $sent);
     $modules = [];
     foreach ($payload['modules'] ?? [] as $module) {
       ksort($module);
@@ -495,6 +512,53 @@ class SyncService {
     unset($block['generated_at']);
     ksort($block);
     return hash('sha256', json_encode($block, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+  }
+
+  /**
+   * The part of the status report block that counts as an inventory change.
+   *
+   * The items, the context and the left-out keys count; the time of the
+   * check and the "last run" value of the cron item do not, so a changed
+   * list pushes at the next cron and an unchanged one does not. A build
+   * that timed out or failed counts as the block of the last accepted push;
+   * one that is sent counts by its status and reason.
+   *
+   * @param array<string, mixed> $payload
+   *   The payload sent to Sentinel.
+   * @param bool $sent
+   *   TRUE for the payload being sent, FALSE to check whether one is due.
+   *
+   * @return string|null
+   *   A hash of the block, NULL when the payload has none.
+   */
+  protected function statusReportPart(array $payload, bool $sent = FALSE): ?string {
+    $block = $payload['status_report'] ?? NULL;
+    if (!is_array($block)) {
+      // A web request before the first snapshot sends no block; that says
+      // nothing new, so it counts as the last accepted one.
+      if (($payload['status_reporting'] ?? NULL) === 'enabled') {
+        $last = $this->state->get(self::STATE_LAST_STATUS_REPORT);
+        return is_string($last) && $last !== '' ? $last : NULL;
+      }
+      return NULL;
+    }
+    $transient = ($block['status'] ?? NULL) === StatusReportCollector::STATUS_UNAVAILABLE;
+    $last = $transient && !$sent ? $this->state->get(self::STATE_LAST_STATUS_REPORT) : NULL;
+    if (is_string($last) && $last !== '') {
+      return $last;
+    }
+    $part = $transient
+      ? array_intersect_key($block, array_flip(['status', 'reason']))
+      : array_intersect_key($block, array_flip(['status', 'context', 'left_out', 'items']));
+    // Cron's value says how long ago it last ran, which changes with every
+    // build; its severity and description still count.
+    foreach ($part['items'] ?? [] as $index => $item) {
+      if (is_array($item) && ($item['key'] ?? NULL) === 'cron') {
+        unset($part['items'][$index]['value']);
+      }
+    }
+    ksort($part);
+    return hash('sha256', json_encode($part, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
   }
 
   /**
@@ -686,6 +750,7 @@ class SyncService {
         $this->state->set(self::STATE_LAST_FINGERPRINT, $this->pendingFingerprint);
         $this->state->set(self::STATE_LAST_DRIFT, $this->pendingDrift);
         $this->state->set(self::STATE_LAST_UPGRADE_STATUS, $this->pendingUpgradeStatus);
+        $this->state->set(self::STATE_LAST_STATUS_REPORT, $this->pendingStatusReport);
       }
     }
     $this->state->set('sentinel_connector.last_result', $result->status);

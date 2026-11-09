@@ -3,6 +3,64 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.6.0 - 2026-11-09
+
+Sends payload `schema_version: 5`. A Sentinel that does not know version 5
+refuses the push, so deploy truecms/sentinel#2314 first. The new
+`--scan-report` mode talks only to the CI scan route of Sentinel
+truecms/sentinel#2010; while that route is closed it answers 404 and the
+command exits 0.
+
+### Added
+
+- An optional `status_report` block with the errors and warnings of the
+  site's Drupal status report (truecms/sentinel_connector#52,
+  truecms/sentinel#2313): `key`, `severity` (`error` or `warning`), `title`,
+  `value`, `description` and the module that produced each item
+  (`provider`). OK and information items are never sent. Texts are plain
+  text with links and HTML removed and the site root, private files and
+  temporary paths replaced; fields are cut to fixed limits and at most 100
+  items are sent, errors first. Works with `hook_requirements('runtime')` and
+  the Drupal 11.2 `hook_runtime_requirements()` and severity enum.
+- The list is built after a web response at most every 12 hours, under a
+  lock, in the site's default language, and kept in state; page cache hits
+  and `update.php` never build it. A cache rebuild forgets it.
+  Without a web snapshot from the last 24 hours, the sync builds it from the
+  command line and lists the left-out web-only checks in `left_out`. A build
+  over 20 seconds or a failed one sends `unavailable` with `timeout` or
+  `collector_failed` and never fails the push.
+- `status_reporting` (`enabled` or `disabled`) is always sent.
+- The block is part of the push fingerprint, except `checked_at`.
+- **Report the Drupal status report (errors and warnings)**
+  (`report_status_report`) on the settings form, on by default and
+  overridable with `$settings['sentinel_connector.report_status_report']`.
+  Update `10007` turns it on for existing sites, including sites upgraded
+  from 1.5.x; export configuration afterwards (`drush cex`).
+- `drush sentinel_connector:status-report` (`--format=json`) prints the block
+  a push would send, from a fresh command line build. It sends nothing.
+- Shared payload v5 examples in `tests/fixtures/drupal_sync_v5.json`.
+- `drush sentinel_connector:upgrade-status --scan-report` sends the result
+  Upgrade Status stored to Sentinel's CI scan route, for a full upgrade scan
+  run in the customer's own CI (truecms/sentinel#2012). It runs no scan: the CI
+  job runs `drush upgrade_status:analyze --all` first.
+  - The only credential is the site's scan key, read from
+    `SENTINEL_SCAN_KEY` and sent in `X-Scan-Key`. It is never printed or
+    logged, and no connector API key is needed.
+  - It works with the off switch set and with readiness reporting turned
+    off, because CI builds usually share `settings.php` with production.
+  - It sends the same counts-only block as a push: no project names, paths
+    or messages.
+  - A result that cannot be read, or a custom project with no good scan
+    since `--scan-started`, tells Sentinel the scan failed (`scan_failed`)
+    and fails the command. A closed scan route exits 0. A
+    refused key, a site that has not reported yet, or another refusal fails
+    the command.
+
+### Requires
+
+- A Sentinel release that accepts payload version 5 (truecms/sentinel#2314),
+  deployed before upgrading clients.
+
 ## 1.5.0 - 2026-11-02
 
 Keeps payload `schema_version: 4` and adds an optional block to it. Connector

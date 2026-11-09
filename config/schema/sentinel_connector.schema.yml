@@ -20,6 +20,9 @@ sentinel_connector.settings:
     report_platform:
       type: boolean
       label: 'Report platform versions'
+    report_status_report:
+      type: boolean
+      label: 'Report the Drupal status report errors and warnings'
     api_key_id:
       type: string
       label: 'Key module key holding the API key'
