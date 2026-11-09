@@ -66,7 +66,9 @@ class StatusReportTestHooks {
    */
   #[Hook('runtime_requirements_alter')]
   public function runtimeRequirementsAlter(array &$requirements): void {
-    foreach (\Drupal::state()->get('sentinel_status_report_test.alter', []) as $key => $item) {
+    /** @var array<string, array<string, mixed>> $items */
+    $items = \Drupal::state()->get('sentinel_status_report_test.alter', []);
+    foreach ($items as $key => $item) {
       $requirements[$key] = $item;
     }
   }

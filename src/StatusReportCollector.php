@@ -435,6 +435,8 @@ class StatusReportCollector {
           $hook($altered);
           return TRUE;
         });
+        // An alter hook can replace the array with another type.
+        // @phpstan-ignore function.alreadyNarrowedType
         if ($result === TRUE && is_array($altered)) {
           foreach ($altered as $key => $item) {
             if (is_array($item) && !isset($item['#provider'])) {
