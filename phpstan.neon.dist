@@ -7,6 +7,11 @@ parameters:
     - sentinel_connector.install
     - modules
   ignoreErrors:
+    # An alter hook can replace the array with another type; newer PHPStan
+    # versions do not report the check.
+    - identifier: function.alreadyNarrowedType
+      path: src/StatusReportCollector.php
+      reportUnmatched: false
     # PHPUnit 9 ignores attributes; newer versions use them instead of annotations.
     - message: '#^Attribute class PHPUnit\\Framework\\Attributes\\(RunTestsInSeparateProcesses|Group|DataProvider|CoversMethod|AllowMockObjectsWithoutExpectations) does not exist\.$#'
       paths:
