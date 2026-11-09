@@ -14,6 +14,23 @@ use Drupal\sentinel_connector\SettingsUpgrade;
 use Drupal\sentinel_connector\SyncService;
 
 /**
+ * Implements hook_uninstall().
+ *
+ * Drupal removes the module's configuration. This deletes the values the
+ * module keeps in State: the sync status, the deprecated API key saved on the
+ * settings form, and the value of the API key moved into Key's State
+ * provider. A Key module key that the module created stays, because the site
+ * may have moved it to another provider; delete it on the Keys page.
+ */
+function sentinel_connector_uninstall(bool $is_syncing): void {
+  $names = array_filter(
+    array_keys(\Drupal::keyValue('state')->getAll()),
+    static fn (string $name): bool => str_starts_with($name, 'sentinel_connector.'),
+  );
+  \Drupal::state()->deleteMultiple(array_values($names));
+}
+
+/**
  * Implements hook_requirements().
  *
  * Supports Drupal versions before the runtime requirements hook.

@@ -6,7 +6,7 @@ fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
 mkdir -p "$fixture/scripts" "$fixture/src" "$fixture/tests/fixtures" \
   "$fixture/modules/sentinel_connector_config_pr"
-for path in scripts/check-release.php src/PayloadBuilder.php CHANGELOG.md README.md \
+for path in scripts/check-release.php src/PayloadBuilder.php CHANGELOG.md UPGRADE.md \
   tests/fixtures/drupal_sync.schema.json sentinel_connector.info.yml \
   modules/sentinel_connector_config_pr/sentinel_connector_config_pr.info.yml; do
   cp "$root/$path" "$fixture/$path"
@@ -45,14 +45,14 @@ refuse 'The first changelog release must match CONNECTOR_VERSION.'
 cp "$root/CHANGELOG.md" "$fixture/CHANGELOG.md"
 replace "$fixture/src/PayloadBuilder.php" "CONNECTOR_VERSION = '$version'" "CONNECTOR_VERSION = '1.2.0'"
 replace "$fixture/CHANGELOG.md" "## $version - " '## 1.2.0 - '
-replace "$fixture/README.md" "## Upgrading to $version" '## Upgrading to 1.2.0'
+replace "$fixture/UPGRADE.md" "## Upgrading to $version" '## Upgrading to 1.2.0'
 refuse 'Payload v3 requires connector 1.3.0 or later; preserve published 1.2.0.'
 cp "$root/src/PayloadBuilder.php" "$fixture/src/PayloadBuilder.php"
 cp "$root/CHANGELOG.md" "$fixture/CHANGELOG.md"
-cp "$root/README.md" "$fixture/README.md"
-replace "$fixture/README.md" "## Upgrading to $version" '## Upgrading'
-refuse 'README upgrade instructions must identify the current release.'
-cp "$root/README.md" "$fixture/README.md"
+cp "$root/UPGRADE.md" "$fixture/UPGRADE.md"
+replace "$fixture/UPGRADE.md" "## Upgrading to $version" '## Upgrading'
+refuse 'UPGRADE.md must identify the current release.'
+cp "$root/UPGRADE.md" "$fixture/UPGRADE.md"
 schema=$(php -r 'preg_match("/SCHEMA_VERSION = ([0-9]+)/", file_get_contents($argv[1]), $m); echo $m[1];' "$fixture/src/PayloadBuilder.php")
 replace "$fixture/src/PayloadBuilder.php" "SCHEMA_VERSION = $schema" "SCHEMA_VERSION = $((schema + 1))"
 refuse 'The payload contract fixture must match SCHEMA_VERSION.'

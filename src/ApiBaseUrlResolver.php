@@ -5,6 +5,7 @@ namespace Drupal\sentinel_connector;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
+use Drupal\Core\StringTranslation\TranslatableMarkup;
 
 /**
  * Resolves the Sentinel API base URL.
@@ -158,33 +159,57 @@ class ApiBaseUrlResolver {
   public static function validate(string $value): array {
     $value = trim($value);
     if ($value === '') {
-      return [NULL, 'The address is empty.'];
+      return [NULL, (string) new TranslatableMarkup('The address is empty.')];
     }
     $parts = parse_url($value);
     if ($parts === FALSE || !isset($parts['scheme'])) {
-      return [NULL, 'The address is not a URL. Use the base URL, for example ' . self::DEFAULT_URL . '.'];
+      return [
+        NULL,
+        (string) new TranslatableMarkup('The address is not a URL. Use the base URL, for example @url.', [
+          '@url' => self::DEFAULT_URL,
+        ]),
+      ];
     }
     // A pasted sync or check endpoint gets a message of its own.
     if (preg_match('#/api(/|\z)#i', $parts['path'] ?? '')) {
-      return [NULL, 'Use the base URL, not the sync endpoint, for example ' . self::DEFAULT_URL . '.'];
+      return [
+        NULL,
+        (string) new TranslatableMarkup('Use the base URL, not the sync endpoint, for example @url.', [
+          '@url' => self::DEFAULT_URL,
+        ]),
+      ];
     }
     $scheme = strtolower($parts['scheme']);
     $host = strtolower($parts['host'] ?? '');
     if ($host === '' || !preg_match('/\A(\[[0-9a-f:.]+\]|[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*)\z/', $host)) {
-      return [NULL, 'The address has no valid host name.'];
+      return [NULL, (string) new TranslatableMarkup('The address has no valid host name.')];
     }
     if (isset($parts['user']) || isset($parts['pass'])) {
-      return [NULL, 'The address must not contain a user name or password.'];
+      return [
+        NULL,
+        (string) new TranslatableMarkup('The address must not contain a user name or password.'),
+      ];
     }
     $local = $host === 'localhost' || str_ends_with($host, '.localhost');
     if ($scheme !== 'https' && !($scheme === 'http' && $local)) {
-      return [NULL, 'The address must start with https://. Plain http:// is allowed only for localhost.'];
+      return [
+        NULL,
+        (string) new TranslatableMarkup('The address must start with https://. Plain http:// is allowed only for localhost.'),
+      ];
     }
     if (isset($parts['query']) || isset($parts['fragment']) || str_contains($value, '?') || str_contains($value, '#')) {
-      return [NULL, 'The address must not have a query string or a fragment.'];
+      return [
+        NULL,
+        (string) new TranslatableMarkup('The address must not have a query string or a fragment.'),
+      ];
     }
     if (($parts['path'] ?? '') !== '' && $parts['path'] !== '/') {
-      return [NULL, 'The address must not have a path. Use the base URL, for example ' . self::DEFAULT_URL . '.'];
+      return [
+        NULL,
+        (string) new TranslatableMarkup('The address must not have a path. Use the base URL, for example @url.', [
+          '@url' => self::DEFAULT_URL,
+        ]),
+      ];
     }
     return [$scheme . '://' . $host . (isset($parts['port']) ? ':' . $parts['port'] : ''), NULL];
   }

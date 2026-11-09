@@ -32,6 +32,8 @@ use Psr\Log\LogLevel;
 #[Group('sentinel_connector')]
 class SyncServicePushLimitTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * The fixed "now" of the test: 2026-10-09T13:00:00Z.
    */

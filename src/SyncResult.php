@@ -2,6 +2,8 @@
 
 namespace Drupal\sentinel_connector;
 
+use Drupal\Core\StringTranslation\TranslatableMarkup;
+
 /**
  * Immutable outcome of a sync attempt.
  */
@@ -93,7 +95,7 @@ final class SyncResult {
    * Creates a result for an asynchronously accepted (202) sync.
    */
   public static function accepted(string $taskId): self {
-    return new self('accepted', 202, 'Sync queued for background processing.', $taskId);
+    return new self('accepted', 202, (string) new TranslatableMarkup('Sync queued for background processing.'), $taskId);
   }
 
   /**

@@ -7,11 +7,14 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\State\StateInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 
 /**
  * Single entry point for a Sentinel sync, shared by cron, drush, and the UI.
  */
 class SyncService {
+
+  use StringTranslationTrait;
 
   /**
    * Fewest seconds between two pushes sent by cron: one push an hour.
@@ -265,13 +268,13 @@ class SyncService {
     }
     catch (\Throwable $e) {
       // Only the class: an exception message may carry request material.
-      $result = SyncResult::failure('internal_error', NULL, 'Sentinel sync could not complete. Check the connector configuration and Drupal logs.', ['class' => get_class($e)]);
+      $result = SyncResult::failure('internal_error', NULL, (string) $this->t('Sentinel sync could not complete. Check the connector configuration and Drupal logs.'), ['class' => get_class($e)]);
     }
     try {
       $this->recordResult($result);
     }
     catch (\Throwable $e) {
-      $result = SyncResult::failure('state_error', $result->httpCode, 'The sync outcome could not be saved. Check Drupal state storage and logs.', [
+      $result = SyncResult::failure('state_error', $result->httpCode, (string) $this->t('The sync outcome could not be saved. Check Drupal state storage and logs.'), [
         'class' => get_class($e),
         'push outcome' => $result->status,
       ] + ($result->taskId !== NULL ? ['task ID' => $result->taskId] : []));
@@ -362,11 +365,11 @@ class SyncService {
     // must not send the key and the inventory somewhere unexpected.
     $baseUrl = $this->urlResolver->getUrl();
     if ($baseUrl === NULL) {
-      return SyncResult::failure('invalid_url', NULL, 'The Sentinel API base URL is not valid. ' . $this->urlResolver->getError() . ' Nothing is sent until this is fixed.');
+      return SyncResult::failure('invalid_url', NULL, (string) $this->t('The Sentinel API base URL is not valid. @error Nothing is sent until this is fixed.', ['@error' => (string) $this->urlResolver->getError()]));
     }
 
     if (trim($stored) === '' || $apiKey === NULL) {
-      $result = SyncResult::failure('unconfigured', NULL, 'Sentinel connector is not fully configured.');
+      $result = SyncResult::failure('unconfigured', NULL, (string) $this->t('Sentinel connector is not fully configured.'));
       return $result;
     }
     // A stored UUID in another notation is sent in the canonical one. One
@@ -375,8 +378,10 @@ class SyncService {
     $uuid = $this->uuidResolver->getUuid();
     if ($uuid === NULL) {
       return SyncResult::failure('unconfigured', NULL, $this->uuidResolver->isOverridden()
-        ? 'The Site UUID set in ' . ($this->uuidResolver->getSource() === SiteUuidResolver::SOURCE_SETTINGS ? 'settings.php' : 'the ' . SiteUuidResolver::ENV_VAR . ' environment variable') . ' is not a valid UUID.'
-        : 'The Site UUID in the Sentinel connector settings is not a valid UUID. Correct it on the settings form.');
+        ? ($this->uuidResolver->getSource() === SiteUuidResolver::SOURCE_SETTINGS
+          ? (string) $this->t('The Site UUID set in settings.php is not a valid UUID.')
+          : (string) $this->t('The Site UUID set in the @variable environment variable is not a valid UUID.', ['@variable' => SiteUuidResolver::ENV_VAR]))
+        : (string) $this->t('The Site UUID in the Sentinel connector settings is not a valid UUID. Correct it on the settings form.'));
     }
     $this->markConfigured();
 
@@ -634,7 +639,7 @@ class SyncService {
     }
     $message = $this->state->get(self::STATE_PUSH_LIMIT_MESSAGE);
     return SyncResult::pushDeferred(
-      is_string($message) && $message !== '' ? $message : SentinelClient::PUSH_LIMIT_FALLBACK_MESSAGE,
+      is_string($message) && $message !== '' ? $message : (string) $this->t('The push limit for this site has been reached.'),
       $next,
     );
   }

@@ -25,6 +25,8 @@ use PHPUnit\Framework\TestCase;
 #[Group('sentinel_connector')]
 class PayloadBuilderTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * Builds a fake Extension with a given info array, status and path.
    *

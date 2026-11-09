@@ -29,8 +29,8 @@ if ($payloadVersion >= 3 && version_compare($version ?: '0.0.0', '1.3.0', '<')) 
 if (max($schema['properties']['schema_version']['enum'] ?? [0]) !== $payloadVersion) {
   $errors[] = 'The payload contract fixture must match SCHEMA_VERSION.';
 }
-if (!str_contains(file_get_contents($root . '/README.md'), '## Upgrading to ' . $version . "\n")) {
-  $errors[] = 'README upgrade instructions must identify the current release.';
+if (!str_contains(file_get_contents($root . '/UPGRADE.md'), '## Upgrading to ' . $version . "\n")) {
+  $errors[] = 'UPGRADE.md must identify the current release.';
 }
 foreach (['sentinel_connector.info.yml', 'modules/sentinel_connector_config_pr/sentinel_connector_config_pr.info.yml'] as $infoFile) {
   if (!is_readable($root . '/' . $infoFile)) {
