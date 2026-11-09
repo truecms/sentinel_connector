@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 1.6.0 - Unreleased
+## 1.6.0 - 2026-11-09
 
 Sends payload `schema_version: 5`. A Sentinel that does not know version 5
 refuses the push, so deploy truecms/sentinel#2314 first. The new
