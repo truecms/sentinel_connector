@@ -3,6 +3,7 @@
 namespace Drupal\Tests\sentinel_connector\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\sentinel_connector\ApiBaseUrlResolver;
 use Drupal\sentinel_connector\ApiKeyMigrator;
 use Drupal\sentinel_connector\ApiKeyResolver;
 use Drupal\sentinel_connector\SyncService;
@@ -24,15 +25,18 @@ class UninstallTest extends KernelTestBase {
   protected static $modules = ['system', 'user', 'sentinel_connector'];
 
   /**
-   * Uninstalling deletes the module's State values and keeps the others.
+   * Uninstalling deletes the module's State values, except the host guard.
    */
   public function testUninstallDeletesState(): void {
+    // The User module deletes the module's user data on uninstall.
+    $this->installSchema('user', ['users_data']);
     $this->installConfig(['sentinel_connector']);
     $state = $this->container->get('state');
     $state->set(ApiKeyResolver::STATE_KEY, 'sk_plain_text_key');
     $state->set(ApiKeyMigrator::KEY_STATE_PREFIX . ApiKeyMigrator::KEY_ID, 'sk_migrated_key');
     $state->set(SyncService::STATE_LAST_FINGERPRINT, 'abc');
     $state->set('sentinel_connector.last_message', 'Accepted.');
+    $state->set(ApiBaseUrlResolver::STATE_LEGACY_HOST, 'uat.example.com');
     // Another module's value that only shares the start of the name.
     $state->set('sentinel_connector_other.value', 'kept');
     $state->set('system.cron_last', 1792800000);
@@ -40,7 +44,8 @@ class UninstallTest extends KernelTestBase {
     $this->container->get('module_installer')->uninstall(['sentinel_connector']);
 
     $names = array_keys($this->container->get('keyvalue')->get('state')->getAll());
-    $this->assertSame([], array_values(array_filter($names, static fn (string $name): bool => str_starts_with($name, 'sentinel_connector.'))));
+    // Without the Key module no key reads the migrated value, so it goes too.
+    $this->assertSame([ApiBaseUrlResolver::STATE_LEGACY_HOST], array_values(array_filter($names, static fn (string $name): bool => str_starts_with($name, 'sentinel_connector.'))));
     $state = $this->container->get('state');
     $state->resetCache();
     $this->assertNull($state->get(ApiKeyResolver::STATE_KEY));

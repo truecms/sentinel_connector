@@ -3,6 +3,7 @@
 namespace Drupal\sentinel_connector;
 
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Component\Utility\Html;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\State\StateInterface;
 use Psr\Log\LoggerInterface;
@@ -365,7 +366,7 @@ class SyncService {
     // must not send the key and the inventory somewhere unexpected.
     $baseUrl = $this->urlResolver->getUrl();
     if ($baseUrl === NULL) {
-      return SyncResult::failure('invalid_url', NULL, (string) $this->t('The Sentinel API base URL is not valid. @error Nothing is sent until this is fixed.', ['@error' => (string) $this->urlResolver->getError()]));
+      return SyncResult::failure('invalid_url', NULL, Html::decodeEntities((string) $this->t('The Sentinel API base URL is not valid. @error Nothing is sent until this is fixed.', ['@error' => (string) $this->urlResolver->getError()])));
     }
 
     if (trim($stored) === '' || $apiKey === NULL) {

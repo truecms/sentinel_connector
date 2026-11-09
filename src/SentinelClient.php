@@ -3,6 +3,7 @@
 namespace Drupal\sentinel_connector;
 
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Component\Utility\Html;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\TransferException;
 use GuzzleHttp\TransferStats;
@@ -396,7 +397,7 @@ class SentinelClient {
     }
     if (is_array($detail) && $detail !== [] && array_is_list($detail)) {
       $field = $this->firstValidationError($detail, TRUE);
-      $additions[] = $field !== NULL ? (string) $this->t('First field at fault: @field.', ['@field' => rtrim(mb_substr($field, 0, 150), '. ')]) : '';
+      $additions[] = $field !== NULL ? Html::decodeEntities((string) $this->t('First field at fault: @field.', ['@field' => rtrim(mb_substr($field, 0, 150), '. ')])) : '';
     }
     $additions[] = $wait;
     $tail = implode(' ', array_filter($additions, fn (string $sentence): bool => $sentence !== ''));

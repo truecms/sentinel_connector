@@ -238,4 +238,22 @@ class ApiKeyKeyModuleTest extends KernelTestBase {
     $this->assertSame([], $form_state->getErrors());
   }
 
+  /**
+   * Uninstalling keeps the value a remaining key reads from State.
+   */
+  public function testUninstallKeepsMigratedKeyValue(): void {
+    \Drupal::state()->set(ApiKeyResolver::STATE_KEY, self::STATE_VALUE);
+    $id = $this->container->get(ApiKeyMigrator::class)->migrate();
+    $this->assertSame(ApiKeyMigrator::KEY_ID, $id);
+    \Drupal::state()->set(ApiKeyResolver::STATE_KEY, 'sk_left_behind');
+
+    $this->installSchema('user', ['users_data']);
+    $this->container->get('module_installer')->uninstall(['sentinel_connector']);
+
+    $state = $this->container->get('state');
+    $state->resetCache();
+    $this->assertNull($state->get(ApiKeyResolver::STATE_KEY));
+    $this->assertSame(self::STATE_VALUE, Key::load($id)->getKeyValue());
+  }
+
 }

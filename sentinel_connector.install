@@ -17,15 +17,26 @@ use Drupal\sentinel_connector\SyncService;
  * Implements hook_uninstall().
  *
  * Drupal removes the module's configuration. This deletes the values the
- * module keeps in State: the sync status, the deprecated API key saved on the
- * settings form, and the value of the API key moved into Key's State
- * provider. A Key module key that the module created stays, because the site
- * may have moved it to another provider; delete it on the Keys page.
+ * module keeps in State: the sync status and the deprecated API key saved on
+ * the settings form. Two values stay:
+ * - the non-production host guard, so a later reinstall cannot send a
+ *   non-production site's inventory and key to the production Sentinel;
+ * - the value of a Key module key that still reads it from State, so the key
+ *   keeps working. Delete such a key on the Keys page to remove its value.
  */
 function sentinel_connector_uninstall(bool $is_syncing): void {
+  $keep = [ApiBaseUrlResolver::STATE_LEGACY_HOST];
+  if (\Drupal::moduleHandler()->moduleExists('key')) {
+    foreach (\Drupal::entityTypeManager()->getStorage('key')->loadMultiple() as $key) {
+      $settings = $key->get('key_provider_settings');
+      if ($key->get('key_provider') === 'state' && is_array($settings) && is_string($settings['state_key'] ?? NULL)) {
+        $keep[] = $settings['state_key'];
+      }
+    }
+  }
   $names = array_filter(
     array_keys(\Drupal::keyValue('state')->getAll()),
-    static fn (string $name): bool => str_starts_with($name, 'sentinel_connector.'),
+    static fn (string $name): bool => str_starts_with($name, 'sentinel_connector.') && !in_array($name, $keep, TRUE),
   );
   \Drupal::state()->deleteMultiple(array_values($names));
 }
