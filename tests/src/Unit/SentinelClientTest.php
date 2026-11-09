@@ -29,6 +29,8 @@ use PHPUnit\Framework\TestCase;
 #[Group('sentinel_connector')]
 class SentinelClientTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * A scan key in the server's format.
    */
@@ -161,7 +163,7 @@ class SentinelClientTest extends TestCase {
     $result = $this->client(new Response(429, $headers, json_encode($body)))
       ->sync('https://sentinel.example.com', 'uuid', 'SECRET', []);
     $this->assertTrue($result->isPushLimited());
-    $this->assertSame(SentinelClient::PUSH_LIMIT_FALLBACK_MESSAGE, $result->message);
+    $this->assertSame('The push limit for this site has been reached.', $result->message);
     $this->assertNull($result->plan);
     $this->assertNull($result->limit);
     $this->assertSame($seconds, $result->retryAfterSeconds);

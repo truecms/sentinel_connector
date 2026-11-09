@@ -13,10 +13,16 @@ parameters:
       path: src/StatusReportCollector.php
       reportUnmatched: false
     # PHPUnit 9 ignores attributes; newer versions use them instead of annotations.
-    - message: '#^Attribute class PHPUnit\\Framework\\Attributes\\(RunTestsInSeparateProcesses|Group|DataProvider|CoversMethod|AllowMockObjectsWithoutExpectations) does not exist\.$#'
+    - message: '#^Attribute class PHPUnit\\Framework\\Attributes\\(RunTestsInSeparateProcesses|Group|DataProvider|CoversMethod|AllowMockObjectsWithoutExpectations|Before|After) does not exist\.$#'
       paths:
         - tests/src/*/*Test.php
+        - tests/src/Unit/TranslationStubTrait.php
         - modules/*/tests/src/*/*Test.php
+      reportUnmatched: false
+    # The stub keeps the untyped array parameters of TranslationInterface.
+    # PHPStan reports it in each test class that uses the trait.
+    - message: '#^Method class@anonymous/tests/src/Unit/TranslationStubTrait\.php:\d+::(translate|formatPlural)\(\) has parameter \$(args|options) with no value type specified in iterable type array\.$#'
+      path: tests/src/Unit/*
       reportUnmatched: false
     # Drupal 10 runs the procedural wrappers and ignores newer hook attributes.
     - message: '#^Attribute class Drupal\\Core\\Hook\\Attribute\\LegacyHook does not exist\.$#'

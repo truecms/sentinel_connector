@@ -1,0 +1,20 @@
+<?php
+
+/**
+ * @file
+ * Install hooks for the Sentinel Connector configuration pull request module.
+ */
+
+/**
+ * Implements hook_uninstall().
+ *
+ * Drupal removes the module's configuration. This deletes what it keeps in
+ * State: the open pull request, its branch and paths, and the last run time.
+ */
+function sentinel_connector_config_pr_uninstall(bool $is_syncing): void {
+  $names = array_filter(
+    array_keys(\Drupal::keyValue('state')->getAll()),
+    static fn (string $name): bool => str_starts_with($name, 'sentinel_connector_config_pr.'),
+  );
+  \Drupal::state()->deleteMultiple(array_values($names));
+}

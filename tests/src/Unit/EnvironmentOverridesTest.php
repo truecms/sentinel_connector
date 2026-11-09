@@ -20,6 +20,8 @@ use PHPUnit\Framework\TestCase;
 #[Group('sentinel_connector')]
 class EnvironmentOverridesTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * The environment variables these tests change.
    */

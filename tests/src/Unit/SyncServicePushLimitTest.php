@@ -32,6 +32,8 @@ use Psr\Log\LogLevel;
 #[Group('sentinel_connector')]
 class SyncServicePushLimitTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * The fixed "now" of the test: 2026-10-09T13:00:00Z.
    */
@@ -435,6 +437,7 @@ class SyncServicePushLimitTest extends TestCase {
    *   The client's result, the trigger, the log level and the details.
    */
   public static function outcomes(): array {
+    self::setStringTranslationContainer();
     $transport = [
       'class' => 'GuzzleHttp\\Exception\\ConnectException',
       'host' => 'sentinel.example.com',

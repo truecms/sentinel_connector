@@ -23,6 +23,8 @@ use PHPUnit\Framework\TestCase;
 #[Group('sentinel_connector')]
 class ConnectionCheckTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * The requests sent.
    *

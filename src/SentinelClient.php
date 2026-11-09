@@ -3,9 +3,11 @@
 namespace Drupal\sentinel_connector;
 
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Component\Utility\Html;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\TransferException;
 use GuzzleHttp\TransferStats;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 
 /**
  * Sends a sync payload to the Sentinel backend.
@@ -14,6 +16,8 @@ use GuzzleHttp\TransferStats;
  * SyncService writes the one log entry of a push.
  */
 class SentinelClient {
+
+  use StringTranslationTrait;
 
   /**
    * The error code Sentinel sends when a plan's push limit is reached.
@@ -93,11 +97,6 @@ class SentinelClient {
   protected const MAX_MESSAGE_LENGTH = 500;
 
   /**
-   * Message used when a push-limit response carries no usable message.
-   */
-  public const PUSH_LIMIT_FALLBACK_MESSAGE = 'The push limit for this site has been reached.';
-
-  /**
    * Constructs the client.
    *
    * @param \GuzzleHttp\ClientInterface $httpClient
@@ -148,7 +147,7 @@ class SentinelClient {
       ]);
     }
     catch (TransferException $e) {
-      $message = 'Could not connect to Sentinel. Check the API URL and network, then retry.';
+      $message = (string) $this->t('Could not connect to Sentinel. Check the API URL and network, then retry.');
       // Never keep the request URL, exception message, headers, or payload.
       $host = parse_url($baseUrl, PHP_URL_HOST);
       $host = is_string($host) && preg_match('/^[a-zA-Z0-9.\-:]+$/D', $host) ? $host : 'unknown';
@@ -163,7 +162,7 @@ class SentinelClient {
     $code = $response->getStatusCode();
     if ($code >= 300 && $code < 400) {
       // Redirects are not followed, so the key stays with this host.
-      return SyncResult::failure('invalid_response', $code, 'The Sentinel API base URL redirects elsewhere. Set the final address as the base URL.');
+      return SyncResult::failure('invalid_response', $code, (string) $this->t('The Sentinel API base URL redirects elsewhere. Set the final address as the base URL.'));
     }
     // Reverse proxies may return HTML for any error, so the body may not be
     // JSON at all.
@@ -282,7 +281,7 @@ class SentinelClient {
       ]);
     }
     catch (TransferException) {
-      return new ScanReportResult(ScanReportResult::FAILED, NULL, 'Could not connect to Sentinel. Check the API URL and network, then retry.');
+      return new ScanReportResult(ScanReportResult::FAILED, NULL, (string) $this->t('Could not connect to Sentinel. Check the API URL and network, then retry.'));
     }
 
     $code = $response->getStatusCode();
@@ -291,20 +290,20 @@ class SentinelClient {
     if ($code === 200) {
       $outcome = is_array($decoded) ? ($decoded['outcome'] ?? NULL) : NULL;
       return match ($outcome) {
-        ScanReportResult::STORED => new ScanReportResult($outcome, $code, 'Sentinel shows this scan on the site.'),
-        ScanReportResult::OLDER => new ScanReportResult($outcome, $code, 'Sentinel accepted the scan, but shows a newer one for this site.'),
-        ScanReportResult::PROBLEM_STORED => new ScanReportResult($outcome, $code, 'Sentinel recorded why the scan could not run.'),
-        default => new ScanReportResult(ScanReportResult::FAILED, $code, 'Sentinel sent an answer this connector does not understand.'),
+        ScanReportResult::STORED => new ScanReportResult($outcome, $code, (string) $this->t('Sentinel shows this scan on the site.')),
+        ScanReportResult::OLDER => new ScanReportResult($outcome, $code, (string) $this->t('Sentinel accepted the scan, but shows a newer one for this site.')),
+        ScanReportResult::PROBLEM_STORED => new ScanReportResult($outcome, $code, (string) $this->t('Sentinel recorded why the scan could not run.')),
+        default => new ScanReportResult(ScanReportResult::FAILED, $code, (string) $this->t('Sentinel sent an answer this connector does not understand.')),
       };
     }
     return match (TRUE) {
-      $code === 404 => new ScanReportResult(ScanReportResult::CLOSED, $code, 'Sentinel does not take CI upgrade scans for this site. Nothing was sent.'),
+      $code === 404 => new ScanReportResult(ScanReportResult::CLOSED, $code, (string) $this->t('Sentinel does not take CI upgrade scans for this site. Nothing was sent.')),
       $code === 401 => new ScanReportResult(ScanReportResult::KEY_REFUSED, $code, 'Sentinel refused the scan key. Create a new key on the site\'s Setup tab and save it as SENTINEL_SCAN_KEY.'),
-      $code === 409 && $detail === 'scan_site_not_reported' => new ScanReportResult(ScanReportResult::SITE_NOT_REPORTED, $code, 'The site has not reported its Drupal version to Sentinel yet. Let the site sync once, then run the scan again.'),
-      $code === 422 && $detail === 'scan_major_mismatch' => new ScanReportResult(ScanReportResult::MAJOR_MISMATCH, $code, 'The scan is for another Drupal major version than the site runs. Scan a build of the same version as the site.'),
-      $code === 429 => new ScanReportResult(ScanReportResult::RATE_LIMITED, $code, 'Too many scans for this site. Try again later.'),
-      $code >= 300 && $code < 400 => new ScanReportResult(ScanReportResult::FAILED, $code, 'The Sentinel API base URL redirects elsewhere. Set the final address as the base URL.'),
-      default => new ScanReportResult(ScanReportResult::FAILED, $code, 'Sentinel did not accept the scan.'),
+      $code === 409 && $detail === 'scan_site_not_reported' => new ScanReportResult(ScanReportResult::SITE_NOT_REPORTED, $code, (string) $this->t('The site has not reported its Drupal version to Sentinel yet. Let the site sync once, then run the scan again.')),
+      $code === 422 && $detail === 'scan_major_mismatch' => new ScanReportResult(ScanReportResult::MAJOR_MISMATCH, $code, (string) $this->t('The scan is for another Drupal major version than the site runs. Scan a build of the same version as the site.')),
+      $code === 429 => new ScanReportResult(ScanReportResult::RATE_LIMITED, $code, (string) $this->t('Too many scans for this site. Try again later.')),
+      $code >= 300 && $code < 400 => new ScanReportResult(ScanReportResult::FAILED, $code, (string) $this->t('The Sentinel API base URL redirects elsewhere. Set the final address as the base URL.')),
+      default => new ScanReportResult(ScanReportResult::FAILED, $code, (string) $this->t('Sentinel did not accept the scan.')),
     };
   }
 
@@ -398,7 +397,7 @@ class SentinelClient {
     }
     if (is_array($detail) && $detail !== [] && array_is_list($detail)) {
       $field = $this->firstValidationError($detail, TRUE);
-      $additions[] = $field !== NULL ? 'First field at fault: ' . rtrim(mb_substr($field, 0, 150), '. ') . '.' : '';
+      $additions[] = $field !== NULL ? Html::decodeEntities((string) $this->t('First field at fault: @field.', ['@field' => rtrim(mb_substr($field, 0, 150), '. ')])) : '';
     }
     $additions[] = $wait;
     $tail = implode(' ', array_filter($additions, fn (string $sentence): bool => $sentence !== ''));
@@ -461,19 +460,19 @@ class SentinelClient {
       return $refusal;
     }
     if (!is_array($decoded)) {
-      return SyncResult::failure('invalid_response', $code, 'Sentinel returned an invalid JSON response. Check the API base URL and retry.');
+      return SyncResult::failure('invalid_response', $code, (string) $this->t('Sentinel returned an invalid JSON response. Check the API base URL and retry.'));
     }
 
     // Modules whose version Sentinel could not read are stored as unknown
     // version. An older Sentinel does not send the list.
     $unresolved = $this->moduleEntries($decoded['unresolved_versions'] ?? NULL, FALSE);
     if ($code === 200) {
-      return SyncResult::success(200, $this->cleanMessage($decoded['message'] ?? NULL) ?? 'Sync completed.')->withModules($unresolved);
+      return SyncResult::success(200, $this->cleanMessage($decoded['message'] ?? NULL) ?? (string) $this->t('Sync completed.'))->withModules($unresolved);
     }
     if ($code === 202) {
       $taskId = $decoded['task_id'] ?? NULL;
       if (!is_string($taskId) || !preg_match('/^[A-Za-z0-9_.:\-]{1,128}$/D', $taskId)) {
-        return SyncResult::failure('invalid_response', 202, 'Sentinel accepted the sync without a task ID.');
+        return SyncResult::failure('invalid_response', 202, (string) $this->t('Sentinel accepted the sync without a task ID.'));
       }
       return SyncResult::accepted($taskId)->withModules($unresolved);
     }
@@ -556,21 +555,21 @@ class SentinelClient {
     $text = fn (string $fallback): string => $this->detailMessage($detail, $fallback);
     $advised = fn (string $fallback, string $advice): string => rtrim($text($fallback), '.') . '. ' . $advice;
     return match ($status) {
-      'site_mismatch' => $advised('The site does not match.', 'Check the Site UUID against the site registered in Sentinel.'),
+      'site_mismatch' => $advised((string) $this->t('The site does not match.'), (string) $this->t('Check the Site UUID against the site registered in Sentinel.')),
       'validation_failed' => is_array($detail) && !array_is_list($detail)
         ? $this->validationMessage($detail)
-        : $text('Sentinel rejected one or more modules.'),
-      'signature_refused' => $text('Sentinel refused the request signature. Check the site clock and the API key.'),
-      'auth_error' => $text('Authentication failed. Check the API key and retry.'),
-      'not_found' => $advised('Sentinel did not find this site.', 'Check the API base URL and site UUID.'),
-      'conflict' => $text('Sentinel could not store the inventory because of a conflict.'),
-      'invalid_payload' => $text('Sentinel could not read the inventory.'),
-      'rate_limited' => rtrim($text('Sentinel rate limit reached.'), '.') . '.' . ($wait !== '' ? ' ' . $wait : ''),
+        : $text((string) $this->t('Sentinel rejected one or more modules.')),
+      'signature_refused' => $text((string) $this->t('Sentinel refused the request signature. Check the site clock and the API key.')),
+      'auth_error' => $text((string) $this->t('Authentication failed. Check the API key and retry.')),
+      'not_found' => $advised((string) $this->t('Sentinel did not find this site.'), (string) $this->t('Check the API base URL and site UUID.')),
+      'conflict' => $text((string) $this->t('Sentinel could not store the inventory because of a conflict.')),
+      'invalid_payload' => $text((string) $this->t('Sentinel could not read the inventory.')),
+      'rate_limited' => rtrim($text((string) $this->t('Sentinel rate limit reached.')), '.') . '.' . ($wait !== '' ? ' ' . $wait : ''),
       'unavailable' => $wait !== ''
-        ? rtrim($text('Sentinel is temporarily unavailable.'), '.') . '. ' . $wait
-        : $text('Sentinel is temporarily unavailable. Retry later.'),
-      'server_error' => $text('Sentinel server returned HTTP ' . $code . '. Retry later.'),
-      default => $text('Sentinel rejected the sync.'),
+        ? rtrim($text((string) $this->t('Sentinel is temporarily unavailable.')), '.') . '. ' . $wait
+        : $text((string) $this->t('Sentinel is temporarily unavailable. Retry later.')),
+      'server_error' => $text((string) $this->t('Sentinel server returned HTTP @code. Retry later.', ['@code' => $code])),
+      default => $text((string) $this->t('Sentinel rejected the sync.')),
     };
   }
 
@@ -615,9 +614,9 @@ class SentinelClient {
    */
   protected function retryAfterText(array $retry): string {
     if ($retry['seconds'] !== NULL) {
-      return 'Retry after ' . $retry['seconds'] . ' seconds.';
+      return (string) $this->formatPlural($retry['seconds'], 'Retry after 1 second.', 'Retry after @count seconds.');
     }
-    return $retry['time'] !== NULL ? 'Retry after ' . gmdate('c', $retry['time']) . '.' : '';
+    return $retry['time'] !== NULL ? (string) $this->t('Retry after @time.', ['@time' => gmdate('c', $retry['time'])]) : '';
   }
 
   /**
@@ -629,7 +628,7 @@ class SentinelClient {
   protected function validationMessage(array $detail): string {
     $message = $this->cleanMessage($detail['message'] ?? NULL)
       ?? $this->cleanMessage($detail['error'] ?? NULL)
-      ?? 'Sentinel rejected one or more modules.';
+      ?? (string) $this->t('Sentinel rejected one or more modules.');
     $modules = $this->rejectedModules($detail);
     if ($modules === '') {
       return $message;
@@ -731,7 +730,7 @@ class SentinelClient {
    *   The wait of the Retry-After header.
    */
   protected function pushLimit(array $data, array $retry): SyncResult {
-    $message = $this->cleanMessage($data['message'] ?? NULL) ?? self::PUSH_LIMIT_FALLBACK_MESSAGE;
+    $message = $this->cleanMessage($data['message'] ?? NULL) ?? (string) $this->t('The push limit for this site has been reached.');
 
     $seconds = $data['retry_after_seconds'] ?? NULL;
     $seconds = is_int($seconds) && $seconds > 0 ? $seconds : $retry['seconds'];

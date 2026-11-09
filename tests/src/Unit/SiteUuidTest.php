@@ -38,6 +38,8 @@ use Psr\Log\LogLevel;
 #[Group('sentinel_connector')]
 class SiteUuidTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * The canonical form of the UUID used in the tests.
    */

@@ -23,6 +23,8 @@ use PHPUnit\Framework\TestCase;
 #[Group('sentinel_connector')]
 class ApiKeyResolverTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * Clears the process environment after each test.
    */

@@ -3,6 +3,27 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.6.2 - 2026-11-09
+
+Payload `schema_version: 5`, the settings and the database are unchanged;
+there is no update hook (truecms/sentinel_connector#58).
+
+### Added
+
+- Uninstalling either module deletes the values it keeps in State, including
+  the deprecated API key saved on the settings form. Two kinds of value stay:
+  the saved non-production host from a pre-1.4 install, so a reinstall never
+  sends to production by mistake, and any value a Key module key still reads.
+  A Key module key the connector created stays; delete it on the Keys page.
+
+### Changed
+
+- The sync, connection, CI scan and configuration pull request messages shown
+  in the admin pages and Drush are translatable.
+- README.md follows the Drupal README template (Recommended modules,
+  Troubleshooting, Maintainers). The upgrade steps of each release moved to
+  UPGRADE.md.
+
 ## 1.6.1 - 2026-11-09
 
 Changes from the Drupal.org security advisory coverage application review

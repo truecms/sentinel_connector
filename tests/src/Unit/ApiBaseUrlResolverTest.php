@@ -19,6 +19,8 @@ use PHPUnit\Framework\TestCase;
 #[Group('sentinel_connector')]
 class ApiBaseUrlResolverTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * {@inheritdoc}
    */

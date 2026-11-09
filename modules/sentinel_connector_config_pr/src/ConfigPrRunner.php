@@ -3,6 +3,7 @@
 namespace Drupal\sentinel_connector_config_pr;
 
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Component\Utility\Html;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Lock\LockBackendInterface;
@@ -10,6 +11,7 @@ use Drupal\sentinel_connector_config_pr\Host\HostException;
 use Drupal\sentinel_connector_config_pr\Host\HostFactory;
 use Drupal\sentinel_connector_config_pr\Host\HostInterface;
 use Psr\Log\LoggerInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 
 /**
  * Exports changed configuration to a branch and opens one pull request.
@@ -20,6 +22,8 @@ use Psr\Log\LoggerInterface;
  * are skipped, so a run without a new change makes no commit.
  */
 class ConfigPrRunner {
+
+  use StringTranslationTrait;
 
   public const TRIGGER_CRON = 'cron';
   public const TRIGGER_DRUSH = 'drush';
@@ -79,10 +83,10 @@ class ConfigPrRunner {
    */
   public function cron(): RunResult {
     if (!$this->settings()->get('cron_enabled')) {
-      return new RunResult('disabled', 'Cron runs are off.');
+      return new RunResult('disabled', (string) $this->t('Cron runs are off.'));
     }
     if (!$this->configFactory->get('sentinel_connector.settings')->get('enabled')) {
-      return new RunResult('disabled', 'Sentinel Connector cron reporting is off on this environment.');
+      return new RunResult('disabled', (string) $this->t('Sentinel Connector cron reporting is off on this environment.'));
     }
     return $this->run(FALSE, FALSE, self::TRIGGER_CRON);
   }
@@ -107,11 +111,11 @@ class ConfigPrRunner {
       $last = $this->tracker->lastRun();
       $interval = max(self::MIN_INTERVAL, (int) $this->settings()->get('interval'));
       if ($last > 0 && $now - $last < $interval) {
-        return new RunResult('not_due', sprintf('The last run was less than %d hours ago.', intdiv($interval, 3600)), $this->tracker->get()['url'] ?? NULL);
+        return new RunResult('not_due', (string) $this->formatPlural(intdiv($interval, 3600), 'The last run was less than 1 hour ago.', 'The last run was less than @count hours ago.'), $this->tracker->get()['url'] ?? NULL);
       }
     }
     if ($this->changeSetBuilder->syncStorageIsEmpty()) {
-      return $this->finish(new RunResult('failed', 'The configuration sync directory is empty or missing, so nothing was exported.'), $trigger);
+      return $this->finish(new RunResult('failed', (string) $this->t('The configuration sync directory is empty or missing, so nothing was exported.')), $trigger);
     }
     $changes = $this->changeSetBuilder->build($this->syncPath());
     if ($dryRun) {
@@ -124,7 +128,7 @@ class ConfigPrRunner {
       );
     }
     if (!$this->lock->acquire(self::LOCK, self::LOCK_TIMEOUT)) {
-      return $this->finish(new RunResult('failed', 'Another run is in progress.'), $trigger);
+      return $this->finish(new RunResult('failed', (string) $this->t('Another run is in progress.')), $trigger);
     }
     try {
       return $this->finish($this->export($changes, $now), $trigger);
@@ -140,22 +144,22 @@ class ConfigPrRunner {
   public function settingsProblem(): ?string {
     $settings = $this->settings();
     if (!isset(HostFactory::CONTROLLERS[(string) $settings->get('provider')])) {
-      return 'Choose GitHub or GitLab on the settings form.';
+      return (string) $this->t('Choose GitHub or GitLab on the settings form.');
     }
     $hasPath = trim((string) $settings->get('repo_owner')) !== '' && trim((string) $settings->get('repo_name')) !== '';
     $hasProjectId = $settings->get('provider') === 'gitlab' && trim((string) $settings->get('gitlab_project_id')) !== '';
     if (!$hasPath && !$hasProjectId) {
-      return 'Set the repository owner and name on the settings form.';
+      return (string) $this->t('Set the repository owner and name on the settings form.');
     }
     $branch = trim((string) $settings->get('branch'));
     if ($branch === '' || $branch === trim((string) $settings->get('base_branch'))) {
-      return 'Set an export branch that differs from the base branch.';
+      return (string) $this->t('Set an export branch that differs from the base branch.');
     }
     if ($this->syncPath() === '') {
-      return 'Set the repository path of the sync directory.';
+      return (string) $this->t('Set the repository path of the sync directory.');
     }
     if ($this->committer()['email'] === '') {
-      return 'Set a committer email, or the site email address.';
+      return (string) $this->t('Set a committer email, or the site email address.');
     }
     return NULL;
   }
@@ -172,7 +176,7 @@ class ConfigPrRunner {
     $tracked = $this->tracker->paths();
     if ($changes === [] && $tracked === [] && $this->tracker->get() === NULL) {
       $this->tracker->setLastRun($now);
-      return new RunResult('unchanged', 'No configuration differs from the sync directory.');
+      return new RunResult('unchanged', (string) $this->t('No configuration differs from the sync directory.'));
     }
     $token = $this->tokenResolver->getToken();
     if ($token === NULL) {
@@ -255,11 +259,11 @@ class ConfigPrRunner {
         $this->tracker->setLastRun($now);
         if ($pull === NULL) {
           $this->tracker->clear();
-          return new RunResult('unchanged', 'The base branch already holds the exported configuration.');
+          return new RunResult('unchanged', (string) $this->t('The base branch already holds the exported configuration.'));
         }
         $this->tracker->set($pull['url'], $pull['number'], $this->tracker->get()['updated_at'] ?? $now);
         $this->tracker->setPaths($paths);
-        return new RunResult('unchanged', 'The open pull request already holds the exported configuration.', $pull['url']);
+        return new RunResult('unchanged', (string) $this->t('The open pull request already holds the exported configuration.'), $pull['url']);
       }
 
       if ($head === NULL) {
@@ -318,13 +322,13 @@ class ConfigPrRunner {
         // Only this module's own messages are safe to log.
         '@reason' => $error instanceof HostException ? $error->getMessage() : '',
       ]);
-      return new RunResult('failed', sprintf('The Git host step "%s" failed. Check the Drupal log.', $step));
+      return new RunResult('failed', Html::decodeEntities((string) $this->t('The Git host step "@step" failed. Check the Drupal log.', ['@step' => $step])));
     }
 
     $this->tracker->set($pull['url'], $pull['number'], $now);
     $this->tracker->setPaths($paths);
     $this->tracker->setLastRun($now);
-    $message = $status === 'created' ? 'Opened a configuration pull request.' : 'Updated the open configuration pull request.';
+    $message = $status === 'created' ? (string) $this->t('Opened a configuration pull request.') : (string) $this->t('Updated the open configuration pull request.');
     return new RunResult($status, $message, $pull['url'], count($operations));
   }
 

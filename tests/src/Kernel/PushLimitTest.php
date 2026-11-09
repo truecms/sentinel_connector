@@ -10,7 +10,6 @@ use Drupal\Core\Logger\RfcLogLevel;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\sentinel_connector\Form\SettingsForm;
 use Drupal\sentinel_connector\PushLimitFormatter;
-use Drupal\sentinel_connector\SentinelClient;
 use Drupal\sentinel_connector\SyncService;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
@@ -223,12 +222,12 @@ class PushLimitTest extends KernelTestBase {
     $result = \Drupal::service(SyncService::class)->sync();
 
     $this->assertTrue($result->isPushLimited());
-    $this->assertSame(SentinelClient::PUSH_LIMIT_FALLBACK_MESSAGE, $result->message);
+    $this->assertSame('The push limit for this site has been reached.', $result->message);
     $this->assertGreaterThanOrEqual($before + 120, $result->nextAllowedAt);
     $this->assertLessThanOrEqual(time() + 120, $result->nextAllowedAt);
     $this->assertSame($result->nextAllowedAt, \Drupal::state()->get(SyncService::STATE_NEXT_ALLOWED_AT));
     $warning = (string) \Drupal::service(PushLimitFormatter::class)->warning($result);
-    $this->assertStringContainsString(SentinelClient::PUSH_LIMIT_FALLBACK_MESSAGE, $warning);
+    $this->assertStringContainsString('The push limit for this site has been reached.', $warning);
     $this->assertStringContainsString('The next push will be accepted after', $warning);
     $this->assertStringStartsWith('plan unknown; limit unknown; next push allowed at 2', $this->logRecords[0]['context']['@details']);
   }

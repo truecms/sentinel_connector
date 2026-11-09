@@ -31,6 +31,8 @@ use Psr\Log\LoggerInterface;
 #[Group('sentinel_connector')]
 class SyncServiceFingerprintTest extends TestCase {
 
+  use TranslationStubTrait;
+
   /**
    * The in-memory state values.
    *
@@ -104,6 +106,7 @@ class SyncServiceFingerprintTest extends TestCase {
    *   The accepted results.
    */
   public static function acceptedResults(): array {
+    self::setStringTranslationContainer();
     return [
       'success' => [SyncResult::success(200, 'ok')],
       'queued' => [SyncResult::accepted('task-1')],
