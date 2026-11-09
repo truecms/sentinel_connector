@@ -26,7 +26,7 @@ function sentinel_connector_requirements(string $phase): array {
   if ($phase !== 'runtime') {
     return [];
   }
-  return (new SentinelHooks(\Drupal::getContainer()))->runtimeRequirements();
+  return \Drupal::service(SentinelHooks::class)->runtimeRequirements();
 }
 
 /**

@@ -6,7 +6,8 @@ use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\sentinel_connector\ApiKeyMigrator;
 use Drupal\sentinel_connector\PushHealth;
 use Drupal\sentinel_connector\StatusReportCollector;
-use Symfony\Component\DependencyInjection\ContainerInterface;
+use Drupal\sentinel_connector\SyncService;
+use Symfony\Component\DependencyInjection\Attribute\AutowireServiceClosure;
 
 /**
  * Cron and runtime status hooks for Sentinel Connector.
@@ -14,12 +15,43 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 class SentinelHooks {
 
   /**
-   * Defers service lookup until failures can be caught.
+   * Constructs the hooks with autowired service closures.
    *
-   * @param \Symfony\Component\DependencyInjection\ContainerInterface $container
-   *   The service container.
+   * Each closure returns its service when called. A service that cannot be
+   * built then fails inside the hook's own error handling, so it never stops
+   * the other modules' cron hooks or a cache rebuild.
+   *
+   * @param \Closure $syncService
+   *   Returns the sync service.
+   * @param \Closure $time
+   *   Returns the time service.
+   * @param \Closure $state
+   *   Returns the state store.
+   * @param \Closure $logger
+   *   Returns the Sentinel Connector logger channel.
+   * @param \Closure $pushHealth
+   *   Returns the push health service.
+   * @param \Closure $statusReport
+   *   Returns the status report collector.
+   * @param \Closure $apiKeyMigrator
+   *   Returns the API key migrator.
    */
-  public function __construct(protected ContainerInterface $container) {}
+  public function __construct(
+    #[AutowireServiceClosure(SyncService::class)]
+    protected \Closure $syncService,
+    #[AutowireServiceClosure('datetime.time')]
+    protected \Closure $time,
+    #[AutowireServiceClosure('state')]
+    protected \Closure $state,
+    #[AutowireServiceClosure('logger.channel.sentinel_connector')]
+    protected \Closure $logger,
+    #[AutowireServiceClosure(PushHealth::class)]
+    protected \Closure $pushHealth,
+    #[AutowireServiceClosure(StatusReportCollector::class)]
+    protected \Closure $statusReport,
+    #[AutowireServiceClosure(ApiKeyMigrator::class)]
+    protected \Closure $apiKeyMigrator,
+  ) {}
 
   /**
    * Checks the inventory without allowing a failure to stop other cron hooks.
@@ -28,8 +60,8 @@ class SentinelHooks {
   public function cron(): void {
     try {
       /** @var \Drupal\sentinel_connector\SyncService $sync */
-      $sync = $this->container->get('Drupal\sentinel_connector\SyncService');
-      $now = $this->container->get('datetime.time')->getRequestTime();
+      $sync = ($this->syncService)();
+      $now = ($this->time)()->getRequestTime();
       $sync->markConfigured();
       if ($sync->cronIsDue($now)) {
         $sync->syncIfChanged();
@@ -38,8 +70,8 @@ class SentinelHooks {
     catch (\Throwable $error) {
       // State/config/service failures may prevent recording. Keep cron running.
       try {
-        $state = $this->container->get('state');
-        $state->set('sentinel_connector.last_attempt_time', $this->container->get('datetime.time')->getRequestTime());
+        $state = ($this->state)();
+        $state->set('sentinel_connector.last_attempt_time', ($this->time)()->getRequestTime());
         $state->set('sentinel_connector.last_result', 'internal_error');
         $state->set('sentinel_connector.last_message', 'Cron sync failed. Check Drupal logs.');
       }
@@ -47,7 +79,7 @@ class SentinelHooks {
         // Recording is best effort when Drupal storage itself is unavailable.
       }
       try {
-        $this->container->get('logger.channel.sentinel_connector')->error('Sentinel cron failed with @class.', ['@class' => get_class($error)]);
+        ($this->logger)()->error('Sentinel cron failed with @class.', ['@class' => get_class($error)]);
       }
       catch (\Throwable) {
         // Logging must not abort the remaining cron hooks.
@@ -63,7 +95,8 @@ class SentinelHooks {
    */
   #[Hook('runtime_requirements')]
   public function runtimeRequirements(): array {
-    $health = $this->container->get(PushHealth::class);
+    /** @var \Drupal\sentinel_connector\PushHealth $health */
+    $health = ($this->pushHealth)();
     $requirements = ['sentinel_connector' => $health->requirement()];
     $connection = $health->connectionRequirement();
     if ($connection !== NULL) {
@@ -82,7 +115,7 @@ class SentinelHooks {
   #[Hook('rebuild')]
   public function rebuild(): void {
     try {
-      $this->container->get(StatusReportCollector::class)->forgetSnapshot();
+      ($this->statusReport)()->forgetSnapshot();
     }
     catch (\Throwable) {
       // A cache rebuild must never fail over a value only the sync needs.
@@ -98,7 +131,7 @@ class SentinelHooks {
   #[Hook('modules_installed')]
   public function modulesInstalled(array $modules): void {
     if (in_array('key', $modules, TRUE)) {
-      $this->container->get(ApiKeyMigrator::class)->migrate();
+      ($this->apiKeyMigrator)()->migrate();
     }
   }
 
