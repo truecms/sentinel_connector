@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 1.6.2 - Unreleased
+## 1.6.2 - 2026-11-09
 
 Payload `schema_version: 5`, the settings and the database are unchanged;
 there is no update hook (truecms/sentinel_connector#58).
