@@ -297,7 +297,7 @@ class StatusReportTest extends KernelTestBase {
     $this->assertSame('Next push held by the plan limit', (string) $entry['value']);
     $description = (string) $entry['description'];
     $this->assertStringContainsString('Last push accepted: ' . $this->siteTime($accepted) . '.', $description);
-    $this->assertStringContainsString('Sentinel accepts the next push after ' . $this->siteTime($next) . '.', $description);
+    $this->assertStringContainsString('Sentinel accepts the next push after ' . $this->siteTime((int) (ceil($next / 60) * 60)) . '.', $description);
   }
 
   /**

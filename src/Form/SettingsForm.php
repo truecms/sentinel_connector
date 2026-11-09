@@ -326,8 +326,8 @@ final class SettingsForm extends ConfigFormBase {
         '#type' => 'item',
         '#title' => $this->t('Push limit'),
         '#markup' => $this->t('@message Next push accepted after @time. Cron and "Sync now" send nothing before then.', [
-          '@message' => $pushLimit->message,
-          '@time' => $this->pushLimitFormatter->formatTime($pushLimit->nextAllowedAt),
+          '@message' => $this->pushLimitFormatter->limitMessage($pushLimit),
+          '@time' => $this->pushLimitFormatter->formatRetryTime($pushLimit->nextAllowedAt),
         ]),
       ];
     }

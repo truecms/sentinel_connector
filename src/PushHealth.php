@@ -161,7 +161,7 @@ class PushHealth {
       if ($next !== NULL && $next > $now) {
         return $entry(self::SEVERITY_INFO, $this->t('Next push held by the plan limit'), $this->t('@accepted Sentinel accepts the next push after @next.', [
           '@accepted' => $acceptedText,
-          '@next' => $this->formatter->formatTime($next),
+          '@next' => $this->formatter->formatRetryTime($next),
         ]));
       }
       return $entry(self::SEVERITY_OK, $this->t('Last push accepted @time', ['@time' => $this->formatter->formatTime($lastAccepted)]), $unchanged
@@ -190,7 +190,7 @@ class PushHealth {
       return $entry(self::SEVERITY_INFO, $this->t('Next push held by the plan limit'), $next > $now
         ? $this->t('@accepted Sentinel accepts the next push after @next.', [
           '@accepted' => $acceptedText,
-          '@next' => $this->formatter->formatTime($next),
+          '@next' => $this->formatter->formatRetryTime($next),
         ])
         : $this->t('@accepted The plan limit ended at @next. The next cron run sends a push.', [
           '@accepted' => $acceptedText,
