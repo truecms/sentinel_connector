@@ -507,6 +507,7 @@ final class SettingsForm extends ConfigFormBase {
     parent::validateForm($form, $form_state);
     if ($this->uuidResolver->isOverridden()) {
       // The read-only value is not part of the submission.
+      $this->forgetRejectedValues($form_state);
       return;
     }
     $entered = $form_state->getValue('site_uuid');
@@ -518,6 +519,23 @@ final class SettingsForm extends ConfigFormBase {
     elseif (is_string($entered) && trim($entered) !== '') {
       // An empty value is reported by the required field itself.
       $form_state->setErrorByName('site_uuid', $this->t('The Site UUID is not a valid UUID. Copy it from the site in Sentinel: 32 hexadecimal digits in five groups, for example @example.', ['@example' => SiteUuid::EXAMPLE]));
+    }
+    $this->forgetRejectedValues($form_state);
+  }
+
+  /**
+   * Drops the values copied into the configuration by a refused submission.
+   *
+   * The parent class copies every #config_target value into the editable
+   * configuration before this form can refuse one. A refused submission must
+   * not leave them for later reads in the same request.
+   *
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
+   */
+  protected function forgetRejectedValues(FormStateInterface $form_state): void {
+    if ($form_state->hasAnyErrors()) {
+      $this->configFactory()->reset(self::CONFIG_NAME);
     }
   }
 
