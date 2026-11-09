@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.6.1 - 2026-11-09
+
+Documentation only. Payload `schema_version: 5`, configuration and database
+are unchanged; there is no update hook.
+
+### Changed
+
+- README: a new Installation section (Composer, enabling the module,
+  permissions, Site UUID and API key, test connection, first sync and
+  configuration export), as asked in the Drupal.org security advisory coverage
+  application (truecms/sentinel_connector#55).
+
 ## 1.6.0 - 2026-11-09
 
 Sends payload `schema_version: 5`. A Sentinel that does not know version 5
