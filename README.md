@@ -25,20 +25,25 @@ The public module name is **Sentinel Connector** and the machine name is
 `sentinel_connector`. Get releases from the
 [Drupal.org project page](https://www.drupal.org/project/sentinel_connector).
 
-Install a published release from the Drupal project root:
-
-```bash
-composer require drupal/sentinel_connector
-drush en sentinel_connector
-```
-
-A Sentinel account, a registered site and its API key are required to send
-reports. The module does not include the Sentinel service. Review **What it
-sends** before you enable reporting.
+To install it, see [Installation](#installation). A Sentinel account, a
+registered site and its API key are required to send reports. The module does
+not include the Sentinel service. Review [What it sends](#what-it-sends)
+before you enable reporting.
 
 Maintained by [TrueCMS Pty. Ltd.](https://www.drupal.org/truecms-pty-ltd).
 
 The module is licensed under GPL-2.0-or-later; see [LICENSE.txt](LICENSE.txt).
+
+## Upgrading to 1.6.1
+
+Release `1.6.1` changes documentation only: the README has an
+[Installation](#installation) section. The payload, configuration and database
+are unchanged, so there is no database update. Sites on 1.5.x or earlier
+follow the 1.6.0 steps below.
+
+```bash
+composer require drupal/sentinel_connector:^1.6 --with-all-dependencies
+```
 
 ## Upgrading to 1.6.0
 
@@ -208,6 +213,45 @@ installation/update compatibility: Config Split and Config Ignore also need
 upstream Drupal 12 module metadata. See
 [optional integration prerequisites](patches/drupal12/README.md); installing this
 module does not automatically patch those dependencies.
+
+## Installation
+
+Install the module as you would normally install a contributed Drupal module.
+See [Installing modules](https://www.drupal.org/docs/extending-drupal/installing-modules)
+for more information.
+
+1. From the Drupal project root, add the module with Composer:
+
+   ```bash
+   composer require drupal/sentinel_connector
+   ```
+
+2. Enable it on **Extend** (`/admin/modules`), or with Drush:
+
+   ```bash
+   drush en sentinel_connector
+   ```
+
+3. Give the *Administer Sentinel Connector* permission only to trusted roles;
+   see [Permissions](#permissions).
+4. In Sentinel, register the site and create its API key. Then enter the Site
+   UUID and the API key at **Configuration → Web services → Sentinel
+   Connector** (`/admin/config/services/sentinel-connector`), or set them in
+   `settings.php`; see [Configuration](#configuration).
+5. Choose **Test connection**, then **Sync now**, or run:
+
+   ```bash
+   drush sentinel_connector:check
+   drush sentinel_connector:sync
+   ```
+
+6. Export configuration (`drush cex`). The API key is never exported.
+
+After that, cron sends a report when something changed; see
+[Push frequency](#push-frequency).
+
+The optional submodule `sentinel_connector_config_pr` is enabled separately;
+see [Configuration pull request](#configuration-pull-request-optional-submodule).
 
 ## What it sends
 
