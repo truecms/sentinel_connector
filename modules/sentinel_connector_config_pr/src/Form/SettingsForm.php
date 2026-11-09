@@ -297,6 +297,11 @@ final class SettingsForm extends ConfigFormBase {
     if (isset(HostFactory::MODULES[$provider]) && !$this->moduleHandler->moduleExists(HostFactory::MODULES[$provider])) {
       $this->messenger()->addWarning($this->t('Enable the @module module before the first run.', ['@module' => HostFactory::MODULES[$provider]]));
     }
+    // The parent class copied the values into the editable configuration
+    // before the checks above; a refused submission must not leave them.
+    if ($form_state->hasAnyErrors()) {
+      $this->configFactory()->reset(self::CONFIG_NAME);
+    }
   }
 
   /**
