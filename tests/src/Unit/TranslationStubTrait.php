@@ -46,7 +46,14 @@ trait TranslationStubTrait {
     $translation = new class() implements TranslationInterface {
 
       /**
-       * {@inheritdoc}
+       * Returns markup that this service translates.
+       *
+       * @param string $string
+       *   The English text.
+       * @param array<string, mixed> $args
+       *   The placeholders.
+       * @param array<string, mixed> $options
+       *   The options.
        */
       public function translate($string, array $args = [], array $options = []): TranslatableMarkup {
         // phpcs:ignore Drupal.Semantics.FunctionT.NotLiteralString
@@ -54,17 +61,36 @@ trait TranslationStubTrait {
       }
 
       /**
-       * {@inheritdoc}
+       * Returns the English text.
        */
       public function translateString(TranslatableMarkup $translated_string): string {
         return $translated_string->getUntranslatedString();
       }
 
       /**
-       * {@inheritdoc}
+       * Returns plural markup that this service translates.
+       *
+       * @param int $count
+       *   The count.
+       * @param string $singular
+       *   The singular text.
+       * @param string $plural
+       *   The plural text.
+       * @param array<string, mixed> $args
+       *   The placeholders.
+       * @param array<string, mixed> $options
+       *   The options.
        */
       public function formatPlural($count, $singular, $plural, array $args = [], array $options = []): PluralTranslatableMarkup {
         return new PluralTranslatableMarkup($count, $singular, $plural, $args, $options, $this);
+      }
+
+      /**
+       * Picks the English singular or plural form (Drupal 12).
+       */
+      public function selectPluralForm(int|float $count, string $string, ?string $langcode = NULL): string {
+        $forms = explode(PluralTranslatableMarkup::DELIMITER, $string);
+        return $count == 1 ? $forms[0] : ($forms[1] ?? $forms[0]);
       }
 
     };
