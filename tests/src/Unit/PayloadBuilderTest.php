@@ -187,6 +187,25 @@ class PayloadBuilderTest extends TestCase {
   }
 
   /**
+   * Modules and themes never fold into each other.
+   */
+  public function testModulesAndThemesFoldSeparately(): void {
+    $modules = [
+      'kit' => $this->ext('kit', ['project' => 'kit', 'version' => '1.0.0'], 1, 'modules/contrib/kit'),
+      'skin_helper' => $this->ext('skin_helper', ['project' => 'skin', 'version' => '2.0.0'], 0, 'themes/contrib/skin/modules/skin_helper'),
+    ];
+    $themes = [
+      'kit_theme' => $this->ext('kit_theme', ['project' => 'kit', 'version' => '1.0.0'], 1, 'modules/contrib/kit/themes/kit_theme'),
+      'skin' => $this->ext('skin', ['project' => 'skin', 'version' => '2.0.0'], 0, 'themes/contrib/skin'),
+    ];
+    $rows = $this->rows($this->builder($modules, themes: $themes, roles: ['default' => 'kit_theme'])->build('all'));
+    $this->assertEqualsCanonicalizing(['kit', 'skin_helper', 'kit_theme', 'skin'], array_keys($rows));
+    $this->assertSame(['default'], $rows['kit_theme']['theme_roles']);
+    $this->assertFalse($rows['skin']['enabled']);
+    $this->assertFalse($rows['skin_helper']['enabled']);
+  }
+
+  /**
    * A role naming a core, missing or module extension is not reported.
    */
   public function testRolesOnlyMarkReportedThemes(): void {

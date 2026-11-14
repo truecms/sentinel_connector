@@ -992,7 +992,8 @@ Sub-modules are not listed: a module whose directory is inside another
 module's directory (for example, `webform_ui` inside `webform`) is folded into
 that module, which reports `enabled: true` when it or any of its sub-modules is
 enabled. A sub-theme inside another theme's directory is folded the same way,
-and its roles move to that theme's row. Modules shipped inside an install
+and its roles move to that theme's row. Modules and themes never fold into
+each other. Modules shipped inside an install
 profile are listed normally. Core modules and themes are not listed either;
 core is reported by `drupal_info.core_version` alone, in both scopes.
 `core_contrib` leaves out custom modules and themes. Custom names are never

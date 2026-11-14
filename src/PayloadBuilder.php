@@ -167,7 +167,10 @@ class PayloadBuilder {
         $installedThemes[$name] = TRUE;
       }
     }
-    $parents = $this->parents($extensions);
+    // Modules fold into modules and themes into themes: a theme shipped in a
+    // module's directory, or a module in a theme's, keeps its own row.
+    $parents = $this->parents(array_diff_key($extensions, $isTheme))
+      + $this->parents(array_intersect_key($extensions, $isTheme));
     // A project counts as enabled when it or any of its sub-modules is.
     // An installed theme counts as enabled.
     $enabled = [];
