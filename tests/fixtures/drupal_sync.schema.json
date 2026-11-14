@@ -109,6 +109,24 @@
                     },
                     "version_known": {
                         "type": "boolean"
+                    },
+                    "extension_type": {
+                        "type": "string",
+                        "enum": [
+                            "module",
+                            "theme"
+                        ]
+                    },
+                    "theme_roles": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "default",
+                                "admin"
+                            ]
+                        }
                     }
                 }
             }

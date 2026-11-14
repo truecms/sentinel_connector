@@ -981,15 +981,22 @@ The settings page displays the last attempt separately from the last successful
 sync. A 202 queued result is accepted for processing and does not imply success.
 
 Payloads also report the configured `inventory_scope`, the connector's own
-release as `connector_version`, per-extension `reported_project`, and
-`version_known`.
+release as `connector_version`, per-extension `reported_project`,
+`version_known` and `extension_type`.
+Themes are listed with modules, by the same rules, with `extension_type:
+"theme"`. A theme reports `enabled: true` when it is installed, and
+`theme_roles` lists `default` and `admin` when it is the site's default or
+administration theme (an empty list otherwise). A theme named like a listed
+module shares that module's row.
 Sub-modules are not listed: a module whose directory is inside another
 module's directory (for example, `webform_ui` inside `webform`) is folded into
 that module, which reports `enabled: true` when it or any of its sub-modules is
-enabled. Modules shipped inside an install profile are listed normally. Core
-modules are not listed either; core is reported by `drupal_info.core_version`
-alone, in both scopes. `core_contrib` leaves out custom modules. Custom
-names are never guessed as Drupal.org projects.
+enabled. A sub-theme inside another theme's directory is folded the same way,
+and its roles move to that theme's row. Modules shipped inside an install
+profile are listed normally. Core modules and themes are not listed either;
+core is reported by `drupal_info.core_version` alone, in both scopes.
+`core_contrib` leaves out custom modules and themes. Custom names are never
+guessed as Drupal.org projects.
 
 The project comes from the `project` key that Drupal.org packaging adds to
 `info.yml`. Modules installed from a git clone, a VCS Composer repository or a
