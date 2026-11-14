@@ -4,7 +4,7 @@ Update the module with Composer, then run the database updates and export
 configuration:
 
 ```bash
-composer require drupal/sentinel_connector:^1.6 --with-all-dependencies
+composer require drupal/sentinel_connector:^1.7 --with-all-dependencies
 drush updb
 drush cex
 ```
@@ -12,6 +12,13 @@ drush cex
 Read the section of every release between the version you run and the new
 one. A release that changes the payload needs a Sentinel that accepts it
 first; its section says so.
+
+## Upgrading to 1.7.0
+
+No database update and no configuration change. The next sync after the
+upgrade also reports the site's themes, so it is sent even when nothing else
+changed. Payload v5 is unchanged: any Sentinel that accepts 1.6.x accepts
+1.7.0.
 
 ## Upgrading to 1.6.2
 
