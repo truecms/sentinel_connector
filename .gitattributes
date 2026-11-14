@@ -9,3 +9,4 @@
 /tests export-ignore
 /scripts export-ignore
 /modules/sentinel_connector_config_pr/tests export-ignore
+/SECURITY.md export-ignore
