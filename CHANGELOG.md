@@ -3,6 +3,26 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.7.0 - 2026-11-14
+
+Payload `schema_version: 5`, the settings and the database are unchanged;
+there is no update hook (truecms/sentinel_connector#22,
+[#3638153](https://www.drupal.org/project/sentinel_connector/issues/3638153)).
+
+### Added
+
+- Installed and uninstalled themes are reported with modules, by the same
+  rules: core themes are left out, contributed themes carry their project and
+  version (from packaging data or the Composer package, so a theme installed
+  from Git such as CivicTheme is reported), and custom themes are left out by
+  the `core_contrib` scope. A theme reports `enabled: true` when it is
+  installed.
+- Every inventory row carries `extension_type` (`module` or `theme`). Theme
+  rows carry `theme_roles`, which lists `default` and `admin` when the theme is
+  the site's default or administration theme.
+- A sub-theme inside another theme's directory is folded into that theme, and
+  its roles move with it. Modules and themes never fold into each other.
+
 ## 1.6.2 - 2026-11-09
 
 Payload `schema_version: 5`, the settings and the database are unchanged;

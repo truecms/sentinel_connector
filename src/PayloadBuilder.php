@@ -18,7 +18,7 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '1.6.2';
+  public const CONNECTOR_VERSION = '1.7.0';
 
   /**
    * Sync payload contract version.
