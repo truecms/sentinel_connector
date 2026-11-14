@@ -4,9 +4,10 @@ namespace Drupal\sentinel_connector;
 
 use Drupal\Core\Extension\Extension;
 use Drupal\Core\Extension\ModuleExtensionList;
+use Drupal\Core\Extension\ThemeExtensionList;
 
 /**
- * Builds the Sentinel sync payload from the module extension list.
+ * Builds the Sentinel sync payload from the module and theme extension lists.
  *
  * Pure: every input is injected, so this class needs no container.
  */
@@ -72,6 +73,10 @@ class PayloadBuilder {
    * @param \Closure|null $statusReport
    *   Returns the status_report block, or NULL to leave it out. Called on
    *   the first build only: a build can take seconds.
+   * @param \Drupal\Core\Extension\ThemeExtensionList|null $themeList
+   *   The theme extension list. Without it, no theme is reported.
+   * @param array<string, string> $themeRoles
+   *   Theme machine names keyed by role: 'default' and 'admin'.
    */
   public function __construct(
     protected ModuleExtensionList $moduleList,
@@ -85,6 +90,8 @@ class PayloadBuilder {
     protected ?\Closure $upgradeStatus = NULL,
     protected bool $statusReporting = FALSE,
     protected ?\Closure $statusReport = NULL,
+    protected ?ThemeExtensionList $themeList = NULL,
+    protected array $themeRoles = [],
   ) {}
 
   /**
@@ -125,8 +132,9 @@ class PayloadBuilder {
   /**
    * Build the modules array for the given scope.
    *
-   * Core modules are never listed: core is reported by its version alone.
-   * Sub-modules are folded into the module whose directory contains them.
+   * Core modules and themes are never listed: core is reported by its
+   * version alone. Sub-modules and sub-themes are folded into the extension
+   * whose directory contains them.
    *
    * @param string $scope
    *   'all', or 'core_contrib' to leave out custom modules. Any other value
@@ -142,12 +150,41 @@ class PayloadBuilder {
       $this->moduleList->reset()->getList(),
       fn(Extension $extension): bool => !$this->isCore($extension),
     );
-    $parents = $this->parents($extensions);
+    // Themes are reported as modules are. A theme named like a reported
+    // module shares its row: the row counts as enabled when either is.
+    $installedThemes = [];
+    $isTheme = [];
+    $themes = $this->themeList ? $this->themeList->reset()->getList() : [];
+    foreach ($themes as $name => $theme) {
+      if ($this->isCore($theme)) {
+        continue;
+      }
+      if (!isset($extensions[$name])) {
+        $extensions[$name] = $theme;
+        $isTheme[$name] = TRUE;
+      }
+      elseif ((int) ($theme->status ?? 0) === 1) {
+        $installedThemes[$name] = TRUE;
+      }
+    }
+    // Modules fold into modules and themes into themes: a theme shipped in a
+    // module's directory, or a module in a theme's, keeps its own row.
+    $parents = $this->parents(array_diff_key($extensions, $isTheme))
+      + $this->parents(array_intersect_key($extensions, $isTheme));
     // A project counts as enabled when it or any of its sub-modules is.
+    // An installed theme counts as enabled.
     $enabled = [];
     foreach ($extensions as $name => $extension) {
-      if ((int) ($extension->status ?? 0) === 1) {
+      if ((int) ($extension->status ?? 0) === 1 || isset($installedThemes[$name])) {
         $enabled[$parents[$name] ?? $name] = TRUE;
+      }
+    }
+    // The default and admin theme roles, on the row that reports the theme.
+    $roles = [];
+    foreach (['default', 'admin'] as $role) {
+      $name = $this->themeRoles[$role] ?? '';
+      if (isset($isTheme[$name])) {
+        $roles[$parents[$name] ?? $name][] = $role;
       }
     }
     $modules = [];
@@ -180,7 +217,7 @@ class PayloadBuilder {
           $versionKnown = is_string($version) && trim($version) !== '' && strlen($version) <= 50;
         }
       }
-      $modules[] = [
+      $row = [
         'machine_name' => $name,
         'display_name' => $info['name'] ?? $name,
         'module_type' => $type,
@@ -190,7 +227,12 @@ class PayloadBuilder {
         'version_known' => $versionKnown,
         'reported_project' => $project,
         'description' => $info['description'] ?? NULL,
+        'extension_type' => isset($isTheme[$name]) ? 'theme' : 'module',
       ];
+      if (isset($isTheme[$name])) {
+        $row['theme_roles'] = $roles[$name] ?? [];
+      }
+      $modules[] = $row;
     }
 
     $payload = [
