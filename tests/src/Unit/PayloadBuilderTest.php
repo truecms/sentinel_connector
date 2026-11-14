@@ -5,6 +5,7 @@ namespace Drupal\Tests\sentinel_connector\Unit;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Extension\Extension;
 use Drupal\Core\Extension\ModuleExtensionList;
+use Drupal\Core\Extension\ThemeExtensionList;
 use Drupal\sentinel_connector\ComposerProjectResolver;
 use Drupal\sentinel_connector\PayloadBuilder;
 use PHPUnit\Framework\TestCase;
@@ -60,8 +61,12 @@ class PayloadBuilderTest extends TestCase {
    *   Composer package short names keyed by extension path prefix.
    * @param array<string, string> $versions
    *   Composer pretty versions keyed by extension path prefix.
+   * @param array<string, Extension>|null $themes
+   *   Discovered themes, or NULL for a builder without the theme list.
+   * @param array<string, string> $roles
+   *   Theme machine names keyed by role.
    */
-  private function builder(array $extensions, array $packages = [], array $versions = []): PayloadBuilder {
+  private function builder(array $extensions, array $packages = [], array $versions = [], ?array $themes = NULL, array $roles = []): PayloadBuilder {
     $list = $this->createMock(ModuleExtensionList::class);
     $list->method('reset')->willReturnSelf();
     $list->method('getList')->willReturn($extensions);
@@ -82,7 +87,171 @@ class PayloadBuilderTest extends TestCase {
       }
       return NULL;
     });
-    return new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', $resolver);
+    $themeList = NULL;
+    if ($themes !== NULL) {
+      $themeList = $this->createMock(ThemeExtensionList::class);
+      $themeList->method('reset')->willReturnSelf();
+      $themeList->method('getList')->willReturn($themes);
+    }
+    return new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', $resolver, themeList: $themeList, themeRoles: $roles);
+  }
+
+  /**
+   * Indexes payload rows by machine name.
+   *
+   * @param array<string, mixed> $payload
+   *   A built payload.
+   *
+   * @return array<string, array<string, mixed>>
+   *   Module rows keyed by machine name.
+   */
+  private function rows(array $payload): array {
+    return array_column($payload['modules'], NULL, 'machine_name');
+  }
+
+  /**
+   * Contributed and custom themes are reported as modules are.
+   */
+  public function testThemesAreReported(): void {
+    $modules = [
+      'token' => $this->ext('token', ['name' => 'Token', 'project' => 'token', 'version' => '8.x-1.15'], 1, 'modules/contrib/token'),
+    ];
+    $themes = [
+      // Core themes are reported through drupal_info only.
+      'olivero' => $this->ext('olivero', ['name' => 'Olivero', 'version' => '11.2.0'], 1, 'core/themes/olivero'),
+      // Packaged by Drupal.org.
+      'gin' => $this->ext('gin', ['name' => 'Gin', 'project' => 'gin', 'version' => '8.x-3.0'], 1, 'themes/contrib/gin'),
+      // Installed with Composer from a Git source: no packaging data.
+      'civictheme' => $this->ext('civictheme', ['name' => 'CivicTheme', 'description' => 'Design system.'], 1, 'themes/contrib/civictheme'),
+      // Ships inside CivicTheme, so it is folded into it.
+      'civictheme_starter_kit' => $this->ext('civictheme_starter_kit', ['name' => 'Starter'], 0, 'themes/contrib/civictheme/civictheme_starter_kit'),
+      // Present but not installed.
+      'claro_plus' => $this->ext('claro_plus', ['name' => 'Claro Plus', 'project' => 'claro_plus', 'version' => '1.0.0'], 0, 'themes/contrib/claro_plus'),
+      'my_theme' => $this->ext('my_theme', ['name' => 'My theme'], 1, 'themes/custom/my_theme'),
+    ];
+    $civic = 'themes/contrib/civictheme';
+    $roles = ['default' => 'my_theme', 'admin' => 'gin'];
+    $builder = $this->builder($modules, [$civic => 'civictheme'], [$civic => '1.12.2'], $themes, $roles);
+    $rows = $this->rows($builder->build('all'));
+
+    $this->assertSame('module', $rows['token']['extension_type']);
+    $this->assertArrayNotHasKey('theme_roles', $rows['token']);
+    foreach (['gin', 'civictheme', 'claro_plus', 'my_theme'] as $name) {
+      $this->assertSame('theme', $rows[$name]['extension_type'], $name);
+    }
+    $this->assertSame(['default'], $rows['my_theme']['theme_roles']);
+    $this->assertSame(['admin'], $rows['gin']['theme_roles']);
+    $this->assertSame([], $rows['civictheme']['theme_roles']);
+    $this->assertSame([], $rows['claro_plus']['theme_roles']);
+
+    $this->assertEqualsCanonicalizing(['token', 'gin', 'civictheme', 'claro_plus', 'my_theme'], array_keys($rows));
+
+    $this->assertSame('contrib', $rows['gin']['module_type']);
+    $this->assertSame('gin', $rows['gin']['reported_project']);
+    $this->assertSame('8.x-3.0', $rows['gin']['version']);
+    $this->assertTrue($rows['gin']['enabled']);
+    $this->assertSame('Gin', $rows['gin']['display_name']);
+
+    $this->assertSame('contrib', $rows['civictheme']['module_type']);
+    $this->assertSame('civictheme', $rows['civictheme']['reported_project']);
+    $this->assertSame('1.12.2', $rows['civictheme']['version']);
+    $this->assertTrue($rows['civictheme']['version_known']);
+    $this->assertTrue($rows['civictheme']['enabled']);
+    $this->assertSame('Design system.', $rows['civictheme']['description']);
+
+    $this->assertFalse($rows['claro_plus']['enabled']);
+
+    $this->assertSame('custom', $rows['my_theme']['module_type']);
+    $this->assertNull($rows['my_theme']['reported_project']);
+    $this->assertSame('0.0.0', $rows['my_theme']['version']);
+    $this->assertTrue($rows['my_theme']['enabled']);
+
+    // Custom themes are left out with custom modules.
+    $this->assertEqualsCanonicalizing(['token', 'gin', 'civictheme', 'claro_plus'], array_keys($this->rows($builder->build('core_contrib'))));
+  }
+
+  /**
+   * A theme counts as enabled when one of its sub-themes is installed.
+   */
+  public function testInstalledSubThemeEnablesItsTheme(): void {
+    $themes = [
+      'base_theme' => $this->ext('base_theme', ['project' => 'base_theme', 'version' => '2.0.0'], 0, 'themes/contrib/base_theme'),
+      'base_theme_child' => $this->ext('base_theme_child', ['project' => 'base_theme'], 1, 'themes/contrib/base_theme/child'),
+    ];
+    $roles = ['default' => 'base_theme_child', 'admin' => 'base_theme_child'];
+    $rows = $this->rows($this->builder([], themes: $themes, roles: $roles)->build('all'));
+    $this->assertSame(['base_theme'], array_keys($rows));
+    $this->assertTrue($rows['base_theme']['enabled']);
+    // A folded sub-theme's roles move to the row that reports it.
+    $this->assertSame(['default', 'admin'], $rows['base_theme']['theme_roles']);
+  }
+
+  /**
+   * Modules and themes never fold into each other.
+   */
+  public function testModulesAndThemesFoldSeparately(): void {
+    $modules = [
+      'kit' => $this->ext('kit', ['project' => 'kit', 'version' => '1.0.0'], 1, 'modules/contrib/kit'),
+      'skin_helper' => $this->ext('skin_helper', ['project' => 'skin', 'version' => '2.0.0'], 0, 'themes/contrib/skin/modules/skin_helper'),
+    ];
+    $themes = [
+      'kit_theme' => $this->ext('kit_theme', ['project' => 'kit', 'version' => '1.0.0'], 1, 'modules/contrib/kit/themes/kit_theme'),
+      'skin' => $this->ext('skin', ['project' => 'skin', 'version' => '2.0.0'], 0, 'themes/contrib/skin'),
+    ];
+    $rows = $this->rows($this->builder($modules, themes: $themes, roles: ['default' => 'kit_theme'])->build('all'));
+    $this->assertEqualsCanonicalizing(['kit', 'skin_helper', 'kit_theme', 'skin'], array_keys($rows));
+    $this->assertSame(['default'], $rows['kit_theme']['theme_roles']);
+    $this->assertFalse($rows['skin']['enabled']);
+    $this->assertFalse($rows['skin_helper']['enabled']);
+  }
+
+  /**
+   * A role naming a core, missing or module extension is not reported.
+   */
+  public function testRolesOnlyMarkReportedThemes(): void {
+    $modules = [
+      'token' => $this->ext('token', ['project' => 'token', 'version' => '8.x-1.15'], 1, 'modules/contrib/token'),
+    ];
+    $themes = [
+      'olivero' => $this->ext('olivero', [], 1, 'core/themes/olivero'),
+      'my_theme' => $this->ext('my_theme', [], 1, 'themes/custom/my_theme'),
+    ];
+    $rows = $this->rows($this->builder($modules, themes: $themes, roles: ['default' => 'olivero', 'admin' => 'token'])->build('all'));
+    $this->assertSame([], $rows['my_theme']['theme_roles']);
+    $this->assertArrayNotHasKey('theme_roles', $rows['token']);
+  }
+
+  /**
+   * A theme named like a module shares the module's row.
+   */
+  public function testThemeNamedLikeModuleSharesItsRow(): void {
+    $modules = [
+      'shared' => $this->ext('shared', ['name' => 'Shared module', 'project' => 'shared', 'version' => '1.0.0'], 0, 'modules/contrib/shared'),
+    ];
+    $theme = $this->ext('shared', ['name' => 'Shared theme', 'project' => 'shared_theme', 'version' => '3.0.0'], 1, 'themes/contrib/shared');
+    $themes = ['shared' => $theme];
+    $payload = $this->builder($modules, themes: $themes)->build('all');
+    $this->assertCount(1, $payload['modules']);
+    $row = $payload['modules'][0];
+    $this->assertSame('Shared module', $row['display_name']);
+    $this->assertSame('module', $row['extension_type']);
+    $this->assertSame('1.0.0', $row['version']);
+    $this->assertTrue($row['enabled']);
+
+    // An uninstalled theme leaves the module's status alone.
+    assert($theme instanceof TestExtension);
+    $theme->status = 0;
+    $this->assertFalse($this->builder($modules, themes: $themes)->build('all')['modules'][0]['enabled']);
+  }
+
+  /**
+   * Without the theme list, only modules are reported.
+   */
+  public function testNoThemeListReportsModulesOnly(): void {
+    $modules = [
+      'token' => $this->ext('token', ['project' => 'token', 'version' => '8.x-1.15'], 1, 'modules/contrib/token'),
+    ];
+    $this->assertSame(['token'], array_keys($this->rows($this->builder($modules)->build('all'))));
   }
 
   /**

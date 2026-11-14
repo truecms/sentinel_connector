@@ -4,6 +4,7 @@ namespace Drupal\sentinel_connector;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
+use Drupal\Core\Extension\ThemeExtensionList;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
@@ -20,6 +21,7 @@ class PayloadBuilderFactory {
     protected ?ConfigFactoryInterface $configFactory = NULL,
     protected ?UpgradeStatusCollector $upgradeStatus = NULL,
     protected ?StatusReportCollector $statusReport = NULL,
+    protected ?ThemeExtensionList $themeList = NULL,
   ) {}
 
   /**
@@ -78,7 +80,14 @@ class PayloadBuilderFactory {
         return NULL;
       }
     };
-    return new PayloadBuilder($this->moduleList, \Drupal::VERSION, PHP_VERSION, $ip, ComposerProjectResolver::fromInstalledVersions($this->appRoot), $platform, $configDrift, (bool) $platformReporting, $upgradeStatus, $statusReporting, $statusReport);
+    // Themes with a role. An empty admin theme means the default theme is
+    // used, and counts as no admin theme.
+    $theme = $this->configFactory?->get('system.theme');
+    $themeRoles = array_filter([
+      'default' => (string) ($theme?->get('default') ?? ''),
+      'admin' => (string) ($theme?->get('admin') ?? ''),
+    ]);
+    return new PayloadBuilder($this->moduleList, \Drupal::VERSION, PHP_VERSION, $ip, ComposerProjectResolver::fromInstalledVersions($this->appRoot), $platform, $configDrift, (bool) $platformReporting, $upgradeStatus, $statusReporting, $statusReport, $this->themeList, $themeRoles);
   }
 
 }

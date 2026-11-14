@@ -24,6 +24,7 @@ services:
       - '@config.factory'
       - '@Drupal\sentinel_connector\UpgradeStatusCollector'
       - '@Drupal\sentinel_connector\StatusReportCollector'
+      - '@extension.list.theme'
 
   Drupal\sentinel_connector\StatusReportCollector:
     class: Drupal\sentinel_connector\StatusReportCollector
