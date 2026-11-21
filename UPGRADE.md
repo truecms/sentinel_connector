@@ -13,6 +13,14 @@ Read the section of every release between the version you run and the new
 one. A release that changes the payload needs a Sentinel that accepts it
 first; its section says so.
 
+## Upgrading to 1.7.1
+
+No database update and no configuration change. A sub-theme made from a
+contributed theme's starter kit is reported as custom from the next sync.
+Deploy a Sentinel that reads a custom theme naming a project as the project it
+was built from (truecms/sentinel#4058) first: an older Sentinel stores that
+project on the custom row.
+
 ## Upgrading to 1.7.0
 
 No database update and no configuration change. The next sync after the

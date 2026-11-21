@@ -171,6 +171,51 @@ class PayloadBuilderTest extends TestCase {
   }
 
   /**
+   * A sub-theme made from a starter kit is custom when Composer proves it.
+   */
+  public function testStarterKitCopyIsCustom(): void {
+    $kit = ['project' => 'civictheme', 'version' => '1.12.2', 'base theme' => 'civictheme'];
+    $civic = ['name' => 'CivicTheme', 'project' => 'civictheme', 'version' => '1.14.0'];
+    $themes = [
+      'civictheme' => $this->ext('civictheme', $civic, 1, 'themes/contrib/civictheme'),
+      // Copied from the starter kit of an older release.
+      'sts' => $this->ext('sts', ['name' => 'STS'] + $kit, 1, 'themes/custom/sts'),
+      // A theme another package ships keeps its packaging data.
+      'shipped' => $this->ext('shipped', ['name' => 'Shipped'] + $kit, 1, 'themes/contrib/kit_pack/shipped'),
+      // Names a project that is not a discovered theme.
+      'stray' => $this->ext('stray', ['name' => 'Stray', 'project' => 'missing_theme', 'version' => '1.0.0'], 1, 'themes/custom/stray'),
+      // Names a theme that Composer did not install.
+      'plain_copy' => $this->ext('plain_copy', ['name' => 'Plain copy', 'project' => 'plain', 'version' => '2.0.0'], 1, 'themes/custom/plain_copy'),
+      'plain' => $this->ext('plain', ['name' => 'Plain', 'project' => 'plain', 'version' => '2.0.0'], 1, 'themes/contrib/plain'),
+    ];
+    $packages = ['themes/contrib/civictheme' => 'civictheme', 'themes/contrib/kit_pack' => 'kit_pack'];
+    $builder = $this->builder([], $packages, [], $themes, ['default' => 'sts']);
+    $rows = $this->rows($builder->build('all'));
+
+    $this->assertSame('custom', $rows['sts']['module_type']);
+    $this->assertSame('civictheme', $rows['sts']['reported_project']);
+    $this->assertSame('1.12.2', $rows['sts']['version']);
+    $this->assertSame(['default'], $rows['sts']['theme_roles']);
+    $this->assertSame('contrib', $rows['civictheme']['module_type']);
+    $this->assertSame('contrib', $rows['shipped']['module_type']);
+    $this->assertSame('contrib', $rows['stray']['module_type']);
+    $this->assertSame('contrib', $rows['plain_copy']['module_type']);
+    $this->assertSame('contrib', $rows['plain']['module_type']);
+    // The copy is left out with other custom themes.
+    $this->assertArrayNotHasKey('sts', $this->rows($builder->build('core_contrib')));
+
+    // Without Composer data nothing changes.
+    $list = $this->createMock(ModuleExtensionList::class);
+    $list->method('reset')->willReturnSelf();
+    $list->method('getList')->willReturn([]);
+    $themeList = $this->createMock(ThemeExtensionList::class);
+    $themeList->method('reset')->willReturnSelf();
+    $themeList->method('getList')->willReturn($themes);
+    $rows = $this->rows((new PayloadBuilder($list, '10.3.0', '8.3.0', '203.0.113.4', themeList: $themeList))->build('all'));
+    $this->assertSame('contrib', $rows['sts']['module_type']);
+  }
+
+  /**
    * A theme counts as enabled when one of its sub-themes is installed.
    */
   public function testInstalledSubThemeEnablesItsTheme(): void {

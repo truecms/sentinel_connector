@@ -3,6 +3,23 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.7.1 - Unreleased
+
+Payload `schema_version: 5`, the settings and the database are unchanged;
+there is no update hook (truecms/sentinel_connector#65).
+
+### Fixed
+
+- A sub-theme made from a contributed theme's starter kit, such as a
+  CivicTheme sub-theme, is reported as `custom`. Drupal.org packaging writes
+  `project` and `version` into the starter kit's `.info.yml`, so the copy used
+  to be reported as the base theme's release and was marked with its support
+  and advisory status. When Composer shows that the named theme is in its own
+  package and the copy is in none, the row is `custom` and keeps
+  `reported_project` and `version` as the kit it was built from. Without
+  Composer data nothing changes. The `core_contrib` scope now leaves the copy
+  out, as it does other custom themes.
+
 ## 1.7.0 - 2026-11-14
 
 Payload `schema_version: 5`, the settings and the database are unchanged;

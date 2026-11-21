@@ -18,7 +18,7 @@ class PayloadBuilder {
   /**
    * This connector's release version. Bump it when tagging a release.
    */
-  public const CONNECTOR_VERSION = '1.7.0';
+  public const CONNECTOR_VERSION = '1.7.1';
 
   /**
    * Sync payload contract version.
@@ -203,6 +203,11 @@ class PayloadBuilder {
         $project = $this->normaliseProject($package);
       }
       $type = $packaged ? 'contrib' : 'custom';
+      if ($type === 'contrib' && isset($isTheme[$name]) && $this->isStarterKitCopy($extension, $project, $extensions, $isTheme)) {
+        // The site's own theme, made from another theme's starter kit. It
+        // keeps the kit's project, which names what it was built from.
+        $type = 'custom';
+      }
       if ($scope === 'core_contrib' && $type !== 'contrib') {
         continue;
       }
@@ -272,6 +277,32 @@ class PayloadBuilder {
       $payload['status_report'] = $this->requirements;
     }
     return $payload;
+  }
+
+  /**
+   * Whether a theme is a site's own copy of another theme's starter kit.
+   *
+   * Drupal.org packaging writes 'project' and 'version' into every .info.yml
+   * of a release, starter kits included, so a sub-theme made from one keeps
+   * the base theme's project and version. Composer tells the two apart: the
+   * named theme is in its own drupal/* package and the copy is in none.
+   * Without Composer data nothing changes.
+   *
+   * @param \Drupal\Core\Extension\Extension $extension
+   *   The theme being reported.
+   * @param string|null $project
+   *   The project from its packaging data.
+   * @param array<string, \Drupal\Core\Extension\Extension> $extensions
+   *   Every discovered module and theme, keyed by machine name.
+   * @param array<string, bool> $isTheme
+   *   Theme machine names as keys.
+   */
+  protected function isStarterKitCopy(Extension $extension, ?string $project, array $extensions, array $isTheme): bool {
+    if (!$this->composerProjects || $project === NULL || $project === $extension->getName() || !isset($isTheme[$project], $extensions[$project])) {
+      return FALSE;
+    }
+    return $this->normaliseProject($this->composerProjects->resolve($extensions[$project]->getPath())) === $project
+      && $this->composerProjects->resolve($extension->getPath()) === NULL;
   }
 
   /**
