@@ -16,10 +16,8 @@ first; its section says so.
 ## Upgrading to 1.7.1
 
 No database update and no configuration change. A sub-theme made from a
-contributed theme's starter kit is reported as custom from the next sync.
-Deploy a Sentinel that reads a custom theme naming a project as the project it
-was built from (truecms/sentinel#4058) first: an older Sentinel stores that
-project on the custom row.
+contributed theme's starter kit is reported as custom from the next sync, and
+Sentinel shows it as a sub-theme of its base theme.
 
 ## Upgrading to 1.7.0
 
