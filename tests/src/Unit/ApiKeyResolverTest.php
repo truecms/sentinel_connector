@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
@@ -19,7 +21,7 @@ use PHPUnit\Framework\TestCase;
  *
  * @group sentinel_connector
  */
-#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[AllowMockObjectsWithoutExpectations]
 #[Group('sentinel_connector')]
 class ApiKeyResolverTest extends TestCase {
 
@@ -136,7 +138,7 @@ class ApiKeyResolverTest extends TestCase {
    *
    * @dataProvider unusableKeys
    */
-  #[\PHPUnit\Framework\Attributes\DataProvider('unusableKeys')]
+  #[DataProvider('unusableKeys')]
   public function testUnusableKeyFallsThrough(string $keyId, ?array $keys, string $problem): void {
     putenv('SENTINEL_CONNECTOR_API_KEY=env_key');
     $r = $this->resolver([], [], $keyId, $keys);
