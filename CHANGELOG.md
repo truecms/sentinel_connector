@@ -14,8 +14,9 @@ there is no update hook (truecms/sentinel_connector#65).
   CivicTheme sub-theme, is reported as `custom`. Drupal.org packaging writes
   `project` and `version` into the starter kit's `.info.yml`, so the copy used
   to be reported as the base theme's release and was marked with its support
-  and advisory status. When Composer shows that the named theme is in its own
-  package and the copy is in none, the row is `custom` and keeps
+  and advisory status. When the theme declares a base theme that Composer
+  installed as that project's package, and the theme itself is in no package,
+  the row is `custom` and keeps
   `reported_project` and `version` as the kit it was built from. Without
   Composer data nothing changes. The `core_contrib` scope now leaves the copy
   out, as it does other custom themes.

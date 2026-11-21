@@ -284,9 +284,9 @@ class PayloadBuilder {
    *
    * Drupal.org packaging writes 'project' and 'version' into every .info.yml
    * of a release, starter kits included, so a sub-theme made from one keeps
-   * the base theme's project and version. Composer tells the two apart: the
-   * named theme is in its own drupal/* package and the copy is in none.
-   * Without Composer data nothing changes.
+   * the base theme's project and version. The copy declares a base theme
+   * that Composer installed as that project's package, and the copy itself
+   * is in no drupal/* package. Without Composer data nothing changes.
    *
    * @param \Drupal\Core\Extension\Extension $extension
    *   The theme being reported.
@@ -298,10 +298,12 @@ class PayloadBuilder {
    *   Theme machine names as keys.
    */
   protected function isStarterKitCopy(Extension $extension, ?string $project, array $extensions, array $isTheme): bool {
-    if (!$this->composerProjects || $project === NULL || $project === $extension->getName() || !isset($isTheme[$project], $extensions[$project])) {
+    $base = $extension->info['base theme'] ?? NULL;
+    if (!$this->composerProjects || $project === NULL || $project === $extension->getName() || !is_string($base) || !isset($isTheme[$base], $extensions[$base])) {
       return FALSE;
     }
-    return $this->normaliseProject($this->composerProjects->resolve($extensions[$project]->getPath())) === $project
+    // The base theme may be named apart from its project's slug.
+    return $this->normaliseProject($this->composerProjects->resolve($extensions[$base]->getPath())) === $project
       && $this->composerProjects->resolve($extension->getPath()) === NULL;
   }
 
