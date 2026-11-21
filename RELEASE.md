@@ -1,13 +1,13 @@
-# Release 1.7.1: starter kit sub-themes reported as custom
+# Release 1.7.2: starter kit sub-themes reported as custom
 
-1.7.1 keeps payload v5 (truecms/sentinel_connector#65).
+1.7.2 keeps payload v5 (truecms/sentinel_connector#65).
 
 1. Deploy Sentinel truecms/sentinel#4058 to production. It reads a custom
    theme row that names a project as the project the theme was built from.
    An older Sentinel would keep that project on a custom row, where it blocks
    advisory closure for the base theme's project.
-2. Only then date the changelog, run `php scripts/check-release.php 1.7.1`,
-   tag 1.7.1 and publish it on Drupal.org.
+2. Only then date the changelog, run `php scripts/check-release.php 1.7.2`,
+   tag 1.7.2 and publish it on Drupal.org.
 3. Update `latest_connector_version` in Sentinel.
 
 Before tagging, on a canary site with a CivicTheme sub-theme and a UAT

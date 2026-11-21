@@ -13,11 +13,18 @@ Read the section of every release between the version you run and the new
 one. A release that changes the payload needs a Sentinel that accepts it
 first; its section says so.
 
-## Upgrading to 1.7.1
+## Upgrading to 1.7.2
 
 No database update and no configuration change. A sub-theme made from a
 contributed theme's starter kit is reported as custom from the next sync, and
 Sentinel shows it as a sub-theme of its base theme.
+
+## Upgrading to 1.7.1
+
+No database update or configuration change. Push-limit messages show one
+retry time, rounded up to the next whole minute in the site's default time
+zone. Payload v5 is unchanged.
+
 
 ## Upgrading to 1.7.0
 

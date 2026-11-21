@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 1.7.1 - Unreleased
+## 1.7.2 - Unreleased
 
 Payload `schema_version: 5`, the settings and the database are unchanged;
 there is no update hook (truecms/sentinel_connector#65).
@@ -20,6 +20,19 @@ there is no update hook (truecms/sentinel_connector#65).
   `reported_project` and `version` as the kit it was built from. Without
   Composer data nothing changes. The `core_contrib` scope now leaves the copy
   out, as it does other custom themes.
+
+## 1.7.1 - 2026-11-15
+
+Payload `schema_version: 5`, the settings and the database are unchanged;
+there is no update hook
+([#3636341](https://www.drupal.org/project/sentinel_connector/issues/3636341)).
+
+### Fixed
+
+- Push-limit warnings and the settings form show Sentinel's explanation with
+  one retry time. Times are rounded up to the next whole minute in the site's
+  default time zone, including the status report. The exact cutoff and original
+  server response are unchanged.
 
 ## 1.7.0 - 2026-11-14
 
