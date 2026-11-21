@@ -3,7 +3,19 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 1.7.2 - Unreleased
+## 1.7.3 - 2026-11-21
+
+Payload `schema_version: 5`, the settings and the database are unchanged;
+there is no update hook
+([#3632886](https://www.drupal.org/project/sentinel_connector/issues/3632886)).
+
+### Changed
+
+- Test classes import their PHPUnit attribute classes with `use` statements,
+  from the Project Update Bot's Drupal 12 run. The module's runtime code does
+  not change.
+
+## 1.7.2 - 2026-11-21
 
 Payload `schema_version: 5`, the settings and the database are unchanged;
 there is no update hook (truecms/sentinel_connector#65).
