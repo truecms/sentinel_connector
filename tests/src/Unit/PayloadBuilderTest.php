@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\CoversMethod;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Extension\Extension;
 use Drupal\Core\Extension\ModuleExtensionList;
@@ -20,9 +22,9 @@ use PHPUnit\Framework\TestCase;
  * @covers \Drupal\sentinel_connector\PayloadBuilder::parents
  * @group sentinel_connector
  */
-#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
-#[\PHPUnit\Framework\Attributes\CoversMethod(PayloadBuilder::class, 'build')]
-#[\PHPUnit\Framework\Attributes\CoversMethod(PayloadBuilder::class, 'parents')]
+#[AllowMockObjectsWithoutExpectations]
+#[CoversMethod(PayloadBuilder::class, 'build')]
+#[CoversMethod(PayloadBuilder::class, 'parents')]
 #[Group('sentinel_connector')]
 class PayloadBuilderTest extends TestCase {
 

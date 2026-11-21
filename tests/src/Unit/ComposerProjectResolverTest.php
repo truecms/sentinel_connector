@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\CoversMethod;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\sentinel_connector\ComposerProjectResolver;
@@ -15,10 +16,10 @@ use PHPUnit\Framework\TestCase;
  * @covers \Drupal\sentinel_connector\ComposerProjectResolver::fromInstalledVersions
  * @group sentinel_connector
  */
-#[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, '__construct')]
-#[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, 'resolve')]
-#[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, 'version')]
-#[\PHPUnit\Framework\Attributes\CoversMethod(ComposerProjectResolver::class, 'fromInstalledVersions')]
+#[CoversMethod(ComposerProjectResolver::class, '__construct')]
+#[CoversMethod(ComposerProjectResolver::class, 'resolve')]
+#[CoversMethod(ComposerProjectResolver::class, 'version')]
+#[CoversMethod(ComposerProjectResolver::class, 'fromInstalledVersions')]
 #[Group('sentinel_connector')]
 class ComposerProjectResolverTest extends TestCase {
 

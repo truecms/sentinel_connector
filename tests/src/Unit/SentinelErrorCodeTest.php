@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\sentinel_connector\Unit;
 
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\Component\Datetime\TimeInterface;
@@ -32,7 +33,7 @@ use Psr\Log\LogLevel;
  *
  * @group sentinel_connector
  */
-#[\PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations]
+#[AllowMockObjectsWithoutExpectations]
 #[Group('sentinel_connector')]
 class SentinelErrorCodeTest extends TestCase {
 
