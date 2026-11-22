@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.7.4 - 2026-11-22
+
+### Changed
+
+- Clarified that Pay as you go includes free monitoring for up to 20 Drupal
+  sites per billing account. Updated the README to describe how the connector
+  retries after it hits a push limit.
+
 ## 1.7.3 - 2026-11-21
 
 Payload `schema_version: 5`, the settings and the database are unchanged;
