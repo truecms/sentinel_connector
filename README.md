@@ -7,12 +7,15 @@ authoritative snapshot and submits it.
 
 ## Website, accounts and documentation
 
-[SentinelConnector.io](https://sentinelconnector.io/) provides the monitoring
-service. A [Free account](https://sentinelconnector.io/register?plan=free) and a
-14-day trial are available. The Free plan monitors one Drupal website and
-accepts one data update a day. See [plans and pricing](https://sentinelconnector.io/pricing)
-for included features and applicable trial terms. The Drupal module remains
-free under its GPL license.
+[Create a Sentinel account](https://sentinelconnector.io/register) to monitor
+up to 20 Drupal sites for free on Pay as you go. The allowance is shared by every
+organisation on the billing account for the lifetime of that account while
+Sentinel continues to offer the service. Monitoring requires no paid
+subscription. Sign-up requires a valid card and acceptance of the billing
+terms. Free monitoring does not charge the card. Optional paid features,
+including patching, require separate approval.
+See [plans and pricing](https://sentinelconnector.io/pricing) for details. The
+Drupal module is free under its GPL license.
 
 - [User guide](https://sentinelconnector.io/help)
 - [Add and connect a Drupal website](https://sentinelconnector.io/help#help-sites-add-connect-and-inspect-drupal)
@@ -611,10 +614,9 @@ Options and notes:
 - A push that was held, refused or failed is sent by cron later, when cron
   pushes are enabled on the settings form. The command itself works without
   them, but then nothing retries until the next deployment.
-- Cron pushes count against the same plan limit. On paid plans cron only
-  uses it when something changed and once a day, so it is normally free when
-  a deployment needs it. On Free the daily push uses the whole limit, so a
-  deployment after it is held until the next day's push.
+- Cron pushes count against the same limit as deployment pushes. If a cron
+  push uses the available capacity, a later deployment push waits until
+  Sentinel allows another push.
 - Configuration drift is part of the inventory, so run the command after
   `drush cim`: the push then reports that production matches the code again.
 - The PHP version is part of the inventory. If Drush and the web server run
@@ -674,10 +676,9 @@ until the inventory changes or the day is over.
 
 ## Push limits
 
-Sentinel limits how often a site may push, by plan: once in 24 hours on Free
-and once an hour on paid plans. A push sent too soon is answered with HTTP 429
-and `error_code: push_limit_reached`. The connector treats this as an expected
-outcome, not as a connection or authentication failure:
+Sentinel enforces the push limit for each site. A push sent too soon receives
+HTTP 429 and `error_code: push_limit_reached`. The connector handles this as
+an expected outcome:
 
 - **Sync now** and `drush sentinel_connector:sync` show a warning with
   Sentinel's explanation and a single retry time in the site's default time
@@ -700,10 +701,9 @@ connector uses a generic message and the `Retry-After` header. A 429 without
 the error code is reported as `rate_limited`, as before. The error code counts
 on a 429 only: on any other status nothing is stored and no push is held back.
 
-A site on the Free plan therefore sends about one push a day, with the latest
-inventory. A change made after that day's push is refused once: the refusal
-tells the module when the next push is allowed, nothing is sent until then,
-and the change goes out with the next push.
+When a push hits the limit, Sentinel tells the module when it can try again.
+The next accepted push sends the latest inventory, including changes made
+while pushes were held.
 
 ## Inactive subscription
 
@@ -846,8 +846,8 @@ Connector* entry:
 | Last accepted push older, cron found no change in the last 24 hours | OK, with the time of the push and of the last check |
 
 "Accepted" means Sentinel answered 200 or 202. A plan limit that ended less
-than 6 hours ago also shows as information, so that a Free site does not
-report an error between the end of its daily limit and the next cron run.
+than 6 hours ago also shows as information, giving cron time to send the next
+push.
 
 A second entry, *Sentinel Connector connection test*, is a warning while the
 last "Test connection" or `drush sentinel_connector:check` failed and no push

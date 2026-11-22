@@ -13,6 +13,11 @@ Read the section of every release between the version you run and the new
 one. A release that changes the payload needs a Sentinel that accepts it
 first; its section says so.
 
+## Upgrading to 1.7.4
+
+This patch updates the README. No database update or configuration change is
+required. Payload v5 is unchanged.
+
 ## Upgrading to 1.7.3
 
 No database update, no configuration change and no change to what the
