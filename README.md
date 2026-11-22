@@ -8,10 +8,10 @@ authoritative snapshot and submits it.
 ## Website, accounts and documentation
 
 [Create a Sentinel account](https://sentinelconnector.io/register) to monitor
-up to 20 Drupal sites for free on Pay as you go. The allowance is shared across
-all organisations on the billing account and lasts for the lifetime of that
-account while Sentinel continues to offer the service. Monitoring requires no
-paid subscription. Sign-up requires a valid card and acceptance of the billing
+up to 20 Drupal sites for free on Pay as you go. The allowance is shared by every
+organisation on the billing account for the lifetime of that account while
+Sentinel continues to offer the service. Monitoring requires no paid
+subscription. Sign-up requires a valid card and acceptance of the billing
 terms. Free monitoring does not charge the card. Optional paid features,
 including patching, require separate approval.
 See [plans and pricing](https://sentinelconnector.io/pricing) for details. The
